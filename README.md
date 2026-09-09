@@ -1,5 +1,9 @@
 # Friday
 
+> **中文摘要**：Friday 提供專案內可版控的共用規則；Jarvis 管理個人設定。
+> 安裝前先用 `--check` 唯讀預覽；任何既有內容或路徑衝突都會在寫入前停止。
+> 更新需先審查差異與引用依賴，不會自動覆寫專案的修改。
+
 A kit that installs project-scoped agent management into a repository: the
 safety boundary that stops an agent doing irreversible damage, the rules it
 works under, and the Git skills that gate authorisation.
@@ -14,12 +18,26 @@ person's home directory. So this kit **copies** its payload in.
 
 ```sh
 git clone git@github.com:ShenYo/Friday.git ~/Friday
+~/Friday/install.sh --check /path/to/your/repo
 ~/Friday/install.sh /path/to/your/repo      # defaults to the current directory
 ```
 
-Idempotent — re-run it to repair a partial install or to pick up a newer
-payload. It refuses to run outside a Git repository, since the boundary guards
-Git operations. It needs `jq`.
+Requires `jq` and a target with a `.git/` directory (linked worktrees are not
+supported). `--check` reports `NEW`, `IDENTICAL`, or `CONFLICT`, exits nonzero
+on conflicts, and does not copy, chmod, create links, or run the self-check.
+Both modes validate prerequisites and every destination before any target
+write. Unexpected destination symlinks, including ancestor symlinks, conflict;
+the exact expected Claude hook link is accepted.
+
+Installation fills missing files and preserves identical content. It refuses
+different content rather than overwriting it, including `.claude/settings.json`.
+There is deliberately no force mode. Review and reconcile conflicts in the
+target project first, then preview again. Project-specific files alongside the
+payload remain local; only payload-owned hook scripts receive executable modes.
+Preview compares content and path types, not executable modes. Preflight is
+not a transaction: a later I/O or self-check failure can leave new files in
+place, and concurrent target changes are outside this guarantee. Inspect the
+result before retrying; never run concurrent installers against one target.
 
 The install ends by running the payload's own self-check, so a broken install
 fails now rather than the first time someone relies on the boundary.
@@ -84,11 +102,20 @@ are decoupled would install the coupling into every new project.
 
 ## Design notes
 
-**Copy, not link.** See the top of this file. The cost is drift: a project can
-edit its copy, and there is currently no mechanism to tell it apart from the
-payload. v1 accepts that. Deciding how updates should reach an installed
-project depends on knowing which files projects actually change, and that is
-guesswork until a second project exists.
+**Copy, not link.** Projects retain their own reviewed baseline and local
+overlays. Choose a reviewed Friday commit before installation and record its
+SHA in the project's adoption record; a mutable branch is not a reproducible
+version. `--check` detects content differences, not who authored them or whether
+an update is safe to merge. Keep unknown Skill provenance read-only.
+
+Before promoting changes from a consumer such as pet-care, agree the shared
+file list and verify every transitive reference is shipped or explicitly
+provided by the consuming project. Do not copy a whole `.agents/` directory:
+domain paths, routing, runtime settings, and project overlays need separate
+review. In particular, dispatch is not currently shipped; promoting a core
+rule that depends on it needs a dependency decision first. Test the reviewed
+kit in a disposable project before adoption; this is not permission to refresh
+an existing consumer or change personal Jarvis settings.
 
 **The payload owns no project references.** Worked examples use `#123` rather
 than real issue numbers, and no file names another repository's documents. This
@@ -103,4 +130,12 @@ found" — and because that check treats "found nothing" as success, it had been
 passing vacuously. It now uses `grep`, and first proves the search can find a
 string that is definitely present before trusting any negative result.
 
-`pet_care` still has the original, and still has that bug.
+That paragraph records the original failure, not current pet-care behavior.
+
+## Installer regression check
+
+Run `bash tests/install-smoke.sh /absolute/path/to/retained-test-output`.
+The check creates fresh fixture targets, uses an inert fixture self-check, and
+retains its evidence for review; it never installs into an existing project.
+It verifies installer behavior, not live runtime hook coverage. Cleanup is a
+separate, explicitly authorized operation.

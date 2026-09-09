@@ -3,9 +3,8 @@
 #
 #   ~/Friday/install.sh [target-repo-path]     (default: current directory)
 #
-# Copies payload/ over the target, wires the Claude hook symlink, and runs the
-# payload's own self-check. Idempotent: re-run it to repair a partial install
-# or to pick up a newer payload.
+# --check previews without writing. Installation adds missing files, preserves
+# identical files, and refuses conflicts before making any target changes.
 #
 # What it does NOT do: fill in the per-project layer (the AGENTS.md routing
 # table, the domain glossary, the issue-tracker choice). Those need answers
@@ -14,6 +13,12 @@ set -euo pipefail
 
 KIT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 PAYLOAD="$KIT_ROOT/payload"
+check_only=false
+if [ "${1:-}" = "--check" ]; then check_only=true; shift; fi
+if [ "$#" -gt 1 ] || [[ "${1:-}" = -* ]]; then
+  echo "usage: $0 [--check] [target-repo-path]" >&2
+  exit 2
+fi
 TARGET=$(cd "${1:-.}" && pwd)
 
 [ -d "$PAYLOAD" ] || { echo "error: $PAYLOAD missing — is this the Friday repo?" >&2; exit 1; }
@@ -30,33 +35,82 @@ if [ "$TARGET" = "$KIT_ROOT" ]; then
   exit 1
 fi
 
-echo "Installing into $TARGET"
-echo ""
-
-# --- Copy the payload -------------------------------------------------------
-# Existing files are overwritten: the payload is the source of truth for what
-# it ships. Anything the project added alongside it is left alone.
-copied=0
+# Check prerequisites before copying, not after a partially completed install.
+command -v jq >/dev/null || { echo "error: 'jq' is required." >&2; exit 1; }
+listing=$(find "$PAYLOAD" -type f)
+[ -n "$listing" ] || { echo "error: payload is empty." >&2; exit 1; }
+files=()
 while IFS= read -r src; do
-  rel=${src#"$PAYLOAD"/}
+  # Payload filenames are repository-controlled; newline names are unsupported.
+  [[ "$src" = "$PAYLOAD/"* && -f "$src" && ! -L "$src" ]] || exit 1
+  files+=("${src#"$PAYLOAD"/}")
+done <<< "$listing"
+
+hook=.claude/hooks/guard-collaborative-git.sh
+hook_target=../../.agents/hooks/guard-collaborative-git.sh
+conflicts=0
+check_destination() {
+  local rel=$1 kind=$2 current=$TARGET part dest
+  local -a components
+  IFS=/ read -r -a components <<< "$rel"
+  for ((i=0; i<${#components[@]}-1; i++)); do
+    part=${components[i]}
+    current="$current/$part"
+    if [ -L "$current" ] || { [ -e "$current" ] && [ ! -d "$current" ]; }; then
+      echo "CONFLICT $rel (unsafe parent: $current)"
+      conflicts=1
+      return
+    fi
+  done
+  dest="$TARGET/$rel"
+  if [ "$kind" = link ] && [ -L "$dest" ] && [ "$(readlink "$dest")" = "$hook_target" ]; then
+    echo "IDENTICAL $rel"
+  elif [ -L "$dest" ] || { [ -e "$dest" ] && [ ! -f "$dest" ]; }; then
+    echo "CONFLICT $rel (unexpected file type or symlink)"
+    conflicts=1
+  elif [ -e "$dest" ]; then
+    if [ "$kind" = file ] && cmp -s "$PAYLOAD/$rel" "$dest"; then
+      echo "IDENTICAL $rel"
+    else
+      echo "CONFLICT $rel (existing content)"
+      conflicts=1
+    fi
+  else
+    echo "NEW $rel"
+  fi
+}
+
+for rel in "${files[@]}"; do check_destination "$rel" file; done
+check_destination "$hook" link
+if [ "$conflicts" -ne 0 ]; then
+  echo "error: resolve conflicts in a reviewed change; nothing was written." >&2
+  exit 1
+fi
+if "$check_only"; then exit 0; fi
+
+# Preflight prevents known conflicts, not concurrent changes or later I/O errors.
+copied=0
+for rel in "${files[@]}"; do
+  src="$PAYLOAD/$rel"
   dest="$TARGET/$rel"
   mkdir -p "$(dirname "$dest")"
   if [ -f "$dest" ] && cmp -s "$src" "$dest"; then continue; fi
   cp "$src" "$dest"
   echo "  wrote  $rel"
   copied=$((copied + 1))
-done < <(find "$PAYLOAD" -type f)
+done
 
 [ "$copied" -eq 0 ] && echo "  (payload already current)"
 
-chmod +x "$TARGET/.agents/hooks/"*.sh
+for rel in "${files[@]}"; do
+  case "$rel" in .agents/hooks/*.sh) chmod +x "$TARGET/$rel" ;; esac
+done
 
 # --- Wire the Claude hook ---------------------------------------------------
 # .claude/hooks/ must hold a link, not a copy: settings.json points at that
 # path, and a copy would silently go stale when the payload guard changes.
 mkdir -p "$TARGET/.claude/hooks"
-ln -sfn ../../.agents/hooks/guard-collaborative-git.sh \
-        "$TARGET/.claude/hooks/guard-collaborative-git.sh"
+if [ ! -L "$TARGET/$hook" ]; then ln -s "$hook_target" "$TARGET/$hook"; fi
 echo "  linked .claude/hooks/guard-collaborative-git.sh"
 
 # --- Verify -----------------------------------------------------------------
@@ -66,11 +120,6 @@ echo "  linked .claude/hooks/guard-collaborative-git.sh"
 echo ""
 # jq only: the self-check parses settings.json with it. It deliberately does
 # not need ripgrep — see the note in check-collaborative-git.sh.
-command -v jq >/dev/null || {
-  echo "error: 'jq' is required by the self-check but is not installed." >&2
-  exit 1
-}
-
 if (cd "$TARGET" && bash .agents/hooks/check-collaborative-git.sh); then
   echo "self-check passed: the safety boundary is installed and blocking."
 else

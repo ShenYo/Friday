@@ -1,18 +1,27 @@
 #!/usr/bin/env bash
-# A fixture-only installer regression check; preserve outputs for inspection.
+# Live-payload installer regression check; preserve outputs for inspection.
 set -euo pipefail
 [ "$#" -eq 1 ] || { echo "usage: $0 retained-output-directory" >&2; exit 2; }
-source_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+source_root=$(cd "$(dirname "$BASH_SOURCE")/.." && pwd)
 mkdir -p "$1"
 run=$(mktemp -d "$1/run.XXXXXX")
-kit="$run/kit"
-mkdir -p "$kit/.git" "$kit/payload/.agents/hooks" "$kit/payload/.claude"
-cp "$source_root/install.sh" "$kit/install.sh"
-printf '#!/usr/bin/env bash\nprintf "checked\\n" >> .selfcheck-runs\n[ ! -e .fail-selfcheck ]\n' > "$kit/payload/.agents/hooks/check-collaborative-git.sh"
-printf '#!/usr/bin/env bash\nexit 0\n' > "$kit/payload/.agents/hooks/guard-collaborative-git.sh"
-printf '{"fixture":true}\n' > "$kit/payload/.claude/settings.json"
-printf 'fixture payload\n' > "$kit/payload/new.txt"
-target() { mkdir -p "$run/$1/.git"; }
+kit="$source_root"
+expected='
+AGENTS.md
+.agents/AGENTS.md
+.agents/docs/agent-rules.md
+.agents/docs/scratch-files.md
+.agents/docs/git-guideline/git-commit.md
+.agents/docs/git-guideline/pr-evidence.md
+.agents/docs/git-guideline/safety-boundary.md
+.agents/hooks/check-collaborative-git.sh
+.agents/hooks/guard-collaborative-git.sh
+.agents/skills/git/commit/SKILL.md
+.agents/skills/git/create-pr/SKILL.md
+.agents/skills/git/push/SKILL.md
+.gitignore
+.claude/settings.json'
+target() { git init -q "$run/$1"; }
 reject() {
   if bash "$kit/install.sh" "$@" > "$run/rejection.log" 2>&1; then
     echo "FAIL: unexpectedly accepted $*" >&2; exit 1
@@ -21,26 +30,30 @@ reject() {
 
 target fresh
 bash "$kit/install.sh" --check "$run/fresh" > "$run/preview.log"
-grep -q '^NEW new.txt$' "$run/preview.log"
-[ ! -e "$run/fresh/new.txt" ] && [ ! -e "$run/fresh/.agents" ]
-[ ! -e "$run/fresh/.selfcheck-runs" ]
+for rel in $expected; do grep -q "^NEW $rel$" "$run/preview.log"; done
+[ ! -e "$run/fresh/AGENTS.md" ] && [ ! -e "$run/fresh/.agents" ]
 bash "$kit/install.sh" "$run/fresh" > "$run/install.log"
-[ "$(wc -l < "$run/fresh/.selfcheck-runs")" -eq 1 ]
-cmp "$kit/payload/new.txt" "$run/fresh/new.txt"
+for rel in $expected; do cmp "$kit/payload/$rel" "$run/fresh/$rel"; done
 [ "$(readlink "$run/fresh/.claude/hooks/guard-collaborative-git.sh")" = ../../.agents/hooks/guard-collaborative-git.sh ]
+(cd "$run/fresh" && bash .agents/hooks/check-collaborative-git.sh)
+mkdir -p "$run/fresh/docs/temp/probe"
+touch "$run/fresh/docs/temp/probe/file.md"
+git -C "$run/fresh" check-ignore -v docs/temp/probe/file.md > "$run/ignore.log"
+grep -q 'docs/temp/' "$run/ignore.log"
+actual=$(cd "$run/fresh" && { printf '%s\n' AGENTS.md .gitignore; find .agents .claude \( -type f -o -type l \) -print; } | sort)
+expected_installed=$(printf '%s\n' $expected .claude/hooks/guard-collaborative-git.sh | sort)
+[ "$actual" = "$expected_installed" ]
 printf 'local overlay\n' > "$run/fresh/local.txt"
 printf '# local hook\n' > "$run/fresh/.agents/hooks/local.sh"
 chmod 600 "$run/fresh/.agents/hooks/local.sh"
 chmod 600 "$run/fresh/.agents/hooks/guard-collaborative-git.sh"
 bash "$kit/install.sh" --check "$run/fresh" > "$run/second-preview.log"
-grep -q '^IDENTICAL new.txt$' "$run/second-preview.log"
-[ "$(wc -l < "$run/fresh/.selfcheck-runs")" -eq 1 ]
+for rel in $expected; do grep -q "^IDENTICAL $rel$" "$run/second-preview.log"; done
 [ ! -x "$run/fresh/.agents/hooks/guard-collaborative-git.sh" ]
 bash "$kit/install.sh" "$run/fresh" > "$run/reinstall.log"
-[ "$(wc -l < "$run/fresh/.selfcheck-runs")" -eq 2 ]
 [ -x "$run/fresh/.agents/hooks/guard-collaborative-git.sh" ]
 [ ! -x "$run/fresh/.agents/hooks/local.sh" ]
-[ "$(cat "$run/fresh/local.txt")" = 'local overlay' ]
+[ "$(< "$run/fresh/local.txt")" = 'local overlay' ]
 
 target conflict
 mkdir -p "$run/conflict/.claude"
@@ -48,21 +61,29 @@ printf 'local settings\n' > "$run/conflict/.claude/settings.json"
 reject --check "$run/conflict"
 grep -q '^CONFLICT .claude/settings.json ' "$run/rejection.log"
 reject "$run/conflict"
-[ ! -e "$run/conflict/new.txt" ] && [ ! -e "$run/conflict/.agents" ]
+[ ! -e "$run/conflict/AGENTS.md" ] && [ ! -e "$run/conflict/.agents" ]
 [ "$(cat "$run/conflict/.claude/settings.json")" = 'local settings' ]
+
+target gitignore-conflict
+printf 'local ignore rule\n' > "$run/gitignore-conflict/.gitignore"
+reject --check "$run/gitignore-conflict"
+grep -q '^CONFLICT .gitignore ' "$run/rejection.log"
+reject "$run/gitignore-conflict"
+[ ! -e "$run/gitignore-conflict/AGENTS.md" ] && [ ! -e "$run/gitignore-conflict/.agents" ]
+[ "$(cat "$run/gitignore-conflict/.gitignore")" = 'local ignore rule' ]
 
 target parent-link
 mkdir -p "$run/outside"
 ln -s "$run/outside" "$run/parent-link/.agents"
 reject "$run/parent-link"
-[ ! -e "$run/outside/hooks" ] && [ ! -e "$run/parent-link/new.txt" ]
+[ ! -e "$run/outside/hooks" ] && [ ! -e "$run/parent-link/AGENTS.md" ]
 
 target file-link
 mkdir -p "$run/file-link/.claude"
 printf 'outside content\n' > "$run/outside/settings.json"
 ln -s "$run/outside/settings.json" "$run/file-link/.claude/settings.json"
 reject "$run/file-link"
-[ ! -e "$run/file-link/new.txt" ]
+[ ! -e "$run/file-link/AGENTS.md" ]
 [ "$(cat "$run/outside/settings.json")" = 'outside content' ]
 
 target dangling
@@ -70,18 +91,12 @@ mkdir -p "$run/dangling/.claude/hooks"
 ln -s "$run/absent" "$run/dangling/.claude/hooks/guard-collaborative-git.sh"
 reject "$run/dangling"
 [ -L "$run/dangling/.claude/hooks/guard-collaborative-git.sh" ]
-[ ! -e "$run/dangling/new.txt" ]
+[ ! -e "$run/dangling/AGENTS.md" ]
 
 target type-conflict
-mkdir -p "$run/type-conflict/new.txt"
+mkdir -p "$run/type-conflict/AGENTS.md"
 reject "$run/type-conflict"
 [ ! -e "$run/type-conflict/.agents" ]
-
-target selfcheck-failure
-touch "$run/selfcheck-failure/.fail-selfcheck"
-reject "$run/selfcheck-failure"
-[ "$(wc -l < "$run/selfcheck-failure/.selfcheck-runs")" -eq 1 ]
-grep -q 'self-check FAILED' "$run/rejection.log"
 
 reject --unknown
 reject "$run/fresh" extra
@@ -96,6 +111,6 @@ if PATH="$run/no-jq-bin" /bin/bash "$kit/install.sh" "$run/missing-jq" > "$run/m
   echo 'FAIL: missing prerequisite accepted' >&2; exit 1
 fi
 grep -q "'jq' is required" "$run/missing-jq.log"
-[ ! -e "$run/missing-jq/new.txt" ] && [ ! -e "$run/missing-jq/.agents" ]
-echo "PASS: preview states, self-check execution/failure, idempotence, conflict/type/symlink gates, arguments and prerequisites"
+[ ! -e "$run/missing-jq/AGENTS.md" ] && [ ! -e "$run/missing-jq/.agents" ]
+echo "PASS: live payload, preview states, self-check, idempotence, conflict/type/symlink gates, arguments and prerequisites"
 echo "Retained fixture evidence: $run"

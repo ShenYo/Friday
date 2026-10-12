@@ -19,15 +19,14 @@ repository.
 
 1. Confirm the local app and the changed flow work. Run the relevant tests or
    state exactly what could not be run.
-2. Create a temporary visual-evidence directory only when providing visual
-   evidence:
+2. Read [`../scratch-files.md`](../scratch-files.md), then create a temporary
+   visual-evidence directory only when providing evidence:
 
    ```text
    docs/temp/<branch-slug>/
    ```
 
-   Replace every `/` in the Git branch name with `-`. For example,
-   `feat/s1-first-run` becomes `docs/temp/feat-s1-first-run/`.
+   Replace every `/` in the Git branch name with `-`.
 3. Capture descriptive files such as `desktop-dashboard.png` or
    `mobile-add-record-sheet.png`. Use the locale, timezone, and data state
    relevant to the acceptance criterion. Never capture secrets or personal
@@ -35,10 +34,8 @@ repository.
 4. Inspect the image and report its local path plus the behavior it proves.
    Do not claim a screenshot proves an interaction that it does not show.
 5. Keep every screenshot and recording for that branch in its one temporary
-   directory. `docs/temp/` is in `.gitignore`, so nothing under it can be
-   committed by accident; never force one in with `git add -f`. They are
-   temporary visual evidence for reviewers, not product design
-   documentation.
+   directory. Never stage, commit, or force-add temporary evidence. They are
+   review evidence, not product design documentation.
 6. Ask the user to upload the image manually to the PR description or a PR
    comment using GitHub's **Attach files** control. The built-in `gh` CLI can
    edit text but does not provide a supported PR-attachment upload command.
@@ -53,8 +50,7 @@ GitHub's official attachment instructions are available at
 
 - Do not use a feature-branch raw/blob URL for one-off PR visual evidence;
   branch deletion can break it after merge.
-- Do not add one-off review screenshots to `docs/design/` or other tracked
-  documentation directories.
+- Do not add one-off review screenshots to tracked documentation directories.
 - Do not create a GitHub Release merely to host a PR screenshot.
 - Do not scatter files directly under `docs/temp/`; each branch owns one
   directory so it can be removed as a group when no longer needed.

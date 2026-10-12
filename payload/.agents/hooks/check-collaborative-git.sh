@@ -27,8 +27,10 @@ jq -e '
 ' .claude/settings.json >/dev/null || fail "Claude PreToolUse guard is not wired"
 
 for path in \
+  AGENTS.md \
+  .agents/AGENTS.md \
+  .agents/docs/scratch-files.md \
   .agents/docs/git-guideline/git-commit.md \
-  .agents/docs/git-guideline/issue-tracker.md \
   .agents/docs/git-guideline/pr-evidence.md \
   .agents/docs/git-guideline/safety-boundary.md; do
   test -f "$path" || fail "canonical document missing: $path"
@@ -75,19 +77,6 @@ printf '%s' '{"tool_name":"Bash","tool_input":{"command":"git status"}}' \
 if printf '%s' '{"tool_name":"Bash","tool_input":{"command":"git push --force"}}' \
   | "$guard" >/dev/null 2>&1; then
   fail "force push payload was not blocked"
-fi
-
-printf '%s' '{"tool_name":"apply_patch","tool_input":"*** Update File: notes.md"}' \
-  | "$guard" >/dev/null
-
-if printf '%s' '{"tool_name":"apply_patch","tool_input":"*** Delete File: notes.md"}' \
-  | "$guard" >/dev/null 2>&1; then
-  fail "apply_patch deletion payload was not blocked"
-fi
-
-if printf '%s' '{"tool_name":"apply_patch","tool_input":{"patch":"*** Delete File: notes.md"}}' \
-  | "$guard" >/dev/null 2>&1; then
-  fail "wrapped apply_patch deletion payload was not blocked"
 fi
 
 echo "Agent workflow guardrails passed."

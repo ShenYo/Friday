@@ -1,18 +1,17 @@
 # Friday
 
-> **中文摘要**：Friday 提供專案內可版控的共用規則；Jarvis 管理個人設定。
-> 安裝前先用 `--check` 唯讀預覽；任何既有內容或路徑衝突都會在寫入前停止。
-> 更新需先審查差異與引用依賴，不會自動覆寫專案的修改。
+> **中文摘要**：Friday 是可版控的 shared project baseline；Jarvis 是個人層。
+> 先以 `--check` 預覽，再安裝封閉的 allowlist。衝突絕不覆寫，現有專案需經
+> 人工審查後調和。
 
-A kit that installs project-scoped agent management into a repository: the
-safety boundary that stops an agent doing irreversible damage, the rules it
-works under, and the Git skills that gate authorisation.
+Friday bootstraps a blank Git repository with a small, reviewed agent baseline.
+It copies project-scoped policy, Git skills, a shared temporary-file contract,
+and one verified Claude Code Bash guard adapter. Personal or vendor skills
+remain outside this repository's contract.
 
-Personal, machine-level agent configuration is a different thing and lives in
-[`ShenYo/Jarvis`](https://github.com/ShenYo/Jarvis). Project configuration
-cannot use that repo's symlink approach: a clone has to carry its own rules, CI
-checks out only the project, and collaborators cannot be asked to depend on one
-person's home directory. So this kit **copies** its payload in.
+Friday is deliberately not a universal runtime manager. It does not claim
+Codex or Gemini hook enforcement, discover arbitrary skills, or install a
+consumer's domain workflow.
 
 ## Install
 
@@ -22,12 +21,13 @@ git clone git@github.com:ShenYo/Friday.git ~/Friday
 ~/Friday/install.sh /path/to/your/repo      # defaults to the current directory
 ```
 
-Requires `jq` and a target with a `.git/` directory (linked worktrees are not
-supported). `--check` reports `NEW`, `IDENTICAL`, or `CONFLICT`, exits nonzero
-on conflicts, and does not copy, chmod, create links, or run the self-check.
-Both modes validate prerequisites and every destination before any target
-write. Unexpected destination symlinks, including ancestor symlinks, conflict;
-the exact expected Claude hook link is accepted.
+Requires `jq` and a blank or compatible target with a `.git/` directory
+(linked worktrees are not supported). The target is the repository root, not
+an `.agents/` subdirectory. `--check` reports `NEW`, `IDENTICAL`, or
+`CONFLICT`, exits nonzero on conflicts, and does not copy, chmod, create links,
+or run the self-check. Both modes validate prerequisites and every destination
+before any target write. Unexpected destination symlinks, including ancestor
+symlinks, conflict; the exact expected Claude hook link is accepted.
 
 Installation fills missing files and preserves identical content. It refuses
 different content rather than overwriting it, including `.claude/settings.json`.
@@ -39,22 +39,35 @@ not a transaction: a later I/O or self-check failure can leave new files in
 place, and concurrent target changes are outside this guarantee. Inspect the
 result before retrying; never run concurrent installers against one target.
 
-The install ends by running the payload's own self-check, so a broken install
-fails now rather than the first time someone relies on the boundary.
+The install ends by running the payload's own self-check, so a broken Claude
+adapter fails now rather than the first time someone relies on the boundary.
 
-## What v1 installs
+Use the complete sequence for a blank repository:
+
+```sh
+~/Friday/install.sh --check /path/to/your/repo
+~/Friday/install.sh /path/to/your/repo
+~/Friday/install.sh --check /path/to/your/repo
+```
+
+## MVP installed scope
 
 ```
-.agents/hooks/guard-collaborative-git.sh    the boundary itself
-.agents/hooks/check-collaborative-git.sh    its self-check
-.agents/docs/agent-rules.md                 how agents must work here
-.agents/docs/git-guideline/                 commit, PR evidence, issue tracker,
-                                            and the safety-boundary policy
-.agents/skills/git/                         commit, create-pr, push,
-                                            github-pr-verify
-.claude/settings.json                       PreToolUse wiring
-.claude/hooks/guard-collaborative-git.sh    symlink to the payload guard
+AGENTS.md                                    root pointer to shared instructions
+.agents/AGENTS.md                            shared policy router
+.agents/docs/agent-rules.md                  general tool-neutral rules
+.agents/docs/scratch-files.md                temporary artifact contract
+.agents/docs/git-guideline/                  commit, PR evidence, safety policy
+.agents/hooks/                               Claude Bash guard and self-check
+.agents/skills/git/                          commit, create-pr, push
+.gitignore                                   ignores docs/temp/
+.claude/settings.json                        Claude PreToolUse wiring
+.claude/hooks/guard-collaborative-git.sh     symlink to the payload guard
 ```
+
+This is an explicit static allowlist in `install.sh`, not automatic payload
+discovery. A new payload file fails inventory validation until it is reviewed
+and added to that list. There is no manifest or update engine in this MVP.
 
 ### The boundary
 
@@ -66,12 +79,13 @@ fails now rather than the first time someone relies on the boundary.
 - `find … -delete`, `gh repo delete`, `gh api -X DELETE`
 - any recursive `rm` (`-r`, `-R`, `--recursive`), parsed so that a path after
   `--` cannot smuggle one past
-- Codex `apply_patch` file deletions
 
 An agent that hits one is told to ask the user to run the command themselves.
-This is not advisory: the tool call never executes.
+For Claude Code Bash calls this is enforced by the installed adapter. The same
+policy is documented for other runtimes, but Codex and Gemini adapters are
+pending and are not claimed as enforcement.
 
-The four Git skills are the other half. `safety-boundary.md` treats invoking
+The three Git skills are the other half. `safety-boundary.md` treats invoking
 `$git-commit`, `$git-push` or `$git-create-pr` as the authorisation for that
 one action in that one turn — so committing and pushing stay deliberate acts
 rather than something an agent drifts into.
@@ -86,27 +100,32 @@ the guard with a stub that exits 0 are each detected.
 That last one is the case worth having. A guard that has been neutered looks
 exactly like a guard that is working, right up until it matters.
 
-## What v1 does not install
+## Deliberate MVP exclusions
 
-The per-project layer — `.agents/AGENTS.md` (the routing table agents actually
-read), the domain glossary, the issue-tracker choice, the avoid-terms list.
-Those need answers only the project owner has. **Until an `AGENTS.md` exists
-and is pointed at from the repo root, agents will not read any of the docs this
-kit installed** — though the hook still blocks, because it is wired
-independently of whether anything is read.
+Friday installs entrypoints and a shared router, but it does not install a
+domain glossary, issue tracker, Wayfinder map, prompt templates, judgment
+rubrics, MCP configuration, consumer-specific PR verification, or personal
+and vendor Skills. Consumer overlays may extend the shared baseline after
+review, provided their references close within that project.
 
-Also absent by choice: dispatch policy, prompt templates, judgment rubrics,
-scratch-file conventions, and MCP tooling. They exist and work in `pet_care`,
-but each still names that project's own files, and shipping them before they
-are decoupled would install the coupling into every new project.
+Friday also has no manifest, auto-discovery, automatic update/reconciliation,
+or force mode. Updates are a reviewed reconciliation: pin a Friday commit,
+run `--check`, inspect every conflict, and apply a deliberate project change.
 
 ## Design notes
 
 **Copy, not link.** Projects retain their own reviewed baseline and local
-overlays. Choose a reviewed Friday commit before installation and record its
-SHA in the project's adoption record; a mutable branch is not a reproducible
-version. `--check` detects content differences, not who authored them or whether
-an update is safe to merge. Keep unknown Skill provenance read-only.
+overlays. Pin a reviewed Friday commit before installation and record its SHA
+in the project's adoption record; a mutable branch is not a reproducible
+version. Git history provides rollback: revert the adoption commit or restore
+the selected pinned version in a reviewed change. `--check` detects content
+differences, not who authored them or whether an update is safe to merge.
+
+**Existing consumers reconcile manually.** `.gitignore` is an ordinary
+allowlisted payload file. A target with a different `.gitignore` conflicts
+before any write; review and reconcile that file manually, then run the
+check/install/check sequence again. Friday's blank-repository MVP intentionally
+does not parse or merge `.gitignore` marker blocks.
 
 Before promoting changes from a consumer such as pet-care, agree the shared
 file list and verify every transitive reference is shipped or explicitly
@@ -135,7 +154,6 @@ That paragraph records the original failure, not current pet-care behavior.
 ## Installer regression check
 
 Run `bash tests/install-smoke.sh /absolute/path/to/retained-test-output`.
-The check creates fresh fixture targets, uses an inert fixture self-check, and
-retains its evidence for review; it never installs into an existing project.
-It verifies installer behavior, not live runtime hook coverage. Cleanup is a
-separate, explicitly authorized operation.
+The check creates disposable Git fixtures, installs the repository's actual
+payload, and retains evidence for review. It never installs into an existing
+project. Cleanup is a separate, explicitly authorized operation.

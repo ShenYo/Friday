@@ -13,9 +13,10 @@ not commit, push, merge, edit reviewers, or change labels.
 
 ## Inspect
 
-1. Read `.agents/docs/git-guideline/issue-tracker.md`,
-   `.agents/docs/git-guideline/pr-evidence.md`, and
-   `.github/pull_request_template.md`.
+1. Read `.agents/docs/git-guideline/safety-boundary.md` and
+   `.agents/docs/git-guideline/pr-evidence.md`. If
+   `.github/pull_request_template.md` exists, read and follow it; otherwise
+   use the minimal body described below.
 2. Run `git branch --show-current`, `git status --short`, `git status -sb`,
    `git remote get-url origin`, and `gh repo view --json defaultBranchRef`.
 3. Stop if there is no current branch or `origin`, if the current branch is
@@ -29,8 +30,8 @@ not commit, push, merge, edit reviewers, or change labels.
 ## Draft and create
 
 1. Draft the title and body solely from the committed branch diff. Use the PR
-   template: a concise Summary, the optional Visual evidence section, and the
-   Definition of done checklist.
+   template when present. Otherwise include a concise `## Summary`, an
+   optional `## Visual evidence`, and a `## Verification` section.
 2. Mark a checklist item only when its evidence is available. Leave optional
    visual evidence blank when none is needed; do not write `N/A` or an
    explanation. Follow the visual-evidence SOP for any attachment and never

@@ -68,9 +68,7 @@ Use `type(scope): summary` (Conventional Commits). Allowed types for this repo:
 
 ## 6. Worked examples
 
-**Good — feat, with body.** Domain nouns come from the project's glossary
-(`CONTEXT.md`), and the terms its Avoid list rejects are wrong in a commit
-message too, not only in the UI:
+**Good — feat, with body:**
 
 ```
 feat(orders): gate the summary on confirmed line items

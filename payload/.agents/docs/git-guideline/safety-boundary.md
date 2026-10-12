@@ -14,9 +14,6 @@ bypass local hooks or use the user's credentials.
   a task being complete, or a user saying "finish".
 - A manual Git skill invocation authorizes only that skill's documented action
   in the current turn: `$git-commit`, `$git-push`, or `$git-create-pr`.
-- `$github-pr-verify` authorizes its documented Definition-of-Done update in the
-  current turn only: no suffix targets the current branch's open PR, while a
-  numeric suffix targets that exact PR.
 - If the action or target is ambiguous, stop and ask. Do not stage, stash,
   discard, delete, force, or select a target on the user's behalf.
 
@@ -41,20 +38,19 @@ When authorized, first inspect and report the resolved target, perform only
 the named action, then read back its result. Never add force flags, delete
 refspecs, or extra GitHub mutations unless the user named them too.
 
-## Agent-prohibited operations
+## Enforced Claude Bash adapter
 
-The following operations are permanently blocked for agents by the project
-Claude Code and Codex hooks. Even after a user asks, explain that they must
-run the command directly:
+Friday installs and checks a Claude Code `PreToolUse` Bash adapter. It blocks
+the following operations when they are issued through that adapter. Even after
+a user asks, explain that they must run the command directly:
 
 - force push, including `--force-with-lease`;
 - `git reset --hard`, `git clean`, `git branch -D`, `git stash clear/drop`,
   and `git worktree remove`;
 - recursive local deletion (`rm -r*` or `find -delete`);
-- deleting a file through Codex `apply_patch`;
 - removing or rewriting a Git remote URL;
 - deleting a GitHub repository or issuing a GitHub API `DELETE` request.
 
-The shared rule still applies to Gemini, editor tools, and any command form
-the hooks cannot recognize. Use the platform's command approval and
-least-privilege GitHub credentials when a hard security boundary is required.
+The same policy applies to every runtime, but Friday has not installed or
+verified Codex or Gemini adapters. Use each runtime's approval controls and
+least-privilege GitHub credentials where a hard security boundary is needed.

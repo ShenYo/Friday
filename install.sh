@@ -6,9 +6,9 @@
 # --check previews without writing. Installation adds missing files, preserves
 # identical files, and refuses conflicts before making any target changes.
 #
-# What it does NOT do: fill in the per-project layer (the AGENTS.md routing
-# table, the domain glossary, the issue-tracker choice). Those need answers
-# only the project owner has — see README.md.
+# The payload is an explicit, closed baseline. Consumer repositories may add
+# overlays after installation; future payload files are not installed until
+# they are deliberately added to the allowlist below.
 set -euo pipefail
 
 KIT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -37,14 +37,55 @@ fi
 
 # Check prerequisites before copying, not after a partially completed install.
 command -v jq >/dev/null || { echo "error: 'jq' is required." >&2; exit 1; }
-listing=$(find "$PAYLOAD" -type f)
-[ -n "$listing" ] || { echo "error: payload is empty." >&2; exit 1; }
-files=()
+# This intentionally does not discover payload files. Friday's MVP installs a
+# reviewed, closed baseline; adding a payload file without reconciling this
+# list fails before the target is touched.
+files=(
+  AGENTS.md
+  .agents/AGENTS.md
+  .agents/docs/agent-rules.md
+  .agents/docs/scratch-files.md
+  .agents/docs/git-guideline/git-commit.md
+  .agents/docs/git-guideline/pr-evidence.md
+  .agents/docs/git-guideline/safety-boundary.md
+  .agents/hooks/check-collaborative-git.sh
+  .agents/hooks/guard-collaborative-git.sh
+  .agents/skills/git/commit/SKILL.md
+  .agents/skills/git/create-pr/SKILL.md
+  .agents/skills/git/push/SKILL.md
+  .gitignore
+  .claude/settings.json
+)
+
+contains_file() {
+  local candidate=$1 rel
+  for rel in "${files[@]}"; do
+    [ "$rel" = "$candidate" ] && return 0
+  done
+  return 1
+}
+
+for rel in "${files[@]}"; do
+  src="$PAYLOAD/$rel"
+  [ -f "$src" ] && [ ! -L "$src" ] || {
+    echo "error: declared payload file is missing or unsafe: $rel" >&2
+    exit 1
+  }
+done
+
+actual_count=0
 while IFS= read -r src; do
-  # Payload filenames are repository-controlled; newline names are unsupported.
-  [[ "$src" = "$PAYLOAD/"* && -f "$src" && ! -L "$src" ]] || exit 1
-  files+=("${src#"$PAYLOAD"/}")
-done <<< "$listing"
+  rel=${src#"$PAYLOAD"/}
+  contains_file "$rel" || {
+    echo "error: undeclared payload file: $rel" >&2
+    exit 1
+  }
+  actual_count=$((actual_count + 1))
+done < <(find "$PAYLOAD" \( -type f -o -type l \) -print)
+[ "$actual_count" -eq "${#files[@]}" ] || {
+  echo "error: payload inventory does not match the install allowlist." >&2
+  exit 1
+}
 
 hook=.claude/hooks/guard-collaborative-git.sh
 hook_target=../../.agents/hooks/guard-collaborative-git.sh
@@ -128,5 +169,4 @@ else
 fi
 
 echo ""
-echo "Next: the per-project layer is not installed. See README.md — you need an"
-echo ".agents/AGENTS.md routing table before agents will read any of this."
+echo "Next: add consumer-specific overlays only after reviewing this shared baseline."

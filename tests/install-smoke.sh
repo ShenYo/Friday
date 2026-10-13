@@ -36,6 +36,17 @@ bash "$kit/install.sh" "$run/fresh" > "$run/install.log"
 for rel in $expected; do cmp "$kit/payload/$rel" "$run/fresh/$rel"; done
 [ "$(readlink "$run/fresh/.claude/hooks/guard-collaborative-git.sh")" = ../../.agents/hooks/guard-collaborative-git.sh ]
 (cd "$run/fresh" && bash .agents/hooks/check-collaborative-git.sh)
+mkdir -p "$run/fresh/docs/history"
+printf '%s\n' 'Historical note: .agents/docs/git-commit.md' > "$run/fresh/docs/history/legacy-agent-paths.md"
+(cd "$run/fresh" && bash .agents/hooks/check-collaborative-git.sh)
+cp "$run/fresh/.agents/AGENTS.md" "$run/active-router.before"
+printf '%s\n' 'Legacy route: .agents/docs/git-commit.md' >> "$run/fresh/.agents/AGENTS.md"
+if (cd "$run/fresh" && bash .agents/hooks/check-collaborative-git.sh) > "$run/active-router-failure.log" 2>&1; then
+  echo 'FAIL: active legacy reference was accepted' >&2; exit 1
+fi
+grep -q 'stale reference to .agents/docs/git-commit.md' "$run/active-router-failure.log"
+cp "$run/active-router.before" "$run/fresh/.agents/AGENTS.md"
+cmp "$run/active-router.before" "$run/fresh/.agents/AGENTS.md"
 project_check="$run/fresh/.agents/hooks/check-project-agent-integration.sh"
 printf '%s\n' '#!/usr/bin/env bash' 'set -euo pipefail' 'touch .project-check-ran' > "$project_check"
 chmod +x "$project_check"

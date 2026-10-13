@@ -36,37 +36,36 @@ for path in \
   test -f "$path" || fail "canonical document missing: $path"
 done
 
-# grep, not rg: rg is not installed everywhere, and on at least one machine it
-# exists only as an interactive shell function — so a script calling it fails
-# with "command not found". That matters here because the stale-reference check
-# below treats "found nothing" as success: a search tool that cannot run is
-# indistinguishable from a clean repository, and the check passes vacuously.
-# This is exactly how the check silently did nothing before.
-search_repo() {
-  # BSD grep stops parsing options at the first non-option argument, so every
-  # --exclude must precede the pattern and the path, and the pattern goes
-  # behind -e so a leading dash could never be read as an option.
-  grep -r --fixed-strings --quiet \
-    --exclude-dir=.git \
-    --exclude-dir=node_modules \
-    --exclude-dir=backup \
-    --exclude=check-collaborative-git.sh \
-    -e "$1" .
+# Search active instruction surfaces only. Historical product documentation,
+# evidence, and scratch artifacts may accurately record old paths without
+# directing an agent to use them.
+search_active_instructions() {
+  for path in \
+    AGENTS.md \
+    .agents/AGENTS.md \
+    .agents/docs/agent-rules.md \
+    .agents/docs/scratch-files.md \
+    .agents/docs/git-guideline \
+    .agents/skills \
+    .claude/settings.json; do
+    [ -e "$path" ] || continue
+    grep -r --fixed-strings --quiet -e "$1" "$path" && return 0
+  done
+  return 1
 }
 
-# Prove the search works before trusting any negative result from it. The guard
-# script certainly contains its own shebang, so a search for that must succeed;
-# if it does not, grep is broken or the working directory is wrong, and every
-# "clean" result below would be a lie.
-search_repo '#!/usr/bin/env bash' \
-  || fail "repository search is not working — its negative results cannot be trusted"
+# Prove the scoped search works before trusting any negative result. This text
+# is part of the installed active router, so success proves both grep and the
+# instruction-surface selection are usable.
+search_active_instructions 'Shared Agent Baseline' \
+  || fail "active instruction search is not working — its negative results cannot be trusted"
 
 for legacy_path in \
   .agents/docs/git-commit.md \
   .agents/docs/issue-tracker.md \
   .agents/docs/pr-evidence.md \
   .agents/docs/safety-boundary.md; do
-  if search_repo "$legacy_path"; then
+  if search_active_instructions "$legacy_path"; then
     fail "stale reference to $legacy_path"
   fi
 done

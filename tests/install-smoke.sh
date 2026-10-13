@@ -36,6 +36,21 @@ bash "$kit/install.sh" "$run/fresh" > "$run/install.log"
 for rel in $expected; do cmp "$kit/payload/$rel" "$run/fresh/$rel"; done
 [ "$(readlink "$run/fresh/.claude/hooks/guard-collaborative-git.sh")" = ../../.agents/hooks/guard-collaborative-git.sh ]
 (cd "$run/fresh" && bash .agents/hooks/check-collaborative-git.sh)
+project_check="$run/fresh/.agents/hooks/check-project-agent-integration.sh"
+printf '%s\n' '#!/usr/bin/env bash' 'set -euo pipefail' 'touch .project-check-ran' > "$project_check"
+chmod +x "$project_check"
+(cd "$run/fresh" && bash .agents/hooks/check-collaborative-git.sh)
+[ -f "$run/fresh/.project-check-ran" ]
+printf '%s\n' '#!/usr/bin/env bash' 'exit 1' > "$project_check"
+chmod +x "$project_check"
+if (cd "$run/fresh" && bash .agents/hooks/check-collaborative-git.sh) > "$run/project-check-failure.log" 2>&1; then
+  echo 'FAIL: failing project integration check was accepted' >&2; exit 1
+fi
+grep -q 'project integration check failed' "$run/project-check-failure.log"
+printf '%s\n' '#!/usr/bin/env bash' 'exit 0' > "$project_check"
+chmod +x "$project_check"
+(cd "$run/fresh" && bash .agents/hooks/check-collaborative-git.sh)
+unlink "$project_check"
 mkdir -p "$run/fresh/docs/temp/probe"
 touch "$run/fresh/docs/temp/probe/file.md"
 git -C "$run/fresh" check-ignore -v docs/temp/probe/file.md > "$run/ignore.log"

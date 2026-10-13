@@ -52,18 +52,38 @@ Use the complete sequence for a blank repository:
 
 ## MVP installed scope
 
+Friday has two installed classes. The managed core is exact: existing
+consumers compare these ten files byte-for-byte with their reviewed Friday
+version.
+
 ```
-AGENTS.md                                    root pointer to shared instructions
+.agents/docs/agent-rules.md
+.agents/docs/scratch-files.md
+.agents/docs/git-guideline/git-commit.md
+.agents/docs/git-guideline/pr-evidence.md
+.agents/docs/git-guideline/safety-boundary.md
+.agents/hooks/check-collaborative-git.sh
+.agents/hooks/guard-collaborative-git.sh
+.agents/skills/git/commit/SKILL.md
+.agents/skills/git/create-pr/SKILL.md
+.agents/skills/git/push/SKILL.md
+```
+
+The following are blank-repository seeds or runtime integration, not the
+managed core. Existing consumers reconcile them manually:
+
+```
+AGENTS.md                                    root pointer
 .agents/AGENTS.md                            shared policy router
-.agents/docs/agent-rules.md                  general tool-neutral rules
-.agents/docs/scratch-files.md                temporary artifact contract
-.agents/docs/git-guideline/                  commit, PR evidence, safety policy
-.agents/hooks/                               Claude Bash guard and self-check
-.agents/skills/git/                          commit, create-pr, push
-.gitignore                                   ignores docs/temp/
+.gitignore                                   temporary-file ignore rule
 .claude/settings.json                        Claude PreToolUse wiring
-.claude/hooks/guard-collaborative-git.sh     symlink to the payload guard
+.claude/hooks/guard-collaborative-git.sh     generated symlink to the guard
 ```
+
+Consumer overlays remain outside both lists. A consumer may add an executable
+regular-file `.agents/hooks/check-project-agent-integration.sh`; when present,
+the managed core checker runs it and propagates failures. Friday does not ship
+that extension.
 
 This is an explicit static allowlist in `install.sh`, not automatic payload
 discovery. A new payload file fails inventory validation until it is reviewed
@@ -121,11 +141,12 @@ version. Git history provides rollback: revert the adoption commit or restore
 the selected pinned version in a reviewed change. `--check` detects content
 differences, not who authored them or whether an update is safe to merge.
 
-**Existing consumers reconcile manually.** `.gitignore` is an ordinary
-allowlisted payload file. A target with a different `.gitignore` conflicts
-before any write; review and reconcile that file manually, then run the
-check/install/check sequence again. Friday's blank-repository MVP intentionally
-does not parse or merge `.gitignore` marker blocks.
+**Existing consumers reconcile manually.** The managed-core files are the
+only byte-identical comparison set. Seeds, runtime integration, and consumer
+overlays may differ by project and need manual reconciliation. `.gitignore` is
+an ordinary allowlisted seed: a target with different content conflicts before
+any write. Friday's blank-repository MVP intentionally does not parse or merge
+`.gitignore` marker blocks.
 
 Before promoting changes from a consumer such as pet-care, agree the shared
 file list and verify every transitive reference is shipped or explicitly

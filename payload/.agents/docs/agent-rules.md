@@ -18,3 +18,6 @@ compatible rule.
    [`git-guideline/safety-boundary.md`](git-guideline/safety-boundary.md) for
    Git and GitHub operations. Do not infer authorization for commits, remote
    writes, deletion, or discard actions.
+6. **Git state.** Before an edit batch and before a commit, inspect the
+   current branch, `HEAD`, and working-tree status. Repeat that inspection
+   after an external change, branch switch, or unexpected drift.

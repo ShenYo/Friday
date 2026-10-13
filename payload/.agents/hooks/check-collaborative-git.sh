@@ -79,4 +79,12 @@ if printf '%s' '{"tool_name":"Bash","tool_input":{"command":"git push --force"}}
   fail "force push payload was not blocked"
 fi
 
+project_check=".agents/hooks/check-project-agent-integration.sh"
+if [ -e "$project_check" ] || [ -L "$project_check" ]; then
+  test -f "$project_check" && test ! -L "$project_check" \
+    && test -x "$project_check" \
+    || fail "project integration check must be a regular executable file"
+  "$project_check" || fail "project integration check failed"
+fi
+
 echo "Agent workflow guardrails passed."

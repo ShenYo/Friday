@@ -24,8 +24,8 @@ perform any of the following:
 
 | Category | Examples |
 | --- | --- |
-| Remote write | `git push`; creating, editing, closing, or merging a PR; any GitHub issue or release mutation |
-| Local deletion or discard | deleting a non-protected file or directory; `git rm`; `git restore`; `git checkout -- <path>` |
+| Remote write | `git push`; creating, editing, closing, or merging a PR; any GitHub issue, release, or repository mutation |
+| Local deletion or discard | deleting any file or directory; `git rm`; `git restore`; `git checkout -- <path>` |
 | Local commit | `git commit` |
 
 Explicit authorization for the local-deletion row applies only to the allowed

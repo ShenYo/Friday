@@ -34,6 +34,8 @@ for rel in $expected; do grep -q "^NEW $rel$" "$run/preview.log"; done
 [ ! -e "$run/fresh/AGENTS.md" ] && [ ! -e "$run/fresh/.agents" ]
 bash "$kit/install.sh" "$run/fresh" > "$run/install.log"
 for rel in $expected; do cmp "$kit/payload/$rel" "$run/fresh/$rel"; done
+grep -Fqx '| Remote write | `git push`; creating, editing, closing, or merging a PR; any GitHub issue, release, or repository mutation |' "$run/fresh/.agents/docs/git-guideline/safety-boundary.md"
+grep -Fqx '| Local deletion or discard | deleting any file or directory; `git rm`; `git restore`; `git checkout -- <path>` |' "$run/fresh/.agents/docs/git-guideline/safety-boundary.md"
 [ "$(readlink "$run/fresh/.claude/hooks/guard-collaborative-git.sh")" = ../../.agents/hooks/guard-collaborative-git.sh ]
 cp "$run/fresh/AGENTS.md" "$run/consumer-seed.before"
 printf '%s\n' '# Agent Instructions' 'Consumer-specific routing lives here.' > "$run/fresh/AGENTS.md"

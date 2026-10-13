@@ -89,6 +89,52 @@ This is an explicit static allowlist in `install.sh`, not automatic payload
 discovery. A new payload file fails inventory validation until it is reviewed
 and added to that list. There is no manifest or update engine in this MVP.
 
+## Updating an existing consumer
+
+An existing consumer update is a reviewed reconciliation, not an installer
+upgrade. Pin a reviewed Friday commit first; use a placeholder rather than a
+mutable branch name:
+
+```sh
+PIN=<reviewed-Friday-SHA>
+FRIDAY=/path/to/Friday
+TARGET=/path/to/consumer
+
+test "$(git -C "$FRIDAY" rev-parse HEAD)" = "$PIN"
+bash "$FRIDAY/install.sh" --check "$TARGET"
+```
+
+Read every `CONFLICT` and reconcile it in a reviewed consumer change. Sync
+only the ten managed-core paths listed above, then prove each has the exact
+bytes of `"$FRIDAY/payload/$rel"`. Preserve consumer seeds, runtime
+integration, and overlays; do not copy a whole `.agents/` directory.
+
+After reconciliation, verify the consumer rather than treating the installer
+as an update engine:
+
+```sh
+(cd "$TARGET" && bash .agents/hooks/check-collaborative-git.sh)
+for rel in \
+  .agents/docs/agent-rules.md \
+  .agents/docs/scratch-files.md \
+  .agents/docs/git-guideline/git-commit.md \
+  .agents/docs/git-guideline/pr-evidence.md \
+  .agents/docs/git-guideline/safety-boundary.md \
+  .agents/hooks/check-collaborative-git.sh \
+  .agents/hooks/guard-collaborative-git.sh \
+  .agents/skills/git/commit/SKILL.md \
+  .agents/skills/git/create-pr/SKILL.md \
+  .agents/skills/git/push/SKILL.md; do
+  cmp "$TARGET/$rel" "$FRIDAY/payload/$rel"
+done
+git -C "$TARGET" diff --check
+```
+
+The checker runs a consumer extension when one exists. Review the resulting
+consumer diff and create one atomic consumer commit under that repository's
+own rules. Friday has no force mode, manifest, auto-sync, or automatic
+reconciliation.
+
 ### The boundary
 
 `guard-collaborative-git.sh` runs before every Bash tool call and refuses:
@@ -129,8 +175,8 @@ and vendor Skills. Consumer overlays may extend the shared baseline after
 review, provided their references close within that project.
 
 Friday also has no manifest, auto-discovery, automatic update/reconciliation,
-or force mode. Updates are a reviewed reconciliation: pin a Friday commit,
-run `--check`, inspect every conflict, and apply a deliberate project change.
+or force mode. The existing-consumer workflow above is a deliberate project
+change, not an automated refresh.
 
 ## Design notes
 

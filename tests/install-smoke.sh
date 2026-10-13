@@ -87,6 +87,16 @@ bash "$kit/install.sh" "$run/fresh" > "$run/reinstall.log"
 [ ! -x "$run/fresh/.agents/hooks/local.sh" ]
 [ "$(< "$run/fresh/local.txt")" = 'local overlay' ]
 
+target self-check-failure
+mkdir -p "$run/self-check-failure/.agents/hooks"
+printf '%s\n' '#!/usr/bin/env bash' 'exit 1' > "$run/self-check-failure/.agents/hooks/check-project-agent-integration.sh"
+chmod +x "$run/self-check-failure/.agents/hooks/check-project-agent-integration.sh"
+reject "$run/self-check-failure"
+grep -q 'project integration check failed' "$run/rejection.log"
+grep -q 'self-check FAILED' "$run/rejection.log"
+for rel in $expected; do cmp "$kit/payload/$rel" "$run/self-check-failure/$rel"; done
+[ "$(readlink "$run/self-check-failure/.claude/hooks/guard-collaborative-git.sh")" = ../../.agents/hooks/guard-collaborative-git.sh ]
+
 target conflict
 mkdir -p "$run/conflict/.claude"
 printf 'local settings\n' > "$run/conflict/.claude/settings.json"

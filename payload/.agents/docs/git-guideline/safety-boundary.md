@@ -28,6 +28,12 @@ perform any of the following:
 | Local deletion or discard | deleting a file or directory; `git rm`; `git restore`; `git checkout -- <path>`; dropping a stash; removing a worktree |
 | Local commit | `git commit` |
 
+Patch-based editing tools are a permanent exception to the local-deletion
+row: agents must not use them to delete files, even with explicit
+authorization. This includes Codex `apply_patch` deletion. Instead, identify
+the exact target and ask the user to delete it directly. Explicit authorization
+still governs other permitted local-deletion workflows in the table.
+
 Examples of sufficient authorization:
 
 - "Push `chore/post-s0-optimization` to `origin`."

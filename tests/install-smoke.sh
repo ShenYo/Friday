@@ -35,7 +35,11 @@ for rel in $expected; do grep -q "^NEW $rel$" "$run/preview.log"; done
 bash "$kit/install.sh" "$run/fresh" > "$run/install.log"
 for rel in $expected; do cmp "$kit/payload/$rel" "$run/fresh/$rel"; done
 [ "$(readlink "$run/fresh/.claude/hooks/guard-collaborative-git.sh")" = ../../.agents/hooks/guard-collaborative-git.sh ]
+cp "$run/fresh/AGENTS.md" "$run/consumer-seed.before"
+printf '%s\n' '# Agent Instructions' 'Consumer-specific routing lives here.' > "$run/fresh/AGENTS.md"
 (cd "$run/fresh" && bash .agents/hooks/check-collaborative-git.sh)
+cp "$run/consumer-seed.before" "$run/fresh/AGENTS.md"
+cmp "$run/consumer-seed.before" "$run/fresh/AGENTS.md"
 mkdir -p "$run/fresh/docs/history"
 printf '%s\n' 'Historical note: .agents/docs/git-commit.md' > "$run/fresh/docs/history/legacy-agent-paths.md"
 (cd "$run/fresh" && bash .agents/hooks/check-collaborative-git.sh)

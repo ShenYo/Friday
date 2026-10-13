@@ -55,9 +55,10 @@ search_active_instructions() {
 }
 
 # Prove the scoped search works before trusting any negative result. This text
-# is part of the installed active router, so success proves both grep and the
-# instruction-surface selection are usable.
-search_active_instructions 'Shared Agent Baseline' \
+# is part of the managed core's active safety instructions, so success proves
+# both grep and the instruction-surface selection are usable without relying
+# on a consumer-specific seed heading.
+search_active_instructions 'Collaborative Git Safety Boundary' \
   || fail "active instruction search is not working — its negative results cannot be trusted"
 
 for legacy_path in \

@@ -24,15 +24,12 @@ perform any of the following:
 
 | Category | Examples |
 | --- | --- |
-| Remote write | `git push`; changing an `origin` URL; creating, editing, closing, or merging a PR; any GitHub issue, release, or repository mutation |
-| Local deletion or discard | deleting a file or directory; `git rm`; `git restore`; `git checkout -- <path>`; dropping a stash; removing a worktree |
+| Remote write | `git push`; creating, editing, closing, or merging a PR; any GitHub issue or release mutation |
+| Local deletion or discard | deleting a non-protected file or directory; `git rm`; `git restore`; `git checkout -- <path>` |
 | Local commit | `git commit` |
 
-Patch-based editing tools are a permanent exception to the local-deletion
-row: agents must not use them to delete files, even with explicit
-authorization. This includes Codex `apply_patch` deletion. Instead, identify
-the exact target and ask the user to delete it directly. Explicit authorization
-still governs other permitted local-deletion workflows in the table.
+Explicit authorization for the local-deletion row applies only to the allowed
+workflows listed there. It never overrides the permanent prohibitions below.
 
 Examples of sufficient authorization:
 
@@ -44,19 +41,28 @@ When authorized, first inspect and report the resolved target, perform only
 the named action, then read back its result. Never add force flags, delete
 refspecs, or extra GitHub mutations unless the user named them too.
 
-## Enforced Claude Bash adapter
+## Permanent agent-prohibited operations
 
-Friday installs and checks a Claude Code `PreToolUse` Bash adapter. It blocks
-the following operations when they are issued through that adapter. Even after
-a user asks, explain that they must run the command directly:
+The following operations are prohibited for every agent in every runtime,
+independent of hooks or other enforcement. An explicit user request does not
+authorize an agent to perform them. Identify the exact target and command, then
+ask the user to run it directly:
 
 - force push, including `--force-with-lease`;
 - `git reset --hard`, `git clean`, `git branch -D`, `git stash clear/drop`,
   and `git worktree remove`;
 - recursive local deletion (`rm -r*` or `find -delete`);
+- patch-based file deletion, including Codex `apply_patch` deletion;
 - removing or rewriting a Git remote URL;
 - deleting a GitHub repository or issuing a GitHub API `DELETE` request.
 
-The same policy applies to every runtime, but Friday has not installed or
-verified Codex or Gemini adapters. Use each runtime's approval controls and
-least-privilege GitHub credentials where a hard security boundary is needed.
+## Enforced Claude Bash adapter
+
+Friday installs and checks a Claude Code `PreToolUse` Bash adapter. It blocks
+the shell-command subset of the permanent prohibitions when issued through
+that adapter. It does not prove enforcement for patch or edit routes, other
+Claude tools, or any other runtime.
+
+Codex and Gemini adapters are pending. The permanent policy still applies to
+them; use each runtime's approval controls and least-privilege GitHub
+credentials where a hard security boundary is needed.

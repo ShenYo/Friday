@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "^(Bash|apply_patch)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$(git rev-parse --show-toplevel)/.codex/hooks/guard-collaborative-git.sh\"",
+            "timeout": 30,
+            "statusMessage": "Checking collaborative Git safety boundary"
+          }
+        ]
+      }
+    ]
+  }
+}

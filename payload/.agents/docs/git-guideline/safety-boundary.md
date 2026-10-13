@@ -56,13 +56,18 @@ ask the user to run it directly:
 - removing or rewriting a Git remote URL;
 - deleting a GitHub repository or issuing a GitHub API `DELETE` request.
 
-## Enforced Claude Bash adapter
+## Runtime guardrails and verification limits
 
-Friday installs and checks a Claude Code `PreToolUse` Bash adapter. It blocks
-the shell-command subset of the permanent prohibitions when issued through
-that adapter. It does not prove enforcement for patch or edit routes, other
-Claude tools, or any other runtime.
+Friday installs and checks a Claude Code `PreToolUse` Bash adapter and a Codex
+`PreToolUse` adapter for `Bash` and `apply_patch`. Both invoke the shared
+guard; the checker validates their static wiring and directly exercises safe
+Bash and `apply_patch` allow/block payloads.
 
-Codex and Gemini adapters are pending. The permanent policy still applies to
-them; use each runtime's approval controls and least-privilege GitHub
-credentials where a hard security boundary is needed.
+The Codex hook is a non-managed project runtime seed, not managed-core content.
+Review and trust its pinned hash before relying on it. Native callback delivery,
+exit-code consumption, ordering with other handlers, and fail-closed behavior
+remain unverified. These hooks are guardrails, not a security boundary.
+
+Gemini remains pending. The permanent policy still applies to every runtime;
+use runtime approval controls and least-privilege GitHub credentials where a
+hard security boundary is needed.

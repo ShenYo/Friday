@@ -6,12 +6,13 @@
 
 Friday bootstraps a blank Git repository with a small, reviewed agent baseline.
 It copies project-scoped policy, Git skills, a shared temporary-file contract,
-and one verified Claude Code Bash guard adapter. Personal or vendor skills
-remain outside this repository's contract.
+and Claude/Codex guard wiring. Personal or vendor skills remain outside this
+repository's contract.
 
-Friday is deliberately not a universal runtime manager. It does not claim
-Codex or Gemini hook enforcement, discover arbitrary skills, or install a
-consumer's domain workflow.
+Friday is deliberately not a universal runtime manager. It checks static Codex
+wiring, not native callback behavior or fail-closed enforcement; Gemini is
+pending. It does not discover arbitrary skills or install a consumer's domain
+workflow.
 
 ## Install
 
@@ -39,8 +40,8 @@ not a transaction: a later I/O or self-check failure can leave new files in
 place, and concurrent target changes are outside this guarantee. Inspect the
 result before retrying; never run concurrent installers against one target.
 
-The install ends by running the payload's own self-check, so a broken Claude
-adapter fails now rather than the first time someone relies on the boundary.
+The install ends by running the payload's own self-check, so broken runtime
+wiring fails now rather than the first time someone relies on the boundary.
 
 Use the complete sequence for a blank repository:
 
@@ -78,7 +79,13 @@ AGENTS.md                                    root pointer
 .gitignore                                   temporary-file ignore rule
 .claude/settings.json                        Claude PreToolUse wiring
 .claude/hooks/guard-collaborative-git.sh     generated symlink to the guard
+.codex/hooks.json                            Codex PreToolUse runtime seed
+.codex/hooks/guard-collaborative-git.sh      generated symlink to the guard
 ```
+
+The Codex seed shows `Checking collaborative Git safety boundary` while its
+shared guard runs. The core checker permits consumer handlers alongside that
+single shared handler, but requires the shared handler exactly once.
 
 Consumer overlays remain outside both lists. A consumer may add an executable
 regular-file `.agents/hooks/check-project-agent-integration.sh`; when present,
@@ -147,9 +154,11 @@ reconciliation.
   `--` cannot smuggle one past
 
 An agent that hits one is told to ask the user to run the command themselves.
-For Claude Code Bash calls this is enforced by the installed adapter. The same
-policy is documented for other runtimes, but Codex and Gemini adapters are
-pending and are not claimed as enforcement.
+Claude Code Bash and Codex Bash/`apply_patch` receive static project wiring to
+the shared guard. Review the trusted project hook definition and pinned Friday
+hash before relying on Codex; callback delivery, exit handling, handler order,
+and fail-closed behavior are not verified. Gemini remains pending. This setup
+is a guardrail, not a security boundary.
 
 The three Git skills are the other half. `safety-boundary.md` treats invoking
 `$git-commit`, `$git-push` or `$git-create-pr` as the authorisation for that
@@ -158,10 +167,10 @@ rather than something an agent drifts into.
 
 ### Why the self-check matters
 
-`check-collaborative-git.sh` verifies the wiring *and* feeds the guard a real
-force-push payload, failing if it is not blocked. Verified against a scratch
-repository: removing `settings.json`, removing the hook symlink, and replacing
-the guard with a stub that exits 0 are each detected.
+`check-collaborative-git.sh` verifies the runtime wiring *and* feeds the guard
+safe Bash and `apply_patch` payloads, failing if a prohibited payload is not
+blocked. The Codex seed uses project-local hooks supported on macOS/Linux;
+Windows behavior is unverified.
 
 That last one is the case worth having. A guard that has been neutered looks
 exactly like a guard that is working, right up until it matters.

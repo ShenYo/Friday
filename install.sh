@@ -55,6 +55,7 @@ files=(
   .agents/skills/git/push/SKILL.md
   .gitignore
   .claude/settings.json
+  .codex/hooks.json
 )
 
 contains_file() {
@@ -87,11 +88,13 @@ done < <(find "$PAYLOAD" \( -type f -o -type l \) -print)
   exit 1
 }
 
-hook=.claude/hooks/guard-collaborative-git.sh
-hook_target=../../.agents/hooks/guard-collaborative-git.sh
+links=(
+  '.claude/hooks/guard-collaborative-git.sh:../../.agents/hooks/guard-collaborative-git.sh'
+  '.codex/hooks/guard-collaborative-git.sh:../../.agents/hooks/guard-collaborative-git.sh'
+)
 conflicts=0
 check_destination() {
-  local rel=$1 kind=$2 current=$TARGET part dest
+  local rel=$1 kind=$2 link_target=${3:-} current=$TARGET part dest
   local -a components
   IFS=/ read -r -a components <<< "$rel"
   for ((i=0; i<${#components[@]}-1; i++)); do
@@ -104,7 +107,7 @@ check_destination() {
     fi
   done
   dest="$TARGET/$rel"
-  if [ "$kind" = link ] && [ -L "$dest" ] && [ "$(readlink "$dest")" = "$hook_target" ]; then
+  if [ "$kind" = link ] && [ -L "$dest" ] && [ "$(readlink "$dest")" = "$link_target" ]; then
     echo "IDENTICAL $rel"
   elif [ -L "$dest" ] || { [ -e "$dest" ] && [ ! -f "$dest" ]; }; then
     echo "CONFLICT $rel (unexpected file type or symlink)"
@@ -122,7 +125,15 @@ check_destination() {
 }
 
 for rel in "${files[@]}"; do check_destination "$rel" file; done
-check_destination "$hook" link
+for link in "${links[@]}"; do
+  rel=${link%%:*}
+  check_destination "$rel" link "${link#*:}"
+done
+if [ -f "$TARGET/.codex/config.toml" ] \
+  && grep -Eq '^[[:space:]]*\[\[hooks\.' "$TARGET/.codex/config.toml"; then
+  echo "CONFLICT .codex/config.toml (inline hooks duplicate hooks.json)"
+  conflicts=1
+fi
 if [ "$conflicts" -ne 0 ]; then
   echo "error: resolve conflicts in a reviewed change; nothing was written." >&2
   exit 1
@@ -147,12 +158,15 @@ for rel in "${files[@]}"; do
   case "$rel" in .agents/hooks/*.sh) chmod +x "$TARGET/$rel" ;; esac
 done
 
-# --- Wire the Claude hook ---------------------------------------------------
-# .claude/hooks/ must hold a link, not a copy: settings.json points at that
-# path, and a copy would silently go stale when the payload guard changes.
-mkdir -p "$TARGET/.claude/hooks"
-if [ ! -L "$TARGET/$hook" ]; then ln -s "$hook_target" "$TARGET/$hook"; fi
-echo "  linked .claude/hooks/guard-collaborative-git.sh"
+# --- Wire runtime hooks -----------------------------------------------------
+# Runtime hook paths must hold links, not copies, so both adapters share the
+# reviewed guard implementation.
+for link in "${links[@]}"; do
+  rel=${link%%:*}
+  mkdir -p "$(dirname "$TARGET/$rel")"
+  if [ ! -L "$TARGET/$rel" ]; then ln -s "${link#*:}" "$TARGET/$rel"; fi
+  echo "  linked $rel"
+done
 
 # --- Verify -----------------------------------------------------------------
 # The payload ships its own check, which feeds the guard a force-push payload
@@ -162,7 +176,7 @@ echo ""
 # jq only: the self-check parses settings.json with it. It deliberately does
 # not need ripgrep — see the note in check-collaborative-git.sh.
 if (cd "$TARGET" && bash .agents/hooks/check-collaborative-git.sh); then
-  echo "self-check passed: the safety boundary is installed and blocking."
+  echo "self-check passed: static declared hook wiring and direct guard probes passed; native Codex callback delivery, exit handling, handler order, and fail-closed behavior remain unverified."
 else
   echo "self-check FAILED — the boundary is not trustworthy in $TARGET." >&2
   exit 1

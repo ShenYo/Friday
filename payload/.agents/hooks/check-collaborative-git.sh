@@ -13,8 +13,6 @@ fail() {
 guard=".agents/hooks/guard-collaborative-git.sh"
 test -x "$guard" || fail "shared guard is not executable"
 
-# Codex's active hook configuration is user-scoped in the current runtime;
-# this repository can verify the shared guard, but cannot enforce that wiring.
 test -L .claude/hooks/guard-collaborative-git.sh || fail "Claude guard link missing"
 test -f .claude/settings.json || fail "Claude settings missing"
 jq -e '
@@ -25,6 +23,31 @@ jq -e '
     )
   )
 ' .claude/settings.json >/dev/null || fail "Claude PreToolUse guard is not wired"
+
+codex_hook=.codex/hooks/guard-collaborative-git.sh
+test -L "$codex_hook" || fail "Codex guard link missing"
+[ "$(readlink "$codex_hook")" = ../../.agents/hooks/guard-collaborative-git.sh ] \
+  || fail "Codex guard link target is wrong"
+test -f .codex/hooks.json || fail "Codex hooks configuration missing"
+jq -e '
+  def generic:
+    type == "object" and
+    .type == "command" and
+    .command == "\"$(git rev-parse --show-toplevel)/.codex/hooks/guard-collaborative-git.sh\"" and
+    .timeout == 30 and
+    .statusMessage == "Checking collaborative Git safety boundary";
+  type == "object" and
+  (.hooks | type == "object") and
+  (.hooks.PreToolUse | type == "array") and
+  ([.hooks.PreToolUse[] | select(type == "object" and .matcher == "^(Bash|apply_patch)$")] | length == 1) and
+  (.hooks.PreToolUse[] | select(type == "object" and .matcher == "^(Bash|apply_patch)$") | (.hooks | type == "array")) and
+  ([.hooks.PreToolUse[] | select(type == "object" and .matcher == "^(Bash|apply_patch)$") | .hooks[] | select(generic)] | length == 1) and
+  ([.hooks.PreToolUse[] | select(type == "object" and (.hooks | type == "array")) | .hooks[] | select(generic)] | length == 1)
+' .codex/hooks.json >/dev/null || fail "Codex PreToolUse guard is not wired"
+if [ -f .codex/config.toml ] \
+  && grep -Eq '^[[:space:]]*\[\[hooks\.' .codex/config.toml; then
+  fail "Codex config contains inline hooks"
+fi
 
 for path in \
   AGENTS.md \
@@ -47,7 +70,8 @@ search_active_instructions() {
     .agents/docs/scratch-files.md \
     .agents/docs/git-guideline \
     .agents/skills \
-    .claude/settings.json; do
+    .claude/settings.json \
+    .codex/hooks.json; do
     [ -e "$path" ] || continue
     grep -r --fixed-strings --quiet -e "$1" "$path" && return 0
   done
@@ -77,6 +101,14 @@ printf '%s' '{"tool_name":"Bash","tool_input":{"command":"git status"}}' \
 if printf '%s' '{"tool_name":"Bash","tool_input":{"command":"git push --force"}}' \
   | "$guard" >/dev/null 2>&1; then
   fail "force push payload was not blocked"
+fi
+
+printf '%s' '{"tool_name":"apply_patch","tool_input":{"command":"*** Update File: README.md"}}' \
+  | "$guard" >/dev/null
+
+if printf '%s' '{"tool_name":"apply_patch","tool_input":{"command":"*** Delete File: README.md"}}' \
+  | "$guard" >/dev/null 2>&1; then
+  fail "apply_patch deletion payload was not blocked"
 fi
 
 project_check=".agents/hooks/check-project-agent-integration.sh"

@@ -20,7 +20,8 @@ AGENTS.md
 .agents/skills/git/create-pr/SKILL.md
 .agents/skills/git/push/SKILL.md
 .gitignore
-.claude/settings.json'
+.claude/settings.json
+.codex/hooks.json'
 target() { git init -q "$run/$1"; }
 reject() {
   if bash "$kit/install.sh" "$@" > "$run/rejection.log" 2>&1; then
@@ -37,6 +38,28 @@ for rel in $expected; do cmp "$kit/payload/$rel" "$run/fresh/$rel"; done
 grep -Fqx '| Remote write | `git push`; creating, editing, closing, or merging a PR; any GitHub issue, release, or repository mutation |' "$run/fresh/.agents/docs/git-guideline/safety-boundary.md"
 grep -Fqx '| Local deletion or discard | deleting any file or directory; `git rm`; `git restore`; `git checkout -- <path>` |' "$run/fresh/.agents/docs/git-guideline/safety-boundary.md"
 [ "$(readlink "$run/fresh/.claude/hooks/guard-collaborative-git.sh")" = ../../.agents/hooks/guard-collaborative-git.sh ]
+[ -L "$run/fresh/.codex/hooks/guard-collaborative-git.sh" ]
+[ "$(readlink "$run/fresh/.codex/hooks/guard-collaborative-git.sh")" = ../../.agents/hooks/guard-collaborative-git.sh ]
+jq -e '
+  type == "object" and
+  (keys | sort == ["hooks"]) and
+  (.hooks | type == "object" and (keys | sort == ["PreToolUse"])) and
+  (.hooks.PreToolUse | type == "array" and length == 1) and
+  (.hooks.PreToolUse[0] |
+    type == "object" and
+    (keys | sort == ["hooks", "matcher"]) and
+    .matcher == "^(Bash|apply_patch)$" and
+    (.hooks | type == "array" and length == 1) and
+    (.hooks[0] |
+      type == "object" and
+      (keys | sort == ["command", "statusMessage", "timeout", "type"]) and
+      .type == "command" and
+      .command == "\"$(git rev-parse --show-toplevel)/.codex/hooks/guard-collaborative-git.sh\"" and
+      .timeout == 30 and
+      .statusMessage == "Checking collaborative Git safety boundary"
+    )
+  )
+' "$run/fresh/.codex/hooks.json" >/dev/null
 cp "$run/fresh/AGENTS.md" "$run/consumer-seed.before"
 printf '%s\n' '# Agent Instructions' 'Consumer-specific routing lives here.' > "$run/fresh/AGENTS.md"
 (cd "$run/fresh" && bash .agents/hooks/check-collaborative-git.sh)
@@ -45,6 +68,20 @@ cmp "$run/consumer-seed.before" "$run/fresh/AGENTS.md"
 mkdir -p "$run/fresh/docs/history"
 printf '%s\n' 'Historical note: .agents/docs/git-commit.md' > "$run/fresh/docs/history/legacy-agent-paths.md"
 (cd "$run/fresh" && bash .agents/hooks/check-collaborative-git.sh)
+cp "$run/fresh/.codex/hooks.json" "$run/codex-hooks.before"
+jq '.hooks.PreToolUse[0].hooks += [{"type":"command","command":"\"$(git rev-parse --show-toplevel)/.agents/hooks/guard-protected-paths.sh\"","timeout":30,"statusMessage":"Checking protected paths"}]' \
+  "$run/fresh/.codex/hooks.json" > "$run/fresh/.codex/hooks.json.mutated"
+mv "$run/fresh/.codex/hooks.json.mutated" "$run/fresh/.codex/hooks.json"
+(cd "$run/fresh" && bash .agents/hooks/check-collaborative-git.sh)
+jq '.hooks.PreToolUse[0].hooks += [.hooks.PreToolUse[0].hooks[0]]' \
+  "$run/fresh/.codex/hooks.json" > "$run/fresh/.codex/hooks.json.mutated"
+mv "$run/fresh/.codex/hooks.json.mutated" "$run/fresh/.codex/hooks.json"
+if (cd "$run/fresh" && bash .agents/hooks/check-collaborative-git.sh) > "$run/codex-hooks-failure.log" 2>&1; then
+  echo 'FAIL: duplicate Codex guard handler was accepted' >&2; exit 1
+fi
+grep -q 'Codex PreToolUse guard is not wired' "$run/codex-hooks-failure.log"
+cp "$run/codex-hooks.before" "$run/fresh/.codex/hooks.json"
+cmp "$run/codex-hooks.before" "$run/fresh/.codex/hooks.json"
 cp "$run/fresh/.agents/AGENTS.md" "$run/active-router.before"
 printf '%s\n' 'Legacy route: .agents/docs/git-commit.md' >> "$run/fresh/.agents/AGENTS.md"
 if (cd "$run/fresh" && bash .agents/hooks/check-collaborative-git.sh) > "$run/active-router-failure.log" 2>&1; then
@@ -72,8 +109,8 @@ mkdir -p "$run/fresh/docs/temp/probe"
 touch "$run/fresh/docs/temp/probe/file.md"
 git -C "$run/fresh" check-ignore -v docs/temp/probe/file.md > "$run/ignore.log"
 grep -q 'docs/temp/' "$run/ignore.log"
-actual=$(cd "$run/fresh" && { printf '%s\n' AGENTS.md .gitignore; find .agents .claude \( -type f -o -type l \) -print; } | sort)
-expected_installed=$(printf '%s\n' $expected .claude/hooks/guard-collaborative-git.sh | sort)
+actual=$(cd "$run/fresh" && { printf '%s\n' AGENTS.md .gitignore; find .agents .claude .codex \( -type f -o -type l \) -print; } | sort)
+expected_installed=$(printf '%s\n' $expected .claude/hooks/guard-collaborative-git.sh .codex/hooks/guard-collaborative-git.sh | sort)
 [ "$actual" = "$expected_installed" ]
 printf 'local overlay\n' > "$run/fresh/local.txt"
 printf '# local hook\n' > "$run/fresh/.agents/hooks/local.sh"
@@ -105,6 +142,17 @@ grep -q '^CONFLICT .claude/settings.json ' "$run/rejection.log"
 reject "$run/conflict"
 [ ! -e "$run/conflict/AGENTS.md" ] && [ ! -e "$run/conflict/.agents" ]
 [ "$(cat "$run/conflict/.claude/settings.json")" = 'local settings' ]
+
+target codex-config-conflict
+mkdir -p "$run/codex-config-conflict/.codex"
+printf '%s\n' '[[hooks.PreToolUse]]' > "$run/codex-config-conflict/.codex/config.toml"
+reject --check "$run/codex-config-conflict"
+grep -q '^CONFLICT .codex/config.toml ' "$run/rejection.log"
+reject "$run/codex-config-conflict"
+[ ! -e "$run/codex-config-conflict/AGENTS.md" ] && [ ! -e "$run/codex-config-conflict/.agents" ]
+[ ! -e "$run/codex-config-conflict/.codex/hooks.json" ]
+[ ! -e "$run/codex-config-conflict/.codex/hooks/guard-collaborative-git.sh" ]
+[ "$(cat "$run/codex-config-conflict/.codex/config.toml")" = '[[hooks.PreToolUse]]' ]
 
 target gitignore-conflict
 printf 'local ignore rule\n' > "$run/gitignore-conflict/.gitignore"

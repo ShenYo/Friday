@@ -4,22 +4,55 @@
 > 先以 `--check` 預覽，再安裝封閉的 allowlist。衝突絕不覆寫，現有專案需經
 > 人工審查後調和。
 
-Friday bootstraps a blank Git repository with a small, reviewed agent baseline.
-It copies project-scoped policy, Git skills, a shared temporary-file contract,
-and Claude/Codex guard wiring. Personal or vendor skills remain outside this
-repository's contract.
+Friday is a portable, reviewed shared project baseline. It copies
+project-scoped policy, Git skills, a shared temporary-file contract, and
+Claude/Codex guard wiring into a consumer repository without depending on a
+developer's personal home directory, personal skills, or vendor workflow.
+
+It addresses three constraints at once: a closed allowlist makes bootstrap
+conflict-safe, copied content keeps the baseline portable and reviewable, and
+existing-consumer changes stay behind a reviewed reconciliation boundary rather
+than becoming an automatic update. Jarvis is a personal layer only; do not
+place Jarvis skills, settings, or other personal-home dependencies in Friday's
+project contract.
+
+## When to use Friday
+
+| Scenario | Friday's role | What to do |
+| --- | --- | --- |
+| Blank Git repository | Bootstrap the reviewed baseline | Preview, install, then preview again. |
+| Existing consumer | Reveal differences safely | Pin Friday, run `--check`, and reconcile every conflict in a reviewed consumer change. |
+| Personal skills or preferences | Keep personal scope personal | Use Jarvis; do not promote it into Friday. |
+| Project-specific policy or checks | Preserve consumer ownership | Add a consumer overlay after reviewing the shared baseline. |
+
+## Architecture
+
+```text
+Friday payload
+     |
+     v
+install.sh (closed allowlist + preflight)
+     |
+     v
+copied consumer baseline + runtime seed + consumer overlay
+```
+
+Payload content is copied into the consumer, not linked to the Friday checkout.
+The two generated runtime hook links point to the consumer's copied shared
+guard, so the adapters share one reviewed guard implementation without creating
+a dependency on Friday's filesystem.
 
 Friday is deliberately not a universal runtime manager. It checks static Codex
-wiring, not native callback behavior or fail-closed enforcement; Gemini is
-pending. It does not discover arbitrary skills or install a consumer's domain
-workflow.
+wiring, not native callback behavior, exit handling, handler order, or
+fail-closed enforcement; Gemini is pending. It does not discover arbitrary
+skills or install a consumer's domain workflow.
 
-## Install
+## Quick start
 
 ```sh
-git clone git@github.com:ShenYo/Friday.git ~/Friday
-~/Friday/install.sh --check /path/to/your/repo
-~/Friday/install.sh /path/to/your/repo      # defaults to the current directory
+git clone git@github.com:ShenYo/Friday.git /path/to/Friday
+/path/to/Friday/install.sh --check /path/to/your/repo
+/path/to/Friday/install.sh /path/to/your/repo
 ```
 
 Requires `jq` and a blank or compatible target with a `.git/` directory
@@ -28,7 +61,8 @@ an `.agents/` subdirectory. `--check` reports `NEW`, `IDENTICAL`, or
 `CONFLICT`, exits nonzero on conflicts, and does not copy, chmod, create links,
 or run the self-check. Both modes validate prerequisites and every destination
 before any target write. Unexpected destination symlinks, including ancestor
-symlinks, conflict; the exact expected Claude hook link is accepted.
+symlinks, conflict; only the two exact expected Claude and Codex hook links
+are accepted.
 
 Installation fills missing files and preserves identical content. It refuses
 different content rather than overwriting it, including `.claude/settings.json`.
@@ -46,16 +80,15 @@ wiring fails now rather than the first time someone relies on the boundary.
 Use the complete sequence for a blank repository:
 
 ```sh
-~/Friday/install.sh --check /path/to/your/repo
-~/Friday/install.sh /path/to/your/repo
-~/Friday/install.sh --check /path/to/your/repo
+/path/to/Friday/install.sh --check /path/to/your/repo
+/path/to/Friday/install.sh /path/to/your/repo
+/path/to/Friday/install.sh --check /path/to/your/repo
 ```
 
-## MVP installed scope
+## Ownership: managed core, seeds, and overlays
 
-Friday has two installed classes. The managed core is exact: existing
-consumers compare these ten files byte-for-byte with their reviewed Friday
-version.
+The managed core is exact: existing consumers compare these ten files
+byte-for-byte with their reviewed Friday version.
 
 ```
 .agents/docs/agent-rules.md
@@ -108,6 +141,7 @@ FRIDAY=/path/to/Friday
 TARGET=/path/to/consumer
 
 test "$(git -C "$FRIDAY" rev-parse HEAD)" = "$PIN"
+test -z "$(git -C "$FRIDAY" status --porcelain)"
 bash "$FRIDAY/install.sh" --check "$TARGET"
 ```
 
@@ -142,7 +176,14 @@ consumer diff and create one atomic consumer commit under that repository's
 own rules. Friday has no force mode, manifest, auto-sync, or automatic
 reconciliation.
 
-### The boundary
+### Dated adoption evidence
+
+As of 2026-10-13, `pet_care` and Finance were verified as 10/10 exact matches
+for the managed core at Friday `b44e1ff`. This describes only the managed-core
+comparison; it does not claim whole-repository equality or native runtime
+enforcement in either consumer.
+
+## Safety model and limits
 
 `guard-collaborative-git.sh` runs before every Bash tool call and refuses:
 
@@ -175,7 +216,7 @@ Windows behavior is unverified.
 That last one is the case worth having. A guard that has been neutered looks
 exactly like a guard that is working, right up until it matters.
 
-## Deliberate MVP exclusions
+## Non-goals and recovery
 
 Friday installs entrypoints and a shared router, but it does not install a
 domain glossary, issue tracker, Wayfinder map, prompt templates, judgment
@@ -186,6 +227,13 @@ review, provided their references close within that project.
 Friday also has no manifest, auto-discovery, automatic update/reconciliation,
 or force mode. The existing-consumer workflow above is a deliberate project
 change, not an automated refresh.
+
+If preview finds a conflict, reconcile it rather than overwriting it. If an
+install fails after preflight, inspect the partially created target before
+retrying. Git history is the recovery mechanism: revert the reviewed consumer
+adoption commit, or restore the selected pinned version in a new reviewed
+consumer change. `--check` reports content and path-type differences; it does
+not decide whether a merge is safe.
 
 ## Design notes
 
@@ -227,7 +275,7 @@ string that is definitely present before trusting any negative result.
 
 That paragraph records the original failure, not current pet-care behavior.
 
-## Installer regression check
+## Verification and tests
 
 Run `bash tests/install-smoke.sh /absolute/path/to/retained-test-output`.
 The check creates disposable Git fixtures, installs the repository's actual

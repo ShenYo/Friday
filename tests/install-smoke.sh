@@ -54,12 +54,18 @@ jq -e '
       type == "object" and
       (keys | sort == ["command", "statusMessage", "timeout", "type"]) and
       .type == "command" and
-      .command == "\"$(git rev-parse --show-toplevel)/.codex/hooks/guard-collaborative-git.sh\"" and
+      (.command | startswith("PATH=\"/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin")) and
+      (.command | contains("command -v \"$required\"")) and
+      (.command | contains("repo_root=\"$(git rev-parse --show-toplevel 2>/dev/null)\"")) and
+      (.command | contains("guard_path=\"$repo_root/.codex/hooks/guard-collaborative-git.sh\"")) and
+      (.command | contains("[ ! -f \"$guard_path\" ] || [ ! -r \"$guard_path\" ]")) and
+      (.command | contains("exec bash \"$guard_path\"")) and
       .timeout == 30 and
       .statusMessage == "Checking collaborative Git safety boundary"
     )
   )
 ' "$run/fresh/.codex/hooks.json" >/dev/null
+! grep -Fq 'guard-protected-paths' "$kit/payload/.codex/hooks.json"
 cp "$run/fresh/AGENTS.md" "$run/consumer-seed.before"
 printf '%s\n' '# Agent Instructions' 'Consumer-specific routing lives here.' > "$run/fresh/AGENTS.md"
 (cd "$run/fresh" && bash .agents/hooks/check-collaborative-git.sh)
@@ -80,6 +86,15 @@ if (cd "$run/fresh" && bash .agents/hooks/check-collaborative-git.sh) > "$run/co
   echo 'FAIL: duplicate Codex guard handler was accepted' >&2; exit 1
 fi
 grep -q 'Codex PreToolUse guard is not wired' "$run/codex-hooks-failure.log"
+cp "$run/codex-hooks.before" "$run/fresh/.codex/hooks.json"
+cmp "$run/codex-hooks.before" "$run/fresh/.codex/hooks.json"
+jq '.hooks.PreToolUse[0].hooks[0].command |= sub("guard-collaborative-git.sh"; "missing-guard.sh")' \
+  "$run/fresh/.codex/hooks.json" > "$run/fresh/.codex/hooks.json.mutated"
+mv "$run/fresh/.codex/hooks.json.mutated" "$run/fresh/.codex/hooks.json"
+if (cd "$run/fresh" && bash .agents/hooks/check-collaborative-git.sh) > "$run/codex-launcher-failure.log" 2>&1; then
+  echo 'FAIL: malformed Codex launcher was accepted' >&2; exit 1
+fi
+grep -q 'Codex PreToolUse guard is not wired' "$run/codex-launcher-failure.log"
 cp "$run/codex-hooks.before" "$run/fresh/.codex/hooks.json"
 cmp "$run/codex-hooks.before" "$run/fresh/.codex/hooks.json"
 cp "$run/fresh/.agents/AGENTS.md" "$run/active-router.before"

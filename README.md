@@ -116,9 +116,18 @@ AGENTS.md                                    root pointer
 .codex/hooks/guard-collaborative-git.sh      generated symlink to the guard
 ```
 
-The Codex seed shows `Checking collaborative Git safety boundary` while its
-shared guard runs. The core checker permits consumer handlers alongside that
-single shared handler, but requires the shared handler exactly once.
+The blank-repository Codex seed has exactly one collaborative handler and
+shows `Checking collaborative Git safety boundary` while its shared guard
+runs. Its hardened launcher establishes a known PATH, checks `git` and
+`bash`, resolves the Git root without leaking Git diagnostics, verifies the
+project-local guard is readable, then executes it. It does not include a
+consumer protected-path handler. The core checker permits consumer handlers
+alongside that single shared handler, but requires the shared handler exactly
+once.
+
+The reviewed generic promotion source is `pet_care` commit `3e4f03b`;
+its protected-path consumer overlay is intentionally excluded. Record the
+corresponding Friday adoption SHA only after this payload change is committed.
 
 Consumer overlays remain outside both lists. A consumer may add an executable
 regular-file `.agents/hooks/check-project-agent-integration.sh`; when present,

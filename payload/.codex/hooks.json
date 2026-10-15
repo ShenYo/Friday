@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"$(git rev-parse --show-toplevel)/.codex/hooks/guard-collaborative-git.sh\"",
+            "command": "PATH=\"/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin${PATH:+:$PATH}\"; export PATH; for required in git bash; do if ! command -v \"$required\" >/dev/null 2>&1; then echo \"BLOCKED: required executable unavailable: $required\" >&2; exit 2; fi; done; repo_root=\"$(git rev-parse --show-toplevel 2>/dev/null)\" || { echo \"BLOCKED: unable to resolve the Git repository root.\" >&2; exit 2; }; guard_path=\"$repo_root/.codex/hooks/guard-collaborative-git.sh\"; if [ ! -f \"$guard_path\" ] || [ ! -r \"$guard_path\" ]; then echo \"BLOCKED: required guard unavailable: $guard_path\" >&2; exit 2; fi; exec bash \"$guard_path\"",
             "timeout": 30,
             "statusMessage": "Checking collaborative Git safety boundary"
           }

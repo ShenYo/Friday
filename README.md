@@ -47,6 +47,35 @@ wiring, not native callback behavior, exit handling, handler order, or
 fail-closed enforcement; Gemini is pending. It does not discover arbitrary
 skills or install a consumer's domain workflow.
 
+## Lifecycle governance (B06)
+
+> **中文摘要**：Friday 的 MVP 採「可審查 SHA + consumer 手動採用」模式：
+> repository owner 負責維護，backup maintainer 尚待指定；不自動同步、不強制
+> 更新，也不自動 rollback。
+
+This section is normative for Friday's MVP lifecycle.
+
+- The repository owner is the primary Friday maintainer. A backup maintainer
+  is **PENDING**; until one is named, the primary maintainer remains accountable
+  for release review, recovery proposals, and recording the decision.
+- A reviewed immutable Friday commit SHA is the release channel. Mutable branch
+  names are not releases.
+- A consumer owner manually adopts a reviewed release and preserves that
+  consumer's seeds, runtime integration, and overlays. Friday does not
+  auto-sync or automatically update an existing consumer.
+- When recovery is needed, the Friday maintainer proposes a reviewed rollback
+  or reconciliation. The consumer owner executes the reviewed revert or
+  reconciliation in that consumer repository; Friday never force-updates or
+  automatically rolls back a consumer.
+- Every candidate release requires a disposable-project replay before consumer
+  adoption. A real new-machine replay, validation with a third genuine
+  consumer, and cross-runtime closure remain **PENDING** follow-up work.
+
+Vendor Skills, including Matt Pocock Skills, remain Jarvis-owned and
+vendor-pristine. Friday manages only the portable project-local output contract
+in `scratch-files.md`; it neither installs nor copies vendor Skills and does
+not claim runtime invocation or precedence enforcement.
+
 ## Quick start
 
 ```sh
@@ -188,9 +217,10 @@ reconciliation.
 ### Dated adoption evidence
 
 As of 2026-10-13, `pet_care` and Finance were verified as 10/10 exact matches
-for the managed core at Friday `b44e1ff`. This describes only the managed-core
-comparison; it does not claim whole-repository equality or native runtime
-enforcement in either consumer.
+for the managed core at Friday `b44e1ff`. This is historical evidence only:
+any later payload change requires a fresh managed-core comparison before either
+consumer records a new adoption SHA. It does not claim whole-repository
+equality or native runtime enforcement in either consumer.
 
 ## Safety model and limits
 

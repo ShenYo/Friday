@@ -13,13 +13,16 @@ fail() {
 guard=".agents/hooks/guard-collaborative-git.sh"
 test -x "$guard" || fail "shared guard is not executable"
 
-test -L .claude/hooks/guard-collaborative-git.sh || fail "Claude guard link missing"
+claude_hook=.claude/hooks/guard-collaborative-git.sh
+test -L "$claude_hook" || fail "Claude guard link missing"
+[ "$(readlink "$claude_hook")" = ../../.agents/hooks/guard-collaborative-git.sh ] \
+  || fail "Claude guard link target is wrong"
 test -f .claude/settings.json || fail "Claude settings missing"
 jq -e '
   any(.hooks.PreToolUse[];
     .matcher == "Bash" and any(.hooks[];
       .type == "command" and
-      (.command | contains(".claude/hooks/guard-collaborative-git.sh"))
+      .command == "bash .claude/hooks/guard-collaborative-git.sh"
     )
   )
 ' .claude/settings.json >/dev/null || fail "Claude PreToolUse guard is not wired"
@@ -208,7 +211,16 @@ require_guard_blocked() {
 
 run_guard '{"tool_name":"Bash","tool_input":{"command":"git status"}}'
 [ "$guard_exit" -eq 0 ] || fail "guard blocked an allowed Bash payload: $guard_output"
+run_guard '{"tool_name":"Bash","tool_input":{"command":"git push origin main"}}'
+[ "$guard_exit" -eq 0 ] || fail "guard blocked an allowed normal push: $guard_output"
+run_guard '{"tool_name":"Bash","tool_input":{"command":"gh api --method=GET /repos/o/r"}}'
+[ "$guard_exit" -eq 0 ] || fail "guard blocked an allowed GET probe: $guard_output"
 require_guard_blocked '{"tool_name":"Bash","tool_input":{"command":"git push --force"}}'
+require_guard_blocked '{"tool_name":"Bash","tool_input":{"command":"git push --force-with-lease=origin/main"}}'
+require_guard_blocked '{"tool_name":"Bash","tool_input":{"command":"git push --force=origin/main"}}'
+require_guard_blocked '{"tool_name":"Bash","tool_input":{"command":"gh api --method=DELETE /repos/o/r"}}'
+require_guard_blocked '{"tool_name":"Bash","tool_input":{"command":"gh api -X=DELETE /repos/o/r"}}'
+require_guard_blocked '{"tool_name":"Bash","tool_input":{"command":"gh api -XDELETE /repos/o/r"}}'
 require_guard_blocked '{"tool_name":"Bash","tool_input":{"command":""}}'
 require_guard_blocked '{"tool_name":"Bash","tool_input":{"command":" \t\n"}}'
 

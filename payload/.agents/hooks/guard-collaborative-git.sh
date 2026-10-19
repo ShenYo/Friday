@@ -58,7 +58,7 @@ case "$tool_name" in
 esac
 
 blocked_patterns=(
-  'git[[:space:]].*push.*(--force-with-lease|--force|-f)([[:space:];|&]|$)'
+  'git[[:space:]].*push.*(--force-with-lease|--force|-f)(=|[[:space:];|&]|$)'
   'git[[:space:]].*reset[[:space:]]+--hard([[:space:];|&]|$)'
   'git[[:space:]].*clean([[:space:];|&]|$)'
   'git[[:space:]].*branch[[:space:]]+-D([[:space:];|&]|$)'
@@ -67,7 +67,7 @@ blocked_patterns=(
   'git[[:space:]].*remote[[:space:]]+(remove|set-url)([[:space:];|&]|$)'
   '(^|[[:space:];|&])find[[:space:]].*-delete([[:space:];|&]|$)'
   '(^|[[:space:];|&])gh[[:space:]]+repo[[:space:]]+delete([[:space:];|&]|$)'
-  '(^|[[:space:];|&])gh[[:space:]]+api.*(-X|--method)[[:space:]]+DELETE([[:space:];|&]|$)'
+  '(^|[[:space:];|&])gh[[:space:]]+api.*(-X(=|[[:space:]]*)DELETE|--method(=|[[:space:]]+)DELETE)([[:space:];|&]|$)'
 )
 
 rm_command_pattern="(^|[[:space:];|&'\"])([^[:space:];|&'\"]*/)?rm[[:space:]]+([^;|&]*)"

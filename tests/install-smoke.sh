@@ -40,6 +40,34 @@ grep -Fqx '| Local deletion or discard | deleting any file or directory; `git rm
 [ "$(readlink "$run/fresh/.claude/hooks/guard-collaborative-git.sh")" = ../../.agents/hooks/guard-collaborative-git.sh ]
 [ -L "$run/fresh/.codex/hooks/guard-collaborative-git.sh" ]
 [ "$(readlink "$run/fresh/.codex/hooks/guard-collaborative-git.sh")" = ../../.agents/hooks/guard-collaborative-git.sh ]
+run_installed_guard() {
+  local payload=$1 output exit_code
+
+  set +e
+  output=$(printf '%s' "$payload" | "$run/fresh/.agents/hooks/guard-collaborative-git.sh" 2>&1)
+  exit_code=$?
+  set -e
+
+  installed_guard_output=$output
+  installed_guard_exit=$exit_code
+}
+require_installed_guard_allowed() {
+  run_installed_guard "$1"
+  [ "$installed_guard_exit" -eq 0 ] \
+    || { echo "FAIL: installed guard blocked allowed payload: $installed_guard_output" >&2; exit 1; }
+}
+require_installed_guard_blocked() {
+  run_installed_guard "$1"
+  [ "$installed_guard_exit" -eq 2 ] \
+    || { echo "FAIL: installed guard returned $installed_guard_exit, expected 2: $installed_guard_output" >&2; exit 1; }
+}
+require_installed_guard_allowed '{"tool_name":"Bash","tool_input":{"command":"git push origin main"}}'
+require_installed_guard_allowed '{"tool_name":"Bash","tool_input":{"command":"gh api --method=GET /repos/o/r"}}'
+require_installed_guard_blocked '{"tool_name":"Bash","tool_input":{"command":"git push --force-with-lease=origin/main"}}'
+require_installed_guard_blocked '{"tool_name":"Bash","tool_input":{"command":"git push --force=origin/main"}}'
+require_installed_guard_blocked '{"tool_name":"Bash","tool_input":{"command":"gh api --method=DELETE /repos/o/r"}}'
+require_installed_guard_blocked '{"tool_name":"Bash","tool_input":{"command":"gh api -X=DELETE /repos/o/r"}}'
+require_installed_guard_blocked '{"tool_name":"Bash","tool_input":{"command":"gh api -XDELETE /repos/o/r"}}'
 jq -e '
   type == "object" and
   (keys | sort == ["hooks"]) and
@@ -71,6 +99,25 @@ printf '%s\n' '# Agent Instructions' 'Consumer-specific routing lives here.' > "
 (cd "$run/fresh" && bash .agents/hooks/check-collaborative-git.sh)
 cp "$run/consumer-seed.before" "$run/fresh/AGENTS.md"
 cmp "$run/consumer-seed.before" "$run/fresh/AGENTS.md"
+claude_hook="$run/fresh/.claude/hooks/guard-collaborative-git.sh"
+mv "$claude_hook" "$run/claude-guard-link.before"
+ln -s /bin/true "$claude_hook"
+if (cd "$run/fresh" && bash .agents/hooks/check-collaborative-git.sh) > "$run/claude-link-failure.log" 2>&1; then
+  echo 'FAIL: repointed Claude guard link was accepted' >&2; exit 1
+fi
+grep -q 'Claude guard link target is wrong' "$run/claude-link-failure.log"
+mv "$run/claude-guard-link.before" "$claude_hook"
+[ "$(readlink "$claude_hook")" = ../../.agents/hooks/guard-collaborative-git.sh ]
+cp "$run/fresh/.claude/settings.json" "$run/claude-settings.before"
+jq '.hooks.PreToolUse[0].hooks[0].command = "bash .claude/hooks/guard-collaborative-git.sh && true"' \
+  "$run/fresh/.claude/settings.json" > "$run/fresh/.claude/settings.json.mutated"
+mv "$run/fresh/.claude/settings.json.mutated" "$run/fresh/.claude/settings.json"
+if (cd "$run/fresh" && bash .agents/hooks/check-collaborative-git.sh) > "$run/claude-settings-failure.log" 2>&1; then
+  echo 'FAIL: malformed Claude guard command was accepted' >&2; exit 1
+fi
+grep -q 'Claude PreToolUse guard is not wired' "$run/claude-settings-failure.log"
+cp "$run/claude-settings.before" "$run/fresh/.claude/settings.json"
+cmp "$run/claude-settings.before" "$run/fresh/.claude/settings.json"
 mkdir -p "$run/fresh/docs/history"
 printf '%s\n' 'Historical note: .agents/docs/git-commit.md' > "$run/fresh/docs/history/legacy-agent-paths.md"
 (cd "$run/fresh" && bash .agents/hooks/check-collaborative-git.sh)

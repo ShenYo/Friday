@@ -21,3 +21,7 @@ compatible rule.
 6. **Git state.** Before an edit batch and before a commit, inspect the
    current branch, `HEAD`, and working-tree status. Repeat that inspection
    after an external change, branch switch, or unexpected drift.
+7. **Portable requirements.** Every project-required workflow outcome lives in
+   project-controlled documentation, tests, or automation. Personal or vendor
+   Skills may assist but are optional; when absent, follow the project contract
+   without installing, copying, or implicitly requiring a Skill.

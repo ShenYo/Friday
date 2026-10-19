@@ -5,3 +5,6 @@
 .idea/
 .vscode/
 *.swp
+
+# Local docs/temp scratch evidence
+/docs/temp/

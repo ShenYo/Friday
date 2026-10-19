@@ -1,6 +1,0 @@
-interface:
-  display_name: "GitHub PR Verify"
-  short_description: "Verify a PR and update DoD evidence"
-  default_prompt: "Use $github-pr-verify to verify and update the current branch's open pull request."
-policy:
-  allow_implicit_invocation: false

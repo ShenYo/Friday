@@ -1,133 +1,27 @@
-# Karpathy Guidelines 12 Rules
+# Agent Rules
 
-Behavioral guidelines to reduce common LLM coding mistakes, derived from [Andrej Karpathy's observations](https://x.com/karpathy/status/2015883857489522876) on LLM coding pitfalls.
+Apply these shared rules unless a consumer overlay supplies a more specific,
+compatible rule.
 
-These rules apply to every task in this project unless explicitly overridden.
-**Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
-
-## 1. Think Before Coding
-
-**Don't assume. Don't hide confusion. Surface tradeoffs.**
-
-Before implementing:
-
-- State your assumptions explicitly. If uncertain, ask.
-- If multiple interpretations exist, present them - don't pick silently.
-- If a simpler approach exists, say so. Push back when warranted.
-- If something is unclear, stop. Name what's confusing. Ask.
-
-## 2. Simplicity First
-
-**Minimum code that solves the problem. Nothing speculative.**
-
-- No features beyond what was asked.
-- No abstractions for single-use code.
-- No "flexibility" or "configurability" that wasn't requested.
-- No error handling for impossible scenarios.
-- If you write 200 lines and it could be 50, rewrite it.
-
-Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
-
-## 3. Surgical Changes
-
-**Touch only what you must. Clean up only your own mess.**
-
-When editing existing code:
-
-- Don't "improve" adjacent code, comments, or formatting.
-- Don't refactor things that aren't broken.
-- Match existing style, even if you'd do it differently.
-- If you notice unrelated dead code, mention it - don't delete it.
-
-When your changes create orphans:
-
-- Remove imports/variables/functions that YOUR changes made unused.
-- Don't remove pre-existing dead code unless asked.
-
-The test: Every changed line should trace directly to the user's request.
-
-## 4. Goal-Driven Execution
-
-**Define success criteria. Loop until verified.**
-
-Transform tasks into verifiable goals:
-
-- "Add validation" → "Write tests for invalid inputs, then make them pass"
-- "Fix the bug" → "Write a test that reproduces it, then make it pass"
-- "Refactor X" → "Ensure tests pass before and after"
-
-For multi-step tasks, state a brief plan:
-
-```
-1. [Step] → verify: [check]
-2. [Step] → verify: [check]
-3. [Step] → verify: [check]
-```
-
-Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
-
-### Default autonomy
-
-Once the requested scope is clear, complete normal, reversible workspace work
-without confirmation. Ask only when the safety boundary requires authority;
-there is material risk; a high-level or long-term decision is involved;
-material information is missing; or a choice would materially change the
-result.
-
-<!-- Extended Rules -->
-
-## 5. Use the model only for judgment calls
-
-Use Claude for: classification, drafting, summarization, extraction from unstructured text.
-Do NOT use Claude for: routing, retries, status-code handling, deterministic transforms.
-If a status code already answers the question, plain code answers the question.
-
-## 6. Context budget is behavioral, not numeric
-
-- Before reading any file, name the section you need. Over ~300 lines: read a
-  range or grep — never the whole file by default.
-- Exploration needing more than 3 file reads, or an unknown location: dispatch
-  a search subagent instead (see `.agents/docs/model-dispatch.md`).
-- Output longer than ~100 lines: write it to a file and return the path.
-- If the conversation already holds more than this task needs, checkpoint
-  (write state to the issue or a file) and recommend a fresh session.
-  Surfacing the problem > silently pushing through a degraded context.
-
-## 7. Surface conflicts, don't average them
-
-If two existing patterns in the codebase contradict, don't blend them.
-Pick one (the more recent / more tested), explain why, and flag the other for cleanup.
-"Average" code that satisfies both rules is the worst code.
-
-## 8. Read before you write
-
-Before adding code in a file, read the file's exports, the immediate caller, and any obvious shared utilities.
-If you don't understand why existing code is structured the way it is, ask before adding to it.
-"Looks orthogonal to me" is the most dangerous phrase in this codebase.
-
-## 9. Tests verify intent, not just behavior
-
-Every test must encode WHY the behavior matters, not just WHAT it does.
-A test like `expect(getUserName()).toBe('John')` is worthless if the function takes a hardcoded ID.
-If you can't write a test that would fail when business logic changes, the function is wrong.
-
-## 10. Checkpoint after every significant step
-
-After completing each step in a multi-step task: summarize what was done, what's verified, what's left.
-Don't continue from a state you can't describe back to me.
-If you lose track, stop and restate.
-
-## 11. Match the codebase's conventions, even if you disagree
-
-If the codebase uses snake_case and you'd prefer camelCase: snake_case.
-If the codebase uses class-based components and you'd prefer hooks: class-based.
-Disagreement is a separate conversation. Inside the codebase, conformance > taste.
-If you genuinely think the convention is harmful, surface it. Don't fork it silently.
-
-## 12. Fail loud
-
-If you can't be sure something worked, say so explicitly.
-"Migration completed" is wrong if 30 records were skipped silently.
-"Tests pass" is wrong if you skipped any.
-"Feature works" is wrong if you didn't verify the edge case I asked about.
-Default to surfacing uncertainty, not hiding it.
+1. **Scope.** Make only changes that serve the requested outcome. Preserve
+   unrelated work and report relevant discoveries instead of broadening scope.
+2. **Understand first.** Read the directly affected code, configuration, and
+   local instructions before changing them. Surface material ambiguity,
+   conflicts, or long-term tradeoffs before choosing on the user's behalf.
+3. **Small, reversible work.** Prefer the smallest change that meets the
+   request and the repository's established conventions. Do not introduce
+   speculative abstraction or unrelated cleanup.
+4. **Verify the outcome.** Choose checks that can demonstrate the requested
+   behavior. State what ran, what passed, and any evidence that remains
+   unavailable.
+5. **Safety and authority.** Follow
+   [`git-guideline/safety-boundary.md`](git-guideline/safety-boundary.md) for
+   Git and GitHub operations. Do not infer authorization for commits, remote
+   writes, deletion, or discard actions.
+6. **Git state.** Before an edit batch and before a commit, inspect the
+   current branch, `HEAD`, and working-tree status. Repeat that inspection
+   after an external change, branch switch, or unexpected drift.
+7. **Portable requirements.** Every project-required workflow outcome lives in
+   project-controlled documentation, tests, or automation. Personal or vendor
+   Skills may assist but are optional; when absent, follow the project contract
+   without installing, copying, or implicitly requiring a Skill.

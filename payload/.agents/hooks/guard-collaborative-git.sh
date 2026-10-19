@@ -1,38 +1,64 @@
-#!/usr/bin/env bash
+#!/bin/bash
 
 set -euo pipefail
-
-input=$(cat)
-tool_name=$(printf '%s' "$input" | jq -r '.tool_name // ""')
-command=$(printf '%s' "$input" | jq -r 'if (.tool_input | type) == "object" then .tool_input.command // "" else "" end')
 
 block() {
   echo "BLOCKED: $1" >&2
   exit 2
 }
 
-if [[ "$tool_name" == "apply_patch" ]]; then
-  patch=$(printf '%s' "$input" | jq -r '
-    .tool_input
-    | if type == "string" then .
-      elif type == "object" or type == "array" then
-        [.. | strings | select(test("\\*\\*\\* (Add|Update|Delete) File:"))] | join("\n")
-      else empty
-      end
-  ')
-  if [[ -z "$patch" ]]; then
-    block "apply_patch payload did not contain patch text; refusing it."
-  fi
+PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin${PATH:+:$PATH}"
+export PATH
 
-  if printf '%s\n' "$patch" | grep -Eq '^[[:space:]]*\*\*\* Delete File:'; then
-    block "deleting a file with apply_patch is permanently agent-prohibited by the collaborative Git safety boundary. Ask the user to delete it directly."
-  fi
+for required in cat jq grep; do
+  command -v "$required" >/dev/null 2>&1 \
+    || block "required executable unavailable: $required"
+done
 
-  exit 0
-fi
+input=$(cat) || block "unable to read hook payload"
+tool_name=$(printf '%s' "$input" | jq -r '.tool_name // ""' 2>/dev/null) \
+  || block "unable to parse hook payload"
+
+case "$tool_name" in
+  Bash)
+    command=$(printf '%s' "$input" | jq -er '
+      if (.tool_input | type) == "object" and (.tool_input.command | type) == "string"
+      then .tool_input.command else error("invalid Bash payload") end
+    ' 2>/dev/null) || block "invalid Bash hook payload"
+    [[ -n ${command//[[:space:]]/} ]] || block "invalid Bash hook payload"
+    ;;
+  apply_patch)
+    patch=$(printf '%s' "$input" | jq -er '
+      if (.tool_input | type) == "object" and (.tool_input.command | type) == "string"
+      then .tool_input.command else error("invalid apply_patch payload") end
+    ' 2>/dev/null) || block "invalid apply_patch hook payload"
+    [ -n "$patch" ] || block "invalid apply_patch hook payload"
+    first_line=${patch%%$'\n'*}
+    last_line=${patch##*$'\n'}
+    if [ "$first_line" != '*** Begin Patch' ] \
+      || ! printf '%s\n' "$patch" | grep -Eq '^\*\*\* (Add|Update|Delete) File: .+$' \
+      || [ "$last_line" != '*** End Patch' ]; then
+      block "apply_patch payload was not a framed patch with a usable target; refusing it."
+    fi
+
+    if printf '%s\n' "$patch" | grep -Eq '^\*\*\* Delete File: .+$'; then
+      block "deleting a file with apply_patch is permanently agent-prohibited by the collaborative Git safety boundary. Ask the user to delete it directly."
+    fi
+
+    if printf '%s\n' "$patch" | grep -Eq '^\*\*\* (Add|Update) File: .+$' \
+      && ! printf '%s\n' "$patch" | grep -Eqv '^\*\*\* (Begin Patch|End Patch|(Add|Update|Delete) File: .+)$|^$'; then
+      block "apply_patch Add/Update payload did not contain diff, hunk, or content; refusing it."
+    fi
+
+    exit 0
+    ;;
+  *)
+    exit 0
+    ;;
+esac
 
 blocked_patterns=(
-  'git[[:space:]].*push.*(--force-with-lease|--force|-f)([[:space:];|&]|$)'
+  'git[[:space:]].*push.*(--force-with-lease|--force|-f)(=|[[:space:];|&]|$)'
   'git[[:space:]].*reset[[:space:]]+--hard([[:space:];|&]|$)'
   'git[[:space:]].*clean([[:space:];|&]|$)'
   'git[[:space:]].*branch[[:space:]]+-D([[:space:];|&]|$)'
@@ -41,7 +67,7 @@ blocked_patterns=(
   'git[[:space:]].*remote[[:space:]]+(remove|set-url)([[:space:];|&]|$)'
   '(^|[[:space:];|&])find[[:space:]].*-delete([[:space:];|&]|$)'
   '(^|[[:space:];|&])gh[[:space:]]+repo[[:space:]]+delete([[:space:];|&]|$)'
-  '(^|[[:space:];|&])gh[[:space:]]+api.*(-X|--method)[[:space:]]+DELETE([[:space:];|&]|$)'
+  '(^|[[:space:];|&])gh[[:space:]]+api.*(-X(=|[[:space:]]*)DELETE|--method(=|[[:space:]]+)DELETE)([[:space:];|&]|$)'
 )
 
 rm_command_pattern="(^|[[:space:];|&'\"])([^[:space:];|&'\"]*/)?rm[[:space:]]+([^;|&]*)"

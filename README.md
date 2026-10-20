@@ -47,6 +47,30 @@ wiring, not native callback behavior, exit handling, handler order, or
 fail-closed enforcement; Gemini is pending. It does not discover arbitrary
 skills or install a consumer's domain workflow.
 
+## Current operating context
+
+> **中文摘要**：Friday 的可攜成果必須由專案本身承載；TDD、Wayfinder 等
+> helper 可以選用但不可成為 baseline 前提。十個 managed-core 檔維持封閉
+> byte-exact 範圍，seed、runtime integration 與 overlay 仍由 consumer 擁有。
+> 現行 guard 安全修正已在 payload 與 self-check 實作；B06 的 immutable SHA、
+> 手動採用及 rollback 責任不變，backup、replay 與外部 runtime 仍待完成。
+
+Portable outcomes belong in project-controlled documentation, tests, or
+automation. TDD, Wayfinder, and similar helpers may be used by an operator,
+but no consumer may require them to bootstrap or satisfy the Friday contract.
+The closed ten-file managed core remains the only byte-exact comparison set;
+consumer seeds, runtime integration, and overlays remain consumer-owned and
+are reconciled manually.
+
+The current payload implements the guard security updates, and its self-check
+exercises the relevant allowed and blocked command forms. That is static and
+direct-guard evidence only; it does not establish native callback delivery,
+exit handling, ordering, or fail-closed enforcement. Releases remain reviewed
+immutable SHAs, adoption remains manual, and the Friday maintainer proposes a
+rollback while the consumer owner performs it. A named backup maintainer,
+real new-machine replay, a further consumer replay, and external-runtime
+closure are still pending.
+
 ## Lifecycle governance (B06)
 
 > **中文摘要**：Friday 的 MVP 採「可審查 SHA + consumer 手動採用」模式：
@@ -78,11 +102,51 @@ not claim runtime invocation or precedence enforcement.
 
 ## Quick start
 
+> **中文摘要**：blank project 先在乾淨、固定 SHA 的 Friday checkout 上預覽，
+> 再 install、再預覽並檢查差異；這是 copy-based baseline，不是複製整個 Friday
+> repo 或把 consumer symlink 到它。既有 consumer 請走後面的 manual reconciliation。
+
+For a new blank repository, first obtain a separately reviewed Friday checkout
+at an immutable commit. Prerequisites are Git, Bash, and `jq`. Do not use a
+dirty Friday checkout as the example source: this creates a new checkout at
+the reviewed pin. Before running it, replace both absolute paths and the
+literal SHA placeholder. The commands do not create a commit, install a
+runtime, or configure credentials.
+
 ```sh
-git clone git@github.com:ShenYo/Friday.git /path/to/Friday
-/path/to/Friday/install.sh --check /path/to/your/repo
-/path/to/Friday/install.sh /path/to/your/repo
+(
+  set -eu
+  TARGET='/absolute/path/to/new-project'
+  FRIDAY='/absolute/path/to/new-Friday-checkout'
+  PIN='replace-with-reviewed-immutable-Friday-SHA'
+
+  command -v git >/dev/null
+  command -v bash >/dev/null
+  command -v jq >/dev/null
+  test ! -e "$FRIDAY"
+  test ! -L "$FRIDAY"
+  git clone https://github.com/ShenYo/Friday.git "$FRIDAY"
+  git -C "$FRIDAY" checkout --detach "$PIN"
+  test "$(git -C "$FRIDAY" rev-parse HEAD)" = "$PIN"
+  test -z "$(git -C "$FRIDAY" status --porcelain)"
+  test ! -e "$TARGET"
+  test ! -L "$TARGET"
+  mkdir -p "$TARGET"
+  git -C "$TARGET" init
+  bash "$FRIDAY/install.sh" --check "$TARGET"
+  bash "$FRIDAY/install.sh" "$TARGET"
+  bash "$FRIDAY/install.sh" --check "$TARGET"
+  (cd "$TARGET" && bash .agents/hooks/check-collaborative-git.sh)
+  git -C "$TARGET" diff --check
+  git -C "$TARGET" status --short
+)
 ```
+
+The first preview reports `NEW`, `IDENTICAL`, or `CONFLICT`; resolve every
+conflict in a reviewed change before retrying. Review the resulting worktree
+diff, then decide separately whether and how to commit it under the target
+repository's own rules. Friday copies its closed payload into the target; it
+does not copy the whole Friday repository or link the target back to Friday.
 
 Requires `jq` and a blank or compatible target with a `.git/` directory
 (linked worktrees are not supported). The target is the repository root, not
@@ -106,13 +170,36 @@ result before retrying; never run concurrent installers against one target.
 The install ends by running the payload's own self-check, so broken runtime
 wiring fails now rather than the first time someone relies on the boundary.
 
-Use the complete sequence for a blank repository:
+## Starting an agent in a bootstrapped project
+
+> **中文摘要**：安裝只 seed root `AGENTS.md` 與 `.agents/AGENTS.md` 的 agent
+> instructions；不會生成 root `CLAUDE.md`、`GEMINI.md` 或 `setup-ai.sh`。先讀
+> 兩個 AGENTS，再選擇已安裝的單一 runtime 啟動；各 runtime 的 trust 與原生行為
+> 仍須各自驗證。
+
+From the target repository root, read the two installed instruction entrypoints
+before asking an agent to change anything:
 
 ```sh
-/path/to/Friday/install.sh --check /path/to/your/repo
-/path/to/Friday/install.sh /path/to/your/repo
-/path/to/Friday/install.sh --check /path/to/your/repo
+cd '/absolute/path/to/new-project'
+sed -n '1,240p' AGENTS.md
+sed -n '1,240p' .agents/AGENTS.md
 ```
+
+If Claude Code is already installed, launch it from that root with `claude`.
+If Codex is already installed, launch it separately from that root with
+`codex`; choose the runtime you intend to use rather than treating both as an
+automatic sequence. In the first prompt, ask it to read the root instructions
+and report the instruction documents it loaded plus its branch, HEAD, and
+working-tree status before editing.
+
+Friday does not generate root `CLAUDE.md`, `GEMINI.md`, or `setup-ai.sh`.
+Claude users therefore need a verified Claude entrypoint or an explicit
+session prompt to read the AGENTS files; this README cannot guarantee automatic
+AGENTS loading. Native workspace trust, callback delivery, precedence, and
+other runtime behavior remain runtime-specific evidence work. Gemini CLI and
+`agy` remain pending here, so this guide intentionally provides no speculative
+launch command for either.
 
 ## Ownership: managed core, seeds, and overlays
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Install the agent-management payload into a target repository, then verify it.
 #
-#   ~/Friday/install.sh [target-repo-path]     (default: current directory)
+#   ~/.Friday/install.sh [target-repo-path]    (default: current directory)
 #
 # --check previews without writing. Installation adds missing files, preserves
 # identical files, and refuses conflicts before making any target changes.

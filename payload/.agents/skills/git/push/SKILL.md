@@ -6,9 +6,12 @@ disable-model-invocation: true
 
 # Git Push
 
-Treat explicit manual invocation as authorization to push the current branch
-in this turn only. Do not infer push intent outside this skill. Read
-`.agents/docs/git-guideline/safety-boundary.md` before acting.
+This skill is the procedure for pushing correctly, not a permission to push.
+Pushing a non-default branch is at the agent's discretion — see the default
+posture in `.agents/docs/git-guideline/safety-boundary.md` — so the same rules
+apply whether or not this skill was invoked. Pushing directly to the default
+branch remains a human-review checkpoint. Read that document before acting,
+and confirm no commit going out carries sensitive information.
 
 ## Confirm the target
 

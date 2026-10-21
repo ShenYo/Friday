@@ -58,16 +58,34 @@ case "$tool_name" in
 esac
 
 blocked_patterns=(
-  'git[[:space:]].*push.*(--force-with-lease|--force|-f)(=|[[:space:];|&]|$)'
-  'git[[:space:]].*reset[[:space:]]+--hard([[:space:];|&]|$)'
-  'git[[:space:]].*clean([[:space:];|&]|$)'
-  'git[[:space:]].*branch[[:space:]]+-D([[:space:];|&]|$)'
-  'git[[:space:]].*stash[[:space:]]+(clear|drop)([[:space:];|&]|$)'
-  'git[[:space:]].*worktree[[:space:]]+remove([[:space:];|&]|$)'
-  'git[[:space:]].*remote[[:space:]]+(remove|set-url)([[:space:];|&]|$)'
-  '(^|[[:space:];|&])find[[:space:]].*-delete([[:space:];|&]|$)'
-  '(^|[[:space:];|&])gh[[:space:]]+repo[[:space:]]+delete([[:space:];|&]|$)'
-  '(^|[[:space:];|&])gh[[:space:]]+api.*(-X(=|[[:space:]]*)DELETE|--method(=|[[:space:]]+)DELETE)([[:space:];|&]|$)'
+  # Every git rule forbids a quote character between `git` and the subcommand,
+  # so a dangerous word inside a commit message is not mistaken for the
+  # operation it names: `git commit -m "fix: clean up"` is not `git clean`.
+  # A real invocation never has a quote in that position. The gh rules are
+  # anchored on their subcommand and need no such guard.
+  "git[[:space:]][^'\"]*push[^'\"]*(--force-with-lease|--force|-f)(=|[[:space:];|&]|\$)"
+  "git[[:space:]][^'\"]*reset[[:space:]]+--hard([[:space:];|&]|\$)"
+  "git[[:space:]][^'\"]*clean([[:space:];|&]|\$)"
+  "git[[:space:]][^'\"]*branch[[:space:]]+(-[dD]|--delete)([[:space:];|&]|\$)"
+  "git[[:space:]][^'\"]*tag[[:space:]]+(-d|--delete)([[:space:];|&]|\$)"
+  "git[[:space:]][^'\"]*push[^'\"]*(--delete|-d)([=[:space:];|&]|\$)"
+  "git[[:space:]][^'\"]*push[[:space:]][^'\"]*[[:space:]]:[^[:space:];|&]+([[:space:];|&]|\$)"
+  "git[[:space:]][^'\"]*stash[[:space:]]+(clear|drop)([[:space:];|&]|\$)"
+  "git[[:space:]][^'\"]*worktree[[:space:]]+remove([[:space:];|&]|\$)"
+  "git[[:space:]][^'\"]*remote[[:space:]]+(remove|set-url)([[:space:];|&]|\$)"
+  "(^|[[:space:];|&])find[[:space:]][^;|&]*-delete([[:space:];|&]|\$)"
+  "(^|[[:space:];|&])gh[[:space:]]+repo[[:space:]]+delete([[:space:];|&]|\$)"
+  "(^|[[:space:];|&])gh[[:space:]]+api[^;|&]*(-X(=|[[:space:]]*)DELETE|--method(=|[[:space:]]+)DELETE)([[:space:];|&]|\$)"
+  # Human-review checkpoints. Not irreversible; reserved because integrating a
+  # change, delegating that decision to CI, or altering a shared review
+  # artifact is a person's call however many automated checks passed.
+  # Approving a pull request is reserved too but cannot be matched here: the
+  # guard sees a command and cannot tell an author from an independent
+  # reviewer, so that rule lives in safety-boundary.md and is enforced by
+  # instruction rather than by this guard.
+  "(^|[[:space:];|&])gh[[:space:]]+pr[[:space:]]+merge([[:space:];|&]|\$)"
+  "(^|[[:space:];|&])gh[[:space:]]+pr[[:space:]]+(close|reopen)([[:space:];|&]|\$)"
+  "(^|[[:space:];|&])gh[[:space:]]+(pr|repo)[[:space:]][^;|&]*--auto([[:space:];|&=]|\$)"
 )
 
 rm_command_pattern="(^|[[:space:];|&'\"])([^[:space:];|&'\"]*/)?rm[[:space:]]+([^;|&]*)"

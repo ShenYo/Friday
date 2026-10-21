@@ -6,10 +6,13 @@ disable-model-invocation: true
 
 # Git Create PR
 
-Treat explicit manual invocation as authorization to create one pull request
-for the current branch in this turn only. Do not infer PR intent outside this
-skill. Read `.agents/docs/git-guideline/safety-boundary.md` before acting. Do
-not commit, push, merge, edit reviewers, or change labels.
+This skill is the procedure for opening a pull request correctly, not a
+permission to open one. Opening a PR is at the agent's discretion — see the
+default posture in `.agents/docs/git-guideline/safety-boundary.md`. The
+description must cover exactly the commits on this branch and no other task's
+context. Read that document before acting. Do not merge, enable auto-merge,
+approve, close, or reopen: those are human-review checkpoints. Do not edit
+reviewers or change labels as part of this skill.
 
 ## Inspect
 

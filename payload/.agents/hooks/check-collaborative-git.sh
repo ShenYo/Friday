@@ -375,6 +375,53 @@ require_guard_blocked '{"tool_name":"Bash","tool_input":{"command":"git push --f
 require_guard_blocked '{"tool_name":"Bash","tool_input":{"command":"gh api --method=DELETE /repos/o/r"}}'
 require_guard_blocked '{"tool_name":"Bash","tool_input":{"command":"gh api -X=DELETE /repos/o/r"}}'
 require_guard_blocked '{"tool_name":"Bash","tool_input":{"command":"gh api -XDELETE /repos/o/r"}}'
+# Deleting a ref destroys work that may live nowhere else. Both spellings, both
+# local and remote, and tags as well as branches.
+require_guard_blocked '{"tool_name":"Bash","tool_input":{"command":"git branch -d feat/x"}}'
+require_guard_blocked '{"tool_name":"Bash","tool_input":{"command":"git branch -D feat/x"}}'
+require_guard_blocked '{"tool_name":"Bash","tool_input":{"command":"git branch --delete feat/x"}}'
+require_guard_blocked '{"tool_name":"Bash","tool_input":{"command":"git tag -d v1"}}'
+require_guard_blocked '{"tool_name":"Bash","tool_input":{"command":"git push origin --delete feat/x"}}'
+require_guard_blocked '{"tool_name":"Bash","tool_input":{"command":"git push origin :feat/x"}}'
+# Human-review checkpoints: integrating a change, delegating that decision to
+# CI, and altering a shared review artifact.
+require_guard_blocked '{"tool_name":"Bash","tool_input":{"command":"gh pr merge 12"}}'
+require_guard_blocked '{"tool_name":"Bash","tool_input":{"command":"gh pr merge --auto --squash 12"}}'
+require_guard_blocked '{"tool_name":"Bash","tool_input":{"command":"gh pr close 12"}}'
+require_guard_blocked '{"tool_name":"Bash","tool_input":{"command":"gh pr reopen 12"}}'
+
+# Ordinary version control is agent discretion now, so these must stay allowed;
+# a guard that blocks them would make the policy unusable rather than safe.
+for allowed_command in \
+  'git commit -m x' \
+  'git push origin feat/x' \
+  'git push -u origin feat/x' \
+  'git push origin HEAD:refs/heads/feat/x' \
+  'git push --dry-run origin feat/x' \
+  'git tag v1' \
+  'git branch feat/new' \
+  'gh pr create --fill' \
+  'gh pr view 12' \
+  'gh pr review --approve 12'; do
+  run_guard "$(jq -cn --arg c "$allowed_command" \
+    '{tool_name:"Bash", tool_input:{command:$c}}')"
+  [ "$guard_exit" -eq 0 ] \
+    || fail "guard blocked an agent-discretion command '$allowed_command': $guard_output"
+done
+
+# A dangerous word inside a commit message is not the operation it names.
+# Both quote styles, because the rules key on the quote position.
+for message_command in \
+  'git commit -m "fix: clean up the parser"' \
+  "git commit -m 'fix: clean up the parser'" \
+  'git commit -m "chore: document reset --hard"' \
+  'git commit -m "docs: explain branch -D"' \
+  'git commit -m "fix: drop the stale worktree remove note"'; do
+  run_guard "$(jq -cn --arg c "$message_command" \
+    '{tool_name:"Bash", tool_input:{command:$c}}')"
+  [ "$guard_exit" -eq 0 ] \
+    || fail "guard mistook a commit message for the operation it names: $message_command -> $guard_output"
+done
 require_guard_blocked '{"tool_name":"Bash","tool_input":{"command":""}}'
 require_guard_blocked '{"tool_name":"Bash","tool_input":{"command":" \t\n"}}'
 

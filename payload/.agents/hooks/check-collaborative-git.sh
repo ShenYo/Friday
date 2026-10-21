@@ -373,8 +373,14 @@ require_guard_blocked() {
 
 run_guard '{"tool_name":"Bash","tool_input":{"command":"git status"}}'
 [ "$guard_exit" -eq 0 ] || fail "guard blocked an allowed Bash payload: $guard_output"
-run_guard '{"tool_name":"Bash","tool_input":{"command":"git push origin main"}}'
-[ "$guard_exit" -eq 0 ] || fail "guard blocked an allowed normal push: $guard_output"
+# Deliberately NOT asserted here: whether `git push origin main` is allowed.
+# safety-boundary.md reserves a direct push to the default branch for a human,
+# and the guard does not enforce that today. An earlier revision of this file
+# asserted the push must be ALLOWED, calling it "an allowed normal push", which
+# certified the gap as intended behavior and would have failed the suite for
+# anyone who fixed it. The row is unenforced and the document says so.
+run_guard '{"tool_name":"Bash","tool_input":{"command":"git push origin feat/topic"}}'
+[ "$guard_exit" -eq 0 ] || fail "guard blocked a feature-branch push: $guard_output"
 run_guard '{"tool_name":"Bash","tool_input":{"command":"gh api --method=GET /repos/o/r"}}'
 [ "$guard_exit" -eq 0 ] || fail "guard blocked an allowed GET probe: $guard_output"
 require_guard_blocked '{"tool_name":"Bash","tool_input":{"command":"git push --force"}}'
@@ -417,6 +423,28 @@ for allowed_command in \
     || fail "guard blocked an agent-discretion command '$allowed_command': $guard_output"
 done
 
+# Disabling the commit-time hooks, in every spelling that reaches it. The flag
+# may follow a quoted message, the config key is case-insensitive, the
+# assignment may be quoted, and the persistent and environment forms count too.
+# A quoted message used to void these rules entirely, which made the whole
+# commit-time layer skippable.
+for bypass_command in \
+  'git commit --no-verify -m x' \
+  'git commit -m "feat: add a thing" --no-verify' \
+  "git commit -m 'feat: add a thing' -n" \
+  'git commit -m "feat: add a thing" -nm y' \
+  'git -c core.hooksPath=/dev/null commit -m x' \
+  'git -c "core.hooksPath=/dev/null" commit -m x' \
+  'git -c core.hookspath=/dev/null commit -m x' \
+  'git config core.hooksPath /dev/null' \
+  'git config --local core.hookspath /tmp/x' \
+  'GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/dev/null git commit -m x'; do
+  run_guard "$(jq -cn --arg c "$bypass_command" \
+    '{tool_name:"Bash", tool_input:{command:$c}}')"
+  [ "$guard_exit" -eq 2 ] \
+    || fail "guard allowed a command that disables the commit-time hooks: $bypass_command"
+done
+
 # A dangerous word inside a commit message is not the operation it names.
 # Both quote styles, because the rules key on the quote position.
 for message_command in \
@@ -424,7 +452,10 @@ for message_command in \
   "git commit -m 'fix: clean up the parser'" \
   'git commit -m "chore: document reset --hard"' \
   'git commit -m "docs: explain branch -D"' \
-  'git commit -m "fix: drop the stale worktree remove note"'; do
+  'git commit -m "fix: drop the stale worktree remove note"' \
+  'git commit -m "docs: soften the rm -r wording"' \
+  'git log --grep=clean' \
+  'git add scripts/clean'; do
   run_guard "$(jq -cn --arg c "$message_command" \
     '{tool_name:"Bash", tool_input:{command:$c}}')"
   [ "$guard_exit" -eq 0 ] \

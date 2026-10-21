@@ -149,18 +149,41 @@ vague to trace to one task. The runtime guard refuses `--no-verify`, its
 bundled short form, and `-c core.hooksPath`, without which either hook could be
 skipped. The checker executes both in a scratch repository.
 
-What **neither** layer enforces, and what therefore depends on these
-instructions being followed:
+What **neither** layer enforces. Independent review established this list by
+probing the guard directly; treat every row here as instruction-only, and do
+not assume a rule has machinery behind it because it appears in a table above.
 
-- Whether a commit actually covers one task. A vague summary is refused because
-  a lumped commit cannot be given a specific one, but a specific-sounding
-  summary on a mixed commit passes.
-- Whether a value the scanner does not recognise is a secret. It matches
-  formats, not meaning, so a custom or low-entropy credential passes.
-- The self-approval rule, as described above.
-- Any checkpoint reached through a path the guard does not pattern-match, such
-  as an unusual command spelling, a wrapper script, or a GitHub API call that
-  is not a `DELETE`.
+- **Pushing to the default branch.** No pattern matches it, in any spelling.
+  The checkpoint exists only in these instructions.
+- **Most of the prohibitions table, in some spelling.** The guard matches a set
+  of command shapes, not an operation. `git restore`, `git checkout -- <path>`,
+  `git rm <file>`, `git remote rm`, `git update-ref -d`, `git push --mirror`,
+  and a force push written as `+refspec` all reach a prohibited outcome without
+  matching a pattern. Plumbing equivalents of a blocked porcelain command
+  generally do too.
+- **`gh` reached by any spelling but a bare `gh` at the start of a word.** A
+  path prefix, a subshell, `eval`, or a quoted or lowercased verb all pass. So
+  does the REST API route to a blocked operation: merging through
+  `gh api --method PUT .../merge`, deleting through `gh api -X delete`, or
+  changing branch protection, collaborators, visibility or auto-merge through
+  their endpoints.
+- **Whether a commit actually covers one task.** A vague summary is refused
+  because a lumped commit cannot be given a specific one, but a
+  specific-sounding summary on a mixed commit passes.
+- **Whether a value the scanner does not recognise is a secret.** It matches a
+  list of credential formats, not meaning. A custom or low-entropy credential
+  passes, and so does an uppercase assignment that the keyword rule misses.
+- **Commits that never reach the hooks.** `core.hooksPath` is per-clone local
+  config, so a fresh clone, a CI checkout, or a worktree created outside the
+  installer runs no commit-time hook at all until someone re-runs it. Plumbing
+  (`git commit-tree`), `cherry-pick`, and server-side commits through the API
+  bypass them by construction.
+- **The self-approval rule, as described above.**
+
+The honest summary is that the guard is a best-effort tripwire against the
+ordinary spelling of a mistake. It is not a control surface, and a rule that
+matters must be enforced where the semantics are known -- in a Git hook that
+receives the refs or the staged content -- or accepted as instruction-only.
 
 The Codex hook is a non-managed project runtime seed, not managed-core content;
 review and trust its pinned hash before relying on it. Handler ordering,

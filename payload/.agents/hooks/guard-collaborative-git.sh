@@ -57,22 +57,36 @@ case "$tool_name" in
     ;;
 esac
 
+# Replace every quoted argument with a single placeholder before matching.
+#
+# This replaces an earlier approach that forbade a quote between `git` and the
+# subcommand. That was wrong in both directions. It let a flag escape whenever
+# any quoted argument came first, so `git commit -m "feat: x" --no-verify` --
+# the order a person actually types -- was not matched at all, and the entire
+# commit-time hook layer was skippable. It also did nothing for the rm rule, so
+# a commit message mentioning `rm -r` was refused.
+#
+# Normalising first fixes both: the message text is gone, so it cannot be
+# mistaken for the operation it names, and the flags remain visible wherever
+# they sit. A contrived `git "clean"` is not matched, which is accepted.
+scan_command=$(printf '%s' "$command" \
+  | sed -e "s/'[^']*'/QUOTED/g" -e 's/"[^"]*"/QUOTED/g')
+
 blocked_patterns=(
-  # Every git rule forbids a quote character between `git` and the subcommand,
-  # so a dangerous word inside a commit message is not mistaken for the
-  # operation it names: `git commit -m "fix: clean up"` is not `git clean`.
-  # A real invocation never has a quote in that position. The gh rules are
-  # anchored on their subcommand and need no such guard.
-  "git[[:space:]][^'\"]*push[^'\"]*(--force-with-lease|--force|-f)(=|[[:space:];|&]|\$)"
-  "git[[:space:]][^'\"]*reset[[:space:]]+--hard([[:space:];|&]|\$)"
-  "git[[:space:]][^'\"]*clean([[:space:];|&]|\$)"
-  "git[[:space:]][^'\"]*branch[[:space:]]+(-[dD]|--delete)([[:space:];|&]|\$)"
-  "git[[:space:]][^'\"]*tag[[:space:]]+(-d|--delete)([[:space:];|&]|\$)"
-  "git[[:space:]][^'\"]*push[^'\"]*(--delete|-d)([=[:space:];|&]|\$)"
-  "git[[:space:]][^'\"]*push[[:space:]][^'\"]*[[:space:]]:[^[:space:];|&]+([[:space:];|&]|\$)"
-  "git[[:space:]][^'\"]*stash[[:space:]]+(clear|drop)([[:space:];|&]|\$)"
-  "git[[:space:]][^'\"]*worktree[[:space:]]+remove([[:space:];|&]|\$)"
-  "git[[:space:]][^'\"]*remote[[:space:]]+(remove|set-url)([[:space:];|&]|\$)"
+  # Matched against scan_command, in which every quoted argument has already
+  # been replaced by a placeholder. So a dangerous word inside a commit message
+  # cannot be mistaken for the operation it names, and a flag is still seen
+  # wherever it sits on the line.
+  "git[[:space:]][^;|&]*push[^;|&]*(--force-with-lease|--force|-f)(=|[[:space:];|&]|\$)"
+  "git[[:space:]][^;|&]*reset[[:space:]]+--hard([[:space:];|&]|\$)"
+  "git[[:space:]]([^;|&]*[[:space:]])?clean([[:space:];|&]|\$)"
+  "git[[:space:]][^;|&]*branch[[:space:]]+(-[dD]|--delete)([[:space:];|&]|\$)"
+  "git[[:space:]][^;|&]*tag[[:space:]]+(-d|--delete)([[:space:];|&]|\$)"
+  "git[[:space:]][^;|&]*push[^;|&]*(--delete|-d)([=[:space:];|&]|\$)"
+  "git[[:space:]][^;|&]*push[[:space:]][^;|&]*[[:space:]]:[^[:space:];|&]+([[:space:];|&]|\$)"
+  "git[[:space:]][^;|&]*stash[[:space:]]+(clear|drop)([[:space:];|&]|\$)"
+  "git[[:space:]][^;|&]*worktree[[:space:]]+remove([[:space:];|&]|\$)"
+  "git[[:space:]][^;|&]*remote[[:space:]]+(remove|set-url)([[:space:];|&]|\$)"
   "(^|[[:space:];|&])find[[:space:]][^;|&]*-delete([[:space:];|&]|\$)"
   "(^|[[:space:];|&])gh[[:space:]]+repo[[:space:]]+delete([[:space:];|&]|\$)"
   "(^|[[:space:];|&])gh[[:space:]]+api[^;|&]*(-X(=|[[:space:]]*)DELETE|--method(=|[[:space:]]+)DELETE)([[:space:];|&]|\$)"
@@ -94,15 +108,14 @@ blocked_patterns=(
   # The short form may be bundled with other short options (-nm), so match a
   # single-dash cluster containing n. Requiring a space before the dash keeps
   # long options such as --no-edit out of it.
-  "git[[:space:]][^'\"]*commit[^'\"]*--no-verify([[:space:];|&]|\$)"
-  "git[[:space:]][^'\"]*commit[^'\"]*[[:space:]]-[A-Za-z]*n[A-Za-z]*([[:space:];|&]|\$)"
-  "git[[:space:]][^'\"]*push[^'\"]*--no-verify([[:space:];|&]|\$)"
-  "git[[:space:]][^'\"]*-c[[:space:]]*core\\.hooksPath([=[:space:]]|\$)"
+  "git[[:space:]][^;|&]*commit[^;|&]*--no-verify([[:space:];|&]|\$)"
+  "git[[:space:]][^;|&]*commit[^;|&]*[[:space:]]-[A-Za-z]*n[A-Za-z]*([[:space:];|&]|\$)"
+  "git[[:space:]][^;|&]*push[^;|&]*--no-verify([[:space:];|&]|\$)"
 )
 
 rm_command_pattern="(^|[[:space:];|&'\"])([^[:space:];|&'\"]*/)?rm[[:space:]]+([^;|&]*)"
 
-if [[ "$command" =~ $rm_command_pattern ]]; then
+if [[ "$scan_command" =~ $rm_command_pattern ]]; then
   rm_arguments=${BASH_REMATCH[3]}
   if [[ "$rm_arguments" == --[[:space:]]* ]]; then
     rm_options=""
@@ -116,8 +129,25 @@ if [[ "$command" =~ $rm_command_pattern ]]; then
   fi
 fi
 
-for pattern in "${blocked_patterns[@]}"; do
+# Matched against the UNNORMALISED command. Normalisation replaces a quoted
+# argument with a placeholder, which is right for a commit message but hides a
+# quoted flag value such as -c "core.hooksPath=...". A config assignment is
+# never prose, so it is matched raw. Config keys are case-insensitive, and the
+# transient -c form, the persistent `git config` form and the environment form
+# are all refused: closing one alone moves the bypass a single command earlier.
+raw_patterns=(
+  "git[[:space:]][^;|&]*-c[[:space:]]*[\"']?[cC][oO][rR][eE]\\.[hH][oO][oO][kK][sS][pP][aA][tT][hH]"
+  "git[[:space:]][^;|&]*config[^;|&]*[cC][oO][rR][eE]\\.[hH][oO][oO][kK][sS][pP][aA][tT][hH]"
+  "GIT_CONFIG_KEY_[0-9]+=[^;|&]*[cC][oO][rR][eE]\\.[hH][oO][oO][kK][sS][pP][aA][tT][hH]"
+)
+for pattern in "${raw_patterns[@]}"; do
   if printf '%s\n' "$command" | grep -Eq "$pattern"; then
+    block "'$command' would disable the commit-time Git hooks, which is permanently agent-prohibited by the collaborative Git safety boundary. Ask the user to run it directly."
+  fi
+done
+
+for pattern in "${blocked_patterns[@]}"; do
+  if printf '%s\n' "$scan_command" | grep -Eq "$pattern"; then
     block "'$command' is permanently agent-prohibited by the collaborative Git safety boundary. Ask the user to run it directly."
   fi
 done

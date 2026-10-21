@@ -549,18 +549,27 @@ rule_count=$(awk "/^RULES\$/{exit} f && NF; /<<'RULES'\$/{f=1}" \
 [ "$rule_count" -eq "${#rule_fixtures[@]}" ] \
   || fail "the scanner has $rule_count rules but ${#rule_fixtures[@]} fixtures; every rule needs one"
 
+# Rotate the path and push the secret off the first line. Every probe used to
+# stage a single-line *.txt file, so a hook scanning only .txt, or only the
+# first added line of each file, passed the entire suite.
+probe_paths=(rule-probe.py config/rule-probe.json deploy/rule-probe.yml Makefile-probe)
+probe_index=0
 for fixture in "${rule_fixtures[@]}"; do
   fixture_label=${fixture%%:*}
   fixture_value=${fixture#*:}
-  printf '%s\n' "$fixture_value" > "$githook_lab/rule-probe.txt"
-  git -C "$githook_lab" add rule-probe.txt
+  probe_path=${probe_paths[probe_index % ${#probe_paths[@]}]}
+  probe_index=$((probe_index + 1))
+  mkdir -p "$githook_lab/$(dirname "$probe_path")"
+  printf 'first line is ordinary\nsecond line is ordinary\n%s\n' "$fixture_value" \
+    > "$githook_lab/$probe_path"
+  git -C "$githook_lab" add "$probe_path"
   run_githook pre-commit 1 "look like they carry a secret"
   case "$githook_output" in
     *"$fixture_label"*) ;;
     *) fail "rule '$fixture_label' did not fire on its own fixture; got: $githook_output" ;;
   esac
-  git -C "$githook_lab" rm -q --cached rule-probe.txt
-  rm -f "$githook_lab/rule-probe.txt"
+  git -C "$githook_lab" rm -q --cached "$probe_path"
+  rm -f "$githook_lab/$probe_path"
 done
 
 # A second, different value per pattern rule. The fixtures above prove a rule
@@ -578,22 +587,26 @@ rule_variants=(
   "Stripe secret key:billing = sk_test_zyxwvutsrqponmlkj"                       # secret-scan:allow
   "Anthropic API key:claude = sk-ant-api99-zzzzzzzzzzzzzzzzzzzz"                # secret-scan:allow
   "JSON Web Token:bearer = eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpZCI6OTk5OTk5fQ.QWxpY2VCb2JDYXJvbA" # secret-scan:allow
-  "assigned secret literal:DB_PASSWORD=Zz9Yy8Xx7Ww6Vv5Uu4"                      # secret-scan:allow
+  "assigned secret literal:DB_PASSWORD=Zz9Yy8Xx7Ww6Vv5Uu4Tt3Ss2"                      # secret-scan:allow
   "credentials in a URL:store = mysql://svc:Zz9Yy8Xx@db.local/app"              # secret-scan:allow
 )
 
 for variant in "${rule_variants[@]}"; do
   variant_label=${variant%%:*}
   variant_value=${variant#*:}
-  printf '%s\n' "$variant_value" > "$githook_lab/variant-probe.txt"
-  git -C "$githook_lab" add variant-probe.txt
+  probe_path=${probe_paths[probe_index % ${#probe_paths[@]}]}
+  probe_index=$((probe_index + 1))
+  mkdir -p "$githook_lab/$(dirname "$probe_path")"
+  printf 'first line is ordinary\nsecond line is ordinary\n%s\n' "$variant_value" \
+    > "$githook_lab/$probe_path"
+  git -C "$githook_lab" add "$probe_path"
   run_githook pre-commit 1 "look like they carry a secret"
   case "$githook_output" in
     *"$variant_label"*) ;;
     *) fail "rule '$variant_label' fires on its fixture but not on a second value matching the same pattern; the rule table may not be in use. Got: $githook_output" ;;
   esac
-  git -C "$githook_lab" rm -q --cached variant-probe.txt
-  rm -f "$githook_lab/variant-probe.txt"
+  git -C "$githook_lab" rm -q --cached "$probe_path"
+  rm -f "$githook_lab/$probe_path"
 done
 
 # A deletion-only commit must pass. An earlier revision refused every one of
@@ -668,6 +681,20 @@ run_prepush() {
 
 prepush_zero=0000000000000000000000000000000000000000
 prepush_head=$(git -C "$githook_lab" rev-parse HEAD)
+
+# Two divergent commits, so the non-fast-forward rule can actually be reached.
+# Without them every probe carried an all-zero remote sha and that rule -- the
+# one the hook exists for -- was never executed by the suite.
+git -C "$githook_lab" checkout -q -b prepush-alt
+printf 'diverge\n' > "$githook_lab/diverge.txt"
+git -C "$githook_lab" add diverge.txt
+git -C "$githook_lab" -c user.email=a@b -c user.name=a commit -q -m "chore: diverge for the push probe"
+prepush_alt=$(git -C "$githook_lab" rev-parse HEAD)
+git -C "$githook_lab" checkout -q -
+printf 'ahead\n' > "$githook_lab/ahead.txt"
+git -C "$githook_lab" add ahead.txt
+git -C "$githook_lab" -c user.email=a@b -c user.name=a commit -q -m "chore: advance for the push probe"
+prepush_ahead=$(git -C "$githook_lab" rev-parse HEAD)
 # A deletion always arrives with an all-zero local sha, whatever the spelling.
 run_prepush "refs/heads/feat/x $prepush_zero refs/heads/feat/x $prepush_head" 1 "would delete"
 # A brand-new feature branch is ordinary work.
@@ -682,6 +709,20 @@ run_prepush "refs/heads/main $prepush_head refs/heads/main $prepush_zero" 1 "def
 # repository unguarded.
 run_prepush "refs/heads/master $prepush_head refs/heads/master $prepush_zero" 1 "default"
 run_prepush "refs/heads/develop $prepush_head refs/heads/develop $prepush_zero" 1 "default"
+
+# Rewriting history: the remote commit is not an ancestor of the local one.
+# This is what --force, -f, +refspec and --mirror all reduce to, so it is the
+# rule that most needs a probe.
+# alt and ahead are siblings of the same parent, so neither is an ancestor of
+# the other. Using alt against its own parent would have been a fast-forward.
+run_prepush "refs/heads/feat/x $prepush_alt refs/heads/feat/x $prepush_ahead" 1 "rewrite history"
+# A genuine fast-forward on the same branch must still pass, or the hook is
+# unusable rather than safe.
+run_prepush "refs/heads/feat/x $prepush_ahead refs/heads/feat/x $prepush_head" 0 ""
+# A mirror-shaped push sends several refs at once; a benign first line must not
+# let a later bad one through.
+run_prepush "refs/heads/feat/a $prepush_ahead refs/heads/feat/a $prepush_zero
+refs/heads/feat/b $prepush_alt refs/heads/feat/b $prepush_ahead" 1 "rewrite history"
 
 # Message rules. A vague summary is the proxy for a commit covering more than
 # one task; a specific one that merely contains such a word must pass.

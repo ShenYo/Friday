@@ -51,7 +51,8 @@ git rev-parse --git-dir >/dev/null 2>&1 \
 # --text defeats two evasions: a NUL byte anywhere in the file, and a
 # `-diff` gitattribute, both of which otherwise produce no + lines to scan.
 # ACMRT keeps renames and type changes, which a filter of d alone dropped.
-staged_diff=$(git diff --cached --no-color --text --diff-filter=ACMRT -U0 2>/dev/null) \
+staged_diff=$(git diff --cached --no-color --text --diff-filter=ACMRT -U0 \
+  --src-prefix=a/ --dst-prefix=b/ 2>/dev/null) \
   || refuse "unable to read the staged diff (failing closed)"
 
 # Two exemptions, both narrow, because a scanner that cannot describe its own
@@ -84,11 +85,25 @@ added=$(printf '%s\n' "$staged_diff" | awk '
 # diff instead, which matched the "+++" header of every diff and so refused
 # every deletion-only commit -- including removing a secret the scan had just
 # flagged, which is the remedy this hook prints.
-case "$added" in
-  *@@scan-reached-end@@*) ;;
-  *) refuse "the staged additions could not be read to the end (failing closed)" ;;
-esac
-added=${added%@@scan-reached-end@@}
+# Suffix, not substring: a staged line containing the sentinel would otherwise
+# satisfy this ahead of a truncation point and let the rest go unscanned.
+stripped_added=${added%@@scan-reached-end@@}
+[ "$stripped_added" != "$added" ] \
+  || refuse "the staged additions could not be read to the end (failing closed)"
+added=$stripped_added
+
+# Name the rule and the files it matched, never the matched value.
+where_of() {
+  local pat=$1
+  printf '%s\n' "$staged_diff" | awk -v pat="$pat" '
+      /^\+\+\+ / { f = substr($0, 5); sub(/^b\//, "", f); skip = (f == ".agents/githooks/pre-commit"); next }
+      /^\+/ && $0 !~ /^\+\+\+/ {
+        if (skip) next
+        if (index($0, "secret-scan:allow") > 0) next
+        if (tolower($0) ~ tolower(pat)) print f
+      }
+    ' | sort -u | tr '\n' ' '
+}
 
 findings=""
 while IFS="	" read -r label pattern; do
@@ -96,16 +111,35 @@ while IFS="	" read -r label pattern; do
   [ -n "${pattern:-}" ] || continue
   # -i throughout: API_KEY, AWS_SECRET_ACCESS_KEY and DATABASE_PASSWORD are the
   # dominant real-world spellings and a case-sensitive rule missed all of them.
-  printf '%s\n' "$added" | grep -Eqi -- "$pattern" || continue
-  # Name the rule and the files, never the matched value.
-  where=$(printf '%s\n' "$staged_diff" | awk -v pat="$pattern" '
-      /^\+\+\+ / { f = substr($0, 5); sub(/^b\//, "", f); skip = (f == ".agents/githooks/pre-commit"); next }
-      /^\+/ && $0 !~ /^\+\+\+/ {
-        if (skip) next
-        if (index($0, "secret-scan:allow") > 0) next
-        if (tolower($0) ~ tolower(pat)) print f
-      }
-    ' | sort -u | tr '\n' ' ')
+  # Keep only the lines that match, then drop the ones a known non-secret
+  # shape explains. Deleting characters from the value class was the previous
+  # approach and it cost real coverage: credentials contain "/", "_", "-" and
+  # "." far more often than the settings that were being silenced.
+  matching=$(printf '%s\n' "$added" | grep -Ei -- "$pattern" || true)
+  [ -n "$matching" ] || continue
+  # Exclusions apply only to the general keyword rule. The provider-specific
+  # rules recognise a credential by its own format and are high-precision, so
+  # filtering them only creates false negatives: an identifier-suffix rule
+  # would discard "aws_access_key_id = AKIA...", which is a real finding.
+  if [ "$label" = "assigned secret literal" ]; then
+  while IFS= read -r exclusion; do
+    [ -n "$exclusion" ] || continue
+    matching=$(printf '%s\n' "$matching" | grep -Eiv -- "$exclusion" || true)
+    [ -n "$matching" ] || break
+  done <<'EXCLUSIONS'
+[:=][ "']{0,3}/
+[:=][ "']{0,3}\$[({]
+[:=][ "']{0,3}[A-Za-z_]+\.(env|environ|config|settings)\b
+process\.env
+os\.environ
+[:=][ "']{0,3}<[A-Za-z_ -]+>
+[:=][ "']{0,3}(xxx|yyy|zzz|todo|changeme|placeholder|example|redacted|dummy|sample)
+(name|ref|path|file|type|kind|id|field|label|class|header|param|env|var)[ "']{0,3}[:=]
+EXCLUSIONS
+  fi
+  [ -n "$matching" ] || continue
+  # Report it.
+  where=$(where_of "$pattern")
   findings="${findings}  - ${label}: ${where:-(staged diff)}
 "
 done <<'RULES'
@@ -118,7 +152,7 @@ Google API key	AIza[0-9A-Za-z_-]{35}
 Stripe secret key	(^|[^A-Za-z0-9])sk_(live|test)_[0-9A-Za-z]{16,}
 Anthropic API key	sk-ant-[A-Za-z0-9_-]{20,}
 JSON Web Token	(^|[^A-Za-z0-9])eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}
-assigned secret literal	(password|passwd|secret|api[_-]?key|apikey|access[_-]?token|auth[_-]?token|client[_-]?secret|private[_-]?key)[A-Za-z0-9_]*[ "']{0,2}[:=][ "']{0,2}[A-Za-z0-9+=]{16,}
+assigned secret literal	(password|passwd|secret|api[_-]?key|apikey|access[_-]?token|auth[_-]?token|client[_-]?secret|private[_-]?key)[A-Za-z0-9_]*[ "']{0,3}[:=][ "']{0,3}[A-Za-z0-9/+=._-]{20,}
 credentials in a URL	[a-zA-Z][a-zA-Z0-9+.-]*://[^[:space:]:@/]+:[^[:space:]@/]+@[^[:space:]/]+
 RULES
 

@@ -86,6 +86,18 @@ blocked_patterns=(
   "(^|[[:space:];|&])gh[[:space:]]+pr[[:space:]]+merge([[:space:];|&]|\$)"
   "(^|[[:space:];|&])gh[[:space:]]+pr[[:space:]]+(close|reopen)([[:space:];|&]|\$)"
   "(^|[[:space:];|&])gh[[:space:]]+(pr|repo)[[:space:]][^;|&]*--auto([[:space:];|&=]|\$)"
+  # Bypassing the commit-time hooks. Those hooks are where the secret scan and
+  # the message checks actually run, so skipping them turns the whole contract
+  # back into advice. `-n` is spelled out per subcommand on purpose: for commit
+  # it means --no-verify, but for push it means --dry-run, which is harmless
+  # and must keep working.
+  # The short form may be bundled with other short options (-nm), so match a
+  # single-dash cluster containing n. Requiring a space before the dash keeps
+  # long options such as --no-edit out of it.
+  "git[[:space:]][^'\"]*commit[^'\"]*--no-verify([[:space:];|&]|\$)"
+  "git[[:space:]][^'\"]*commit[^'\"]*[[:space:]]-[A-Za-z]*n[A-Za-z]*([[:space:];|&]|\$)"
+  "git[[:space:]][^'\"]*push[^'\"]*--no-verify([[:space:];|&]|\$)"
+  "git[[:space:]][^'\"]*-c[[:space:]]*core\\.hooksPath([=[:space:]]|\$)"
 )
 
 rm_command_pattern="(^|[[:space:];|&'\"])([^[:space:];|&'\"]*/)?rm[[:space:]]+([^;|&]*)"

@@ -159,6 +159,23 @@ case "$codex_command_output" in
   *) fail "missing guard did not produce a concise BLOCKED message: $codex_command_output" ;;
 esac
 
+# Fixture cleanup. A single EXIT trap replaces any earlier one, so every
+# fixture registers its root here and one handler removes them all, including
+# when a fail() aborts partway. Files go individually with rm -f and
+# directories with rmdir, never recursively.
+fixture_roots=()
+cleanup_fixtures() {
+  local root file dir
+  for root in ${fixture_roots[@]+"${fixture_roots[@]}"}; do
+    [ -n "$root" ] || continue
+    while IFS= read -r file; do rm -f "$file"; done \
+      < <(find "$root" \( -type f -o -type l \) 2>/dev/null)
+    while IFS= read -r dir; do rmdir "$dir" 2>/dev/null || true; done \
+      < <(find "$root" -depth -type d 2>/dev/null)
+  done
+}
+trap cleanup_fixtures EXIT
+
 # --- Claude launcher: execute it, do not only match its text -----------------
 # Static wiring proved the launcher string. These probes prove the string the
 # runtime is configured with actually blocks from the working directories a
@@ -247,14 +264,7 @@ claude_launcher=$claude_missing_path_launcher
 # worktree or second checkout would be guarded by the wrong root. Neither a
 # substring assertion nor a probe that keeps every root equal can see this.
 claude_decoy_root=$(mktemp -d)
-claude_decoy_cleanup() {
-  rm -f "$claude_decoy_root/.claude/hooks/guard-collaborative-git.sh" 2>/dev/null || true
-  rmdir "$claude_decoy_root/.claude/hooks" "$claude_decoy_root/.claude" \
-    "$claude_decoy_root" 2>/dev/null || true
-}
-# Without this, any fail() before the cleanup tail leaks an executable no-op
-# named exactly like a real guard into the temporary directory, once per run.
-trap claude_decoy_cleanup EXIT
+fixture_roots+=("$claude_decoy_root")
 mkdir -p "$claude_decoy_root/.claude/hooks"
 printf '#!/bin/bash\nexit 0\n' > "$claude_decoy_root/.claude/hooks/guard-collaborative-git.sh"
 chmod +x "$claude_decoy_root/.claude/hooks/guard-collaborative-git.sh"
@@ -267,8 +277,6 @@ run_claude_command "$force_push" 2 "permanently agent-prohibited" /bin "$repo_ro
 # Only when the working directory resolves no usable guard may the environment
 # root be used as a fallback.
 run_claude_command "$harmless_bash" 0 "" /bin / CLAUDE_PROJECT_DIR="$claude_decoy_root"
-rm -f "$claude_decoy_root/.claude/hooks/guard-collaborative-git.sh"
-rmdir "$claude_decoy_root/.claude/hooks" "$claude_decoy_root/.claude" "$claude_decoy_root"
 
 set +e
 missing_jq_output=$(sed 's@/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin@/definitely-missing@g' "$guard" \
@@ -446,5 +454,81 @@ if [ -e "$project_check" ] || [ -L "$project_check" ]; then
     || fail "project integration check must be a regular executable file"
   "$project_check" || fail "project integration check failed"
 fi
+
+# --- commit-time Git hooks ---------------------------------------------------
+# The secret scan and the message checks live in Git hooks because a runtime
+# tool hook cannot see a staged diff, and `git commit -F -` hides the message
+# from it entirely. Static presence is not enough, so both are executed.
+for githook in pre-commit commit-msg; do
+  test -f ".agents/githooks/$githook" || fail "commit-time hook missing: $githook"
+  test -x ".agents/githooks/$githook" || fail "commit-time hook is not executable: $githook"
+done
+hooks_path=$(git config --local core.hooksPath 2>/dev/null || true)
+[ "$hooks_path" = .agents/githooks ] \
+  || fail "core.hooksPath is '$hooks_path', expected .agents/githooks — the commit-time hooks would not run"
+
+githook_lab=$(mktemp -d)
+fixture_roots+=("$githook_lab")
+git init -q "$githook_lab"
+git -C "$githook_lab" config user.email agent@local
+git -C "$githook_lab" config user.name agent
+
+run_githook() {
+  local hook=$1 expected=$2 expected_msg=$3 output exit_code
+  shift 3
+  set +e
+  output=$(cd "$githook_lab" && "$repo_root/.agents/githooks/$hook" "$@" 2>&1)
+  exit_code=$?
+  set -e
+  [ "$exit_code" -eq "$expected" ] \
+    || fail "$hook returned $exit_code, expected $expected: $output"
+  if [ -n "$expected_msg" ]; then
+    case "$output" in
+      *"$expected_msg"*) ;;
+      *) fail "$hook exited $exit_code but not for the expected reason; wanted '$expected_msg', got: $output" ;;
+    esac
+  fi
+  githook_output=$output
+}
+
+# A fabricated credential in staged content must refuse the commit, and the
+# refusal must not echo the value back.
+# The fixture must look like the real thing for the scan to be meaningful, so
+# the line carries the per-line exemption marker.
+printf 'aws_access_key_id = AKIAIOSFODNN7EXAMPLE\n' > "$githook_lab/leaky.txt"  # secret-scan:allow
+git -C "$githook_lab" add leaky.txt
+run_githook pre-commit 1 "look like they carry a secret"
+case "$githook_output" in
+  *AKIAIOSFODNN7EXAMPLE*) fail "pre-commit echoed the matched secret back into its output" ;; # secret-scan:allow
+esac
+git -C "$githook_lab" rm -q --cached leaky.txt
+rm -f "$githook_lab/leaky.txt"
+
+# Ordinary content must pass, or the hook is unusable rather than safe.
+printf 'const timeout = 30\n' > "$githook_lab/ok.txt"
+git -C "$githook_lab" add ok.txt
+run_githook pre-commit 0 ""
+
+# A newly added credential-shaped filename is refused on its name alone.
+printf 'HOST=localhost\n' > "$githook_lab/.env"
+git -C "$githook_lab" add -f .env
+run_githook pre-commit 1 "normally holds credentials"
+git -C "$githook_lab" rm -q --cached .env
+rm -f "$githook_lab/.env"
+
+# Message rules. A vague summary is the proxy for a commit covering more than
+# one task; a specific one that merely contains such a word must pass.
+printf 'chore: misc updates\n' > "$githook_lab/msg"
+run_githook commit-msg 1 "too vague to trace to one task" msg
+printf 'Fixed stuff.\n' > "$githook_lab/msg"
+run_githook commit-msg 1 "not Conventional Commits" msg
+printf 'fix: repair the parser and also update the docs\n' > "$githook_lab/msg"
+run_githook commit-msg 1 "joins separate changes" msg
+printf 'docs: clarify the retry wording in the spec\n' > "$githook_lab/msg"
+run_githook commit-msg 0 "" msg
+printf 'fix(agents): sync shared guard fixes\n' > "$githook_lab/msg"
+run_githook commit-msg 0 "" msg
+printf 'Merge pull request #1 from x/y\n' > "$githook_lab/msg"
+run_githook commit-msg 0 "" msg
 
 echo "Agent workflow guardrails passed."

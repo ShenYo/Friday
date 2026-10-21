@@ -17,6 +17,8 @@ AGENTS.md
 .agents/docs/git-guideline/safety-boundary.md
 .agents/hooks/check-collaborative-git.sh
 .agents/hooks/guard-collaborative-git.sh
+.agents/githooks/pre-commit
+.agents/githooks/commit-msg
 .agents/skills/git/commit/SKILL.md
 .agents/skills/git/create-pr/SKILL.md
 .agents/skills/git/push/SKILL.md

@@ -94,7 +94,7 @@ The user must name the operation and its exact target in the current turn.
 | --- | --- |
 | Merging a pull request | However many checks a PR passed, the final decision to integrate is a person's. No combination of green CI, review bots, or agent analysis substitutes for it. |
 | Enabling auto-merge | This is the same decision taken in advance and delegated to CI. It is reserved for the same reason as merging. |
-| Pushing directly to the default branch | A direct push bypasses the PR checkpoint above, so leaving it open would make that checkpoint optional in practice. |
+| Pushing directly to the default branch | A direct push bypasses the PR checkpoint above, so leaving it open would make that checkpoint optional in practice. Enforced by `pre-push`. |
 | Closing or reopening a pull request | It changes the state of a shared review artifact that others may be acting on. |
 | Changing branch protection, required checks, or repository settings | These define the checkpoints themselves. |
 
@@ -139,6 +139,14 @@ else: it cannot read a staged diff, and `git commit -F -` passes the message on
 stdin where it is invisible. The checker validates the wiring and executes the
 configured launchers against allow and block payloads.
 
+**The push-time Git hook.** `.agents/githooks/pre-push` receives the refs and
+object ids Git is about to send, so it decides from what a push *does* rather
+than how it was written. Deleting a ref, rewriting history, and pushing to the
+default branch are refused identically whether they were spelled `--force`,
+`-f`, `+refspec`, `--mirror`, `--delete` or `:ref`. The default branch is
+resolved from the remote HEAD; where that is unset the hook refuses on the
+branch name and says so rather than passing silently.
+
 **The commit-time Git hooks.** `.agents/githooks/pre-commit` and
 `.agents/githooks/commit-msg`, wired through `core.hooksPath` at install, see
 the staged diff and the message however it was supplied, and apply to a
@@ -153,14 +161,12 @@ What **neither** layer enforces. Independent review established this list by
 probing the guard directly; treat every row here as instruction-only, and do
 not assume a rule has machinery behind it because it appears in a table above.
 
-- **Pushing to the default branch.** No pattern matches it, in any spelling.
-  The checkpoint exists only in these instructions.
-- **Most of the prohibitions table, in some spelling.** The guard matches a set
-  of command shapes, not an operation. `git restore`, `git checkout -- <path>`,
-  `git rm <file>`, `git remote rm`, `git update-ref -d`, `git push --mirror`,
-  and a force push written as `+refspec` all reach a prohibited outcome without
-  matching a pattern. Plumbing equivalents of a blocked porcelain command
-  generally do too.
+- **Local prohibitions, in some spelling.** The guard matches command shapes,
+  not operations. `git restore`, `git checkout -- <path>`, `git rm <file>`,
+  `git remote rm` and `git update-ref -d` reach a prohibited outcome locally
+  without matching a pattern, and plumbing equivalents of a blocked porcelain
+  command generally do too. What leaves the machine is covered by `pre-push`
+  below; what stays local is not.
 - **`gh` reached by any spelling but a bare `gh` at the start of a word.** A
   path prefix, a subshell, `eval`, or a quoted or lowercased verb all pass. So
   does the REST API route to a blocked operation: merging through

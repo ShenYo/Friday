@@ -490,7 +490,7 @@ fi
 # The secret scan and the message checks live in Git hooks because a runtime
 # tool hook cannot see a staged diff, and `git commit -F -` hides the message
 # from it entirely. Static presence is not enough, so both are executed.
-for githook in pre-commit commit-msg; do
+for githook in pre-commit commit-msg pre-push; do
   test -f ".agents/githooks/$githook" || fail "commit-time hook missing: $githook"
   test -x ".agents/githooks/$githook" || fail "commit-time hook is not executable: $githook"
 done
@@ -522,6 +522,62 @@ run_githook() {
   githook_output=$output
 }
 
+# Every rule in the hook's table must have a fixture here, and every fixture
+# must be refused. The count is asserted too, so a new rule cannot ship without
+# a probe. An earlier revision tested three hand-picked fixtures, and a stub
+# implementing one rule out of eleven passed it -- the probes proved the
+# fixtures, not the rules.
+#
+# All values are fabricated. Each line carries the per-line scanner exemption,
+# because this file is itself scanned when it is committed.
+rule_fixtures=(
+  "private key block:-----BEGIN RSA PRIVATE KEY-----"                                   # secret-scan:allow
+  "OpenSSH private key:-----BEGIN OPENSSH PRIVATE KEY-----"                             # secret-scan:allow
+  "AWS access key id:aws_access_key_id = AKIAIOSFODNN7EXAMPLE"                          # secret-scan:allow
+  "GitHub token:token: ghp_0123456789abcdefghijklmnopqrstuvwxyz"                        # secret-scan:allow
+  "Slack token:SLACK=xoxb-123456789012-abcdefghijkl"                                    # secret-scan:allow
+  "Google API key:key=AIzaSyA1234567890abcdefghijklmnopqrstuv"                          # secret-scan:allow
+  "Stripe secret key:stripe = sk_live_0123456789abcdefghij"                             # secret-scan:allow
+  "Anthropic API key:ANTHROPIC_API_KEY=sk-ant-api03-abcdefghij1234567890"               # secret-scan:allow
+  "JSON Web Token:auth = eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dBjftJeZ4CVP" # secret-scan:allow
+  "assigned secret literal:AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMIK7MDENGbPxRfi"            # secret-scan:allow
+  "credentials in a URL:DATABASE_URL=postgres://admin:hunter2pass@db.internal/app"      # secret-scan:allow
+)
+
+rule_count=$(awk "/^RULES\$/{exit} f && NF; /<<'RULES'\$/{f=1}" \
+  "$repo_root/.agents/githooks/pre-commit" | wc -l | tr -d ' ')
+[ "$rule_count" -eq "${#rule_fixtures[@]}" ] \
+  || fail "the scanner has $rule_count rules but ${#rule_fixtures[@]} fixtures; every rule needs one"
+
+for fixture in "${rule_fixtures[@]}"; do
+  fixture_label=${fixture%%:*}
+  fixture_value=${fixture#*:}
+  printf '%s\n' "$fixture_value" > "$githook_lab/rule-probe.txt"
+  git -C "$githook_lab" add rule-probe.txt
+  run_githook pre-commit 1 "look like they carry a secret"
+  case "$githook_output" in
+    *"$fixture_label"*) ;;
+    *) fail "rule '$fixture_label' did not fire on its own fixture; got: $githook_output" ;;
+  esac
+  git -C "$githook_lab" rm -q --cached rule-probe.txt
+  rm -f "$githook_lab/rule-probe.txt"
+done
+
+# Evasions that previously defeated the scan entirely.
+printf 'api_key = aB3dE5fG7hJ9kL1mN3pQ\n' > "$githook_lab/evade.txt"  # secret-scan:allow
+printf '\377\376legacy latin1\n' > "$githook_lab/aa-legacy.txt"
+git -C "$githook_lab" add evade.txt aa-legacy.txt
+run_githook pre-commit 1 "look like they carry a secret"
+git -C "$githook_lab" rm -q --cached evade.txt aa-legacy.txt
+rm -f "$githook_lab/evade.txt" "$githook_lab/aa-legacy.txt"
+
+printf 'x\n' > "$githook_lab/renamed.txt"
+git -C "$githook_lab" add renamed.txt
+git -C "$githook_lab" -c user.email=a@b -c user.name=a commit -q -m "chore: seed a file to rename"
+git -C "$githook_lab" mv renamed.txt .env
+run_githook pre-commit 1 "normally holds credentials"
+git -C "$githook_lab" mv .env renamed.txt
+
 # A fabricated credential in staged content must refuse the commit, and the
 # refusal must not echo the value back.
 # The fixture must look like the real thing for the scan to be meaningful, so
@@ -546,6 +602,36 @@ git -C "$githook_lab" add -f .env
 run_githook pre-commit 1 "normally holds credentials"
 git -C "$githook_lab" rm -q --cached .env
 rm -f "$githook_lab/.env"
+
+# pre-push decides from the refs Git hands it, not from how the command was
+# spelled, so --force, -f, a leading + on the refspec and --mirror are all one
+# test. Feed it the stdin contract directly: <local ref> <local sha> <remote
+# ref> <remote sha>.
+run_prepush() {
+  local line=$1 expected=$2 expected_msg=$3 output exit_code
+  set +e
+  output=$(cd "$githook_lab" && printf '%s\n' "$line" \
+    | "$repo_root/.agents/githooks/pre-push" origin ../origin.git 2>&1)
+  exit_code=$?
+  set -e
+  [ "$exit_code" -eq "$expected" ] \
+    || fail "pre-push returned $exit_code, expected $expected for '$line': $output"
+  if [ -n "$expected_msg" ]; then
+    case "$output" in
+      *"$expected_msg"*) ;;
+      *) fail "pre-push exited $exit_code but not for the expected reason; wanted '$expected_msg', got: $output" ;;
+    esac
+  fi
+}
+
+prepush_zero=0000000000000000000000000000000000000000
+prepush_head=$(git -C "$githook_lab" rev-parse HEAD)
+# A deletion always arrives with an all-zero local sha, whatever the spelling.
+run_prepush "refs/heads/feat/x $prepush_zero refs/heads/feat/x $prepush_head" 1 "would delete"
+# A brand-new feature branch is ordinary work.
+run_prepush "refs/heads/feat/x $prepush_head refs/heads/feat/x $prepush_zero" 0 ""
+# The default branch is reserved for a person.
+run_prepush "refs/heads/main $prepush_head refs/heads/main $prepush_zero" 1 "default branch"
 
 # Message rules. A vague summary is the proxy for a commit covering more than
 # one task; a specific one that merely contains such a word must pass.

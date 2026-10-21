@@ -22,6 +22,13 @@ set -uo pipefail
 PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin${PATH:+:$PATH}"
 export PATH
 
+# Byte-oriented, not character-oriented. A single invalid multibyte sequence
+# used to abort awk, leave the scan input empty, and let the hook reach exit 0
+# with all rules disarmed -- silently, and by accident on any latin-1 or
+# non-UTF-8 file. Under LC_ALL=C there are no multibyte sequences to fail on.
+LC_ALL=C
+export LC_ALL
+
 refuse() {
   echo "COMMIT REFUSED: $1" >&2
   echo "" >&2
@@ -41,7 +48,10 @@ git rev-parse --git-dir >/dev/null 2>&1 \
 
 # Added and changed lines only. Deleting a line that held a secret is how a
 # secret gets removed, so scanning removals would refuse the fix.
-staged_diff=$(git diff --cached --no-color --diff-filter=d -U0 2>/dev/null) \
+# --text defeats two evasions: a NUL byte anywhere in the file, and a
+# `-diff` gitattribute, both of which otherwise produce no + lines to scan.
+# ACMRT keeps renames and type changes, which a filter of d alone dropped.
+staged_diff=$(git diff --cached --no-color --text --diff-filter=ACMRT -U0 2>/dev/null) \
   || refuse "unable to read the staged diff (failing closed)"
 
 # Two exemptions, both narrow, because a scanner that cannot describe its own
@@ -61,20 +71,29 @@ added=$(printf '%s\n' "$staged_diff" | awk '
       if (index($0, "secret-scan:allow") > 0) next
       print
     }
-  ')
+  ') || refuse "unable to extract the staged additions (failing closed)"
+# An empty result with a non-empty diff means the extraction silently dropped
+# everything, which is how this hook previously failed open.
+if [ -n "$staged_diff" ] && [ -z "$added" ]; then
+  case "$staged_diff" in
+    *$'\n+'*|'+'*) refuse "the staged diff has additions but none could be read (failing closed)" ;;
+  esac
+fi
 
 findings=""
 while IFS="	" read -r label pattern; do
   [ -n "${label:-}" ] || continue
   [ -n "${pattern:-}" ] || continue
-  printf '%s\n' "$added" | grep -Eq -- "$pattern" || continue
+  # -i throughout: API_KEY, AWS_SECRET_ACCESS_KEY and DATABASE_PASSWORD are the
+  # dominant real-world spellings and a case-sensitive rule missed all of them.
+  printf '%s\n' "$added" | grep -Eqi -- "$pattern" || continue
   # Name the rule and the files, never the matched value.
   where=$(printf '%s\n' "$staged_diff" | awk -v pat="$pattern" '
       /^\+\+\+ / { f = $2; sub(/^b\//, "", f); skip = (f == ".agents/githooks/pre-commit"); next }
       /^\+/ && $0 !~ /^\+\+\+/ {
         if (skip) next
         if (index($0, "secret-scan:allow") > 0) next
-        if ($0 ~ pat) print f
+        if (tolower($0) ~ tolower(pat)) print f
       }
     ' | sort -u | tr '\n' ' ')
   findings="${findings}  - ${label}: ${where:-(staged diff)}
@@ -89,7 +108,7 @@ Google API key	AIza[0-9A-Za-z_-]{35}
 Stripe secret key	(^|[^A-Za-z0-9])sk_(live|test)_[0-9A-Za-z]{16,}
 Anthropic API key	sk-ant-[A-Za-z0-9_-]{20,}
 JSON Web Token	(^|[^A-Za-z0-9])eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}
-assigned secret literal	(password|passwd|secret|api[_-]?key|apikey|access[_-]?token|auth[_-]?token|client[_-]?secret|private[_-]?key)[ "']{0,2}[:=][ "']{0,2}[A-Za-z0-9/+_=-]{12,}
+assigned secret literal	(password|passwd|secret|api[_-]?key|apikey|access[_-]?token|auth[_-]?token|client[_-]?secret|private[_-]?key|credential)[A-Za-z0-9_-]*[ "']{0,2}[:=][ "']{0,2}[A-Za-z0-9/+_=-]{12,}
 credentials in a URL	[a-zA-Z][a-zA-Z0-9+.-]*://[^[:space:]:@/]+:[^[:space:]@/]+@[^[:space:]/]+
 RULES
 
@@ -112,13 +131,25 @@ fi
 # Newly added files of a kind that normally holds credentials, judged by name
 # rather than content. Already-tracked files are left alone, so a repository
 # that made that choice deliberately is not second-guessed on every commit.
-while IFS= read -r f; do
+# Name-based check. --name-status rather than --name-only, so a rename into a
+# credential-shaped name is caught: `git mv notes.txt .env` reports R, which a
+# filter of A alone missed entirely. For R and C the destination is the name
+# that matters.
+while IFS=$'\t' read -r status first second; do
+  [ -n "${status:-}" ] || continue
+  case "$status" in
+    R*|C*) f=${second:-} ;;
+    A*)    f=${first:-} ;;
+    *)     continue ;;
+  esac
   [ -n "$f" ] || continue
   case "$f" in
-    .env|.env.*|*/.env|*/.env.*|*.pem|*.key|*.p12|*.pfx|*id_rsa|*id_ed25519|*.keystore|*.jks)
-      refuse "newly added file '$f' is the kind that normally holds credentials. Add it to .gitignore, or confirm it carries none and is meant to be tracked."
+    .env|.env.*|*/.env|*/.env.*|.envrc|*/.envrc|.netrc|*/.netrc|.npmrc|*/.npmrc\
+    |*.pem|*.key|*.p12|*.pfx|*.crt|*.ovpn|*id_rsa|*id_ed25519|*.keystore|*.jks\
+    |credentials|*/credentials|*service-account*.json|*secrets.y*ml)
+      refuse "staged file '$f' is the kind that normally holds credentials. Add it to .gitignore, or confirm it carries none and is meant to be tracked."
       ;;
   esac
-done < <(git diff --cached --name-only --diff-filter=A 2>/dev/null || true)
+done < <(git diff --cached --name-status --diff-filter=ACR 2>/dev/null || true)
 
 exit 0

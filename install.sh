@@ -53,6 +53,7 @@ files=(
   .agents/hooks/guard-collaborative-git.sh
   .agents/githooks/pre-commit
   .agents/githooks/commit-msg
+  .agents/githooks/pre-push
   .agents/skills/git/commit/SKILL.md
   .agents/skills/git/create-pr/SKILL.md
   .agents/skills/git/push/SKILL.md

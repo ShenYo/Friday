@@ -144,8 +144,9 @@ object ids Git is about to send, so it decides from what a push *does* rather
 than how it was written. Deleting a ref, rewriting history, and pushing to the
 default branch are refused identically whether they were spelled `--force`,
 `-f`, `+refspec`, `--mirror`, `--delete` or `:ref`. The default branch is
-resolved from the remote HEAD; where that reference is absent, malformed, or
-stale, the hook refuses every push until it can resolve the checkpoint.
+resolved from the local remote HEAD; when that reference is missing, malformed,
+or locally dangling, the hook refuses every push until it can resolve the
+checkpoint.
 
 **The commit-time Git hooks.** `.agents/githooks/pre-commit` and
 `.agents/githooks/commit-msg`, wired through `core.hooksPath` at install, see

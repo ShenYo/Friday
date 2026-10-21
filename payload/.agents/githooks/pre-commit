@@ -65,20 +65,30 @@ staged_diff=$(git diff --cached --no-color --text --diff-filter=ACMRT -U0 2>/dev
 # The marker is deliberately per-line and must be justified where it appears.
 # It is not a file-level or directory-level opt-out.
 added=$(printf '%s\n' "$staged_diff" | awk '
-    /^\+\+\+ / { f = $2; sub(/^b\//, "", f); skip = (f == ".agents/githooks/pre-commit"); next }
+    # The whole header after "+++ ", not $2: Git does not quote a plain space,
+    # so a path like ".agents/githooks/pre-commit notes" collapsed onto the
+    # exempt path under a whitespace split and skipped the entire file.
+    /^\+\+\+ / { f = substr($0, 5); sub(/^b\//, "", f); skip = (f == ".agents/githooks/pre-commit"); next }
     /^\+/ && $0 !~ /^\+\+\+/ {
       if (skip) next
       if (index($0, "secret-scan:allow") > 0) next
       print
     }
+    END { print "@@scan-reached-end@@" }
   ') || refuse "unable to extract the staged additions (failing closed)"
-# An empty result with a non-empty diff means the extraction silently dropped
-# everything, which is how this hook previously failed open.
-if [ -n "$staged_diff" ] && [ -z "$added" ]; then
-  case "$staged_diff" in
-    *$'\n+'*|'+'*) refuse "the staged diff has additions but none could be read (failing closed)" ;;
-  esac
-fi
+
+# The original fail-open was awk dying partway and leaving an empty result. A
+# sentinel from awk END distinguishes that from the ordinary cases where there
+# is simply nothing to scan: a deletion-only commit, a mode change, or a diff
+# whose every added line is exempt. An earlier revision tested for a "+" in the
+# diff instead, which matched the "+++" header of every diff and so refused
+# every deletion-only commit -- including removing a secret the scan had just
+# flagged, which is the remedy this hook prints.
+case "$added" in
+  *@@scan-reached-end@@*) ;;
+  *) refuse "the staged additions could not be read to the end (failing closed)" ;;
+esac
+added=${added%@@scan-reached-end@@}
 
 findings=""
 while IFS="	" read -r label pattern; do
@@ -89,7 +99,7 @@ while IFS="	" read -r label pattern; do
   printf '%s\n' "$added" | grep -Eqi -- "$pattern" || continue
   # Name the rule and the files, never the matched value.
   where=$(printf '%s\n' "$staged_diff" | awk -v pat="$pattern" '
-      /^\+\+\+ / { f = $2; sub(/^b\//, "", f); skip = (f == ".agents/githooks/pre-commit"); next }
+      /^\+\+\+ / { f = substr($0, 5); sub(/^b\//, "", f); skip = (f == ".agents/githooks/pre-commit"); next }
       /^\+/ && $0 !~ /^\+\+\+/ {
         if (skip) next
         if (index($0, "secret-scan:allow") > 0) next
@@ -108,7 +118,7 @@ Google API key	AIza[0-9A-Za-z_-]{35}
 Stripe secret key	(^|[^A-Za-z0-9])sk_(live|test)_[0-9A-Za-z]{16,}
 Anthropic API key	sk-ant-[A-Za-z0-9_-]{20,}
 JSON Web Token	(^|[^A-Za-z0-9])eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}
-assigned secret literal	(password|passwd|secret|api[_-]?key|apikey|access[_-]?token|auth[_-]?token|client[_-]?secret|private[_-]?key|credential)[A-Za-z0-9_-]*[ "']{0,2}[:=][ "']{0,2}[A-Za-z0-9/+_=-]{12,}
+assigned secret literal	(password|passwd|secret|api[_-]?key|apikey|access[_-]?token|auth[_-]?token|client[_-]?secret|private[_-]?key)[A-Za-z0-9_]*[ "']{0,2}[:=][ "']{0,2}[A-Za-z0-9+=]{16,}
 credentials in a URL	[a-zA-Z][a-zA-Z0-9+.-]*://[^[:space:]:@/]+:[^[:space:]@/]+@[^[:space:]/]+
 RULES
 

@@ -563,6 +563,48 @@ for fixture in "${rule_fixtures[@]}"; do
   rm -f "$githook_lab/rule-probe.txt"
 done
 
+# A second, different value per pattern rule. The fixtures above prove a rule
+# fires on one string; these prove it fires on the pattern. A stub that keeps
+# the rule table verbatim but matches only the fixture strings passes the
+# fixtures and the count assertion, and fails here. Rules that are a fixed
+# string have no variant, since no probe can distinguish a literal matcher from
+# the rule for those.
+rule_variants=(
+  "private key block:-----BEGIN EC PRIVATE KEY-----"                            # secret-scan:allow
+  "AWS access key id:role_key = ASIAZZZZZZZZZZZZZZZZ"                           # secret-scan:allow
+  "GitHub token:pat = github_pat_11ABCDEFG0abcdefghijklmnopqrstuvwxyz"          # secret-scan:allow
+  "Slack token:hook = xoxp-9876543210-zyxwvutsrqpo"                             # secret-scan:allow
+  "Google API key:maps = AIzaB9876543210zyxwvutsrqponmlkjihgfedc"                 # secret-scan:allow
+  "Stripe secret key:billing = sk_test_zyxwvutsrqponmlkj"                       # secret-scan:allow
+  "Anthropic API key:claude = sk-ant-api99-zzzzzzzzzzzzzzzzzzzz"                # secret-scan:allow
+  "JSON Web Token:bearer = eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpZCI6OTk5OTk5fQ.QWxpY2VCb2JDYXJvbA" # secret-scan:allow
+  "assigned secret literal:DB_PASSWORD=Zz9Yy8Xx7Ww6Vv5Uu4"                      # secret-scan:allow
+  "credentials in a URL:store = mysql://svc:Zz9Yy8Xx@db.local/app"              # secret-scan:allow
+)
+
+for variant in "${rule_variants[@]}"; do
+  variant_label=${variant%%:*}
+  variant_value=${variant#*:}
+  printf '%s\n' "$variant_value" > "$githook_lab/variant-probe.txt"
+  git -C "$githook_lab" add variant-probe.txt
+  run_githook pre-commit 1 "look like they carry a secret"
+  case "$githook_output" in
+    *"$variant_label"*) ;;
+    *) fail "rule '$variant_label' fires on its fixture but not on a second value matching the same pattern; the rule table may not be in use. Got: $githook_output" ;;
+  esac
+  git -C "$githook_lab" rm -q --cached variant-probe.txt
+  rm -f "$githook_lab/variant-probe.txt"
+done
+
+# A deletion-only commit must pass. An earlier revision refused every one of
+# them, including removing a secret the scan had just flagged.
+printf 'keep\ndrop\n' > "$githook_lab/deletion.txt"
+git -C "$githook_lab" add deletion.txt
+git -C "$githook_lab" -c user.email=a@b -c user.name=a commit -q -m "chore: seed a line to delete"
+printf 'keep\n' > "$githook_lab/deletion.txt"
+git -C "$githook_lab" add deletion.txt
+run_githook pre-commit 0 ""
+
 # Evasions that previously defeated the scan entirely.
 printf 'api_key = aB3dE5fG7hJ9kL1mN3pQ\n' > "$githook_lab/evade.txt"  # secret-scan:allow
 printf '\377\376legacy latin1\n' > "$githook_lab/aa-legacy.txt"
@@ -631,7 +673,15 @@ run_prepush "refs/heads/feat/x $prepush_zero refs/heads/feat/x $prepush_head" 1 
 # A brand-new feature branch is ordinary work.
 run_prepush "refs/heads/feat/x $prepush_head refs/heads/feat/x $prepush_zero" 0 ""
 # The default branch is reserved for a person.
-run_prepush "refs/heads/main $prepush_head refs/heads/main $prepush_zero" 1 "default branch"
+# The lab has no remote HEAD, so this exercises the fallback path. "default"
+# appears in both that message and the resolved one, so the probe does not
+# depend on which path the lab happens to take.
+run_prepush "refs/heads/main $prepush_head refs/heads/main $prepush_zero" 1 "default"
+# A conventional default name must be refused even when the remote HEAD is
+# unset; protecting only `main` would leave a master- or develop-default
+# repository unguarded.
+run_prepush "refs/heads/master $prepush_head refs/heads/master $prepush_zero" 1 "default"
+run_prepush "refs/heads/develop $prepush_head refs/heads/develop $prepush_zero" 1 "default"
 
 # Message rules. A vague summary is the proxy for a commit covering more than
 # one task; a specific one that merely contains such a word must pass.

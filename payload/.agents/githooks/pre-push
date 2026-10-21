@@ -40,16 +40,27 @@ command -v git >/dev/null 2>&1 || refuse "git is unavailable (failing closed)"
 # silently, because a repository whose default branch is `master`, `develop` or
 # `trunk` must not be protected only when it happens to be called `main`.
 default_ref=""
+default_resolved=no
 if [ -n "$remote_name" ]; then
-  default_ref=$(git symbolic-ref --quiet "refs/remotes/$remote_name/HEAD" 2>/dev/null || true)
-  default_ref=${default_ref#refs/remotes/$remote_name/}
+  symref=$(git symbolic-ref --quiet "refs/remotes/$remote_name/HEAD" 2>/dev/null || true)
+  # Only trust it when the prefix was actually there. A symref pointing outside
+  # its own namespace left the full ref in default_ref, which then matched no
+  # branch and silently disabled this check.
+  case "$symref" in
+    "refs/remotes/$remote_name/"?*)
+      default_ref=${symref#refs/remotes/$remote_name/}
+      default_resolved=yes
+      ;;
+  esac
 fi
-default_resolved=yes
-if [ -z "$default_ref" ]; then
-  default_resolved=no
-  default_ref=$(git config --get init.defaultBranch 2>/dev/null || true)
-  [ -n "$default_ref" ] || default_ref=main
-fi
+
+# With no trustworthy remote HEAD, fall back to a set of conventional default
+# names rather than to `main` alone: a repository whose default is `master` or
+# `develop` must not be unprotected merely because of its name. The configured
+# init.defaultBranch joins the set when present.
+fallback_defaults="main master develop trunk"
+configured_default=$(git config --get init.defaultBranch 2>/dev/null || true)
+[ -n "$configured_default" ] && fallback_defaults="$fallback_defaults $configured_default"
 
 while read -r local_ref local_sha remote_ref remote_sha; do
   [ -n "${remote_ref:-}" ] || continue
@@ -71,11 +82,16 @@ while read -r local_ref local_sha remote_ref remote_sha; do
 
   # 3. The default branch is a human-review checkpoint, so that merging a pull
   #    request cannot be bypassed by pushing straight to the branch it targets.
-  if [ "$short_remote" = "$default_ref" ]; then
-    if [ "$default_resolved" = yes ]; then
+  if [ "$default_resolved" = yes ]; then
+    if [ "$short_remote" = "$default_ref" ]; then
       refuse "this would push directly to the default branch '$default_ref'. That is reserved for a person, because it bypasses pull-request review. Open a pull request, or ask the user to push."
     fi
-    refuse "this would push to '$short_remote', which matches the assumed default branch. The real default could not be resolved locally ('git remote set-head $remote_name --auto' fixes that), so this is refused on the name alone. Ask the user to confirm."
+  else
+    for candidate in $fallback_defaults; do
+      if [ "$short_remote" = "$candidate" ]; then
+        refuse "this would push to '$short_remote', a conventional default-branch name. The real default could not be resolved for '$remote_name' ('git remote set-head $remote_name --auto' fixes that), so this is refused on the name alone. Ask the user to confirm."
+      fi
+    done
   fi
 done
 

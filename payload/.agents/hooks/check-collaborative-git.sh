@@ -646,6 +646,21 @@ esac
 git -C "$githook_lab" rm -q --cached leaky.txt
 rm -f "$githook_lab/leaky.txt"
 
+# The hook file itself is the one narrow file-level exemption. A path that only
+# starts with that name must remain ordinary staged content; parsing a diff
+# header with `$2` used to collapse this name onto the exemption.
+space_path='.agents/githooks/pre-commit notes'
+mkdir -p "$githook_lab/$(dirname "$space_path")"
+printf 'aws_access_key_id = AKIAIOSFODNN7EXAMPLE\n' > "$githook_lab/$space_path"  # secret-scan:allow
+printf 'ordinary companion\n' > "$githook_lab/path-space-companion.txt"
+git -C "$githook_lab" add -- "$space_path" path-space-companion.txt
+run_githook pre-commit 1 "look like they carry a secret"
+case "$githook_output" in
+  *AKIAIOSFODNN7EXAMPLE*) fail "pre-commit echoed the path-space fixture" ;; # secret-scan:allow
+esac
+git -C "$githook_lab" rm -q --cached -- "$space_path" path-space-companion.txt
+rm -f "$githook_lab/$space_path" "$githook_lab/path-space-companion.txt"
+
 # Ordinary content must pass, or the hook is unusable rather than safe.
 printf 'const timeout = 30\n' > "$githook_lab/ok.txt"
 git -C "$githook_lab" add ok.txt
@@ -682,6 +697,12 @@ run_prepush() {
 prepush_zero=0000000000000000000000000000000000000000
 prepush_head=$(git -C "$githook_lab" rev-parse HEAD)
 
+# The remote HEAD is the only source for the semantic default-branch decision.
+# Give the lab a non-main default explicitly; a feature push must still pass
+# while a direct push to that default must not.
+git -C "$githook_lab" update-ref refs/remotes/origin/master "$prepush_head"
+git -C "$githook_lab" symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/master
+
 # Two divergent commits, so the non-fast-forward rule can actually be reached.
 # Without them every probe carried an all-zero remote sha and that rule -- the
 # one the hook exists for -- was never executed by the suite.
@@ -699,16 +720,13 @@ prepush_ahead=$(git -C "$githook_lab" rev-parse HEAD)
 run_prepush "refs/heads/feat/x $prepush_zero refs/heads/feat/x $prepush_head" 1 "would delete"
 # A brand-new feature branch is ordinary work.
 run_prepush "refs/heads/feat/x $prepush_head refs/heads/feat/x $prepush_zero" 0 ""
-# The default branch is reserved for a person.
-# The lab has no remote HEAD, so this exercises the fallback path. "default"
-# appears in both that message and the resolved one, so the probe does not
-# depend on which path the lab happens to take.
-run_prepush "refs/heads/main $prepush_head refs/heads/main $prepush_zero" 1 "default"
-# A conventional default name must be refused even when the remote HEAD is
-# unset; protecting only `main` would leave a master- or develop-default
-# repository unguarded.
+# The resolved non-main default is reserved for a person.
 run_prepush "refs/heads/master $prepush_head refs/heads/master $prepush_zero" 1 "default"
-run_prepush "refs/heads/develop $prepush_head refs/heads/develop $prepush_zero" 1 "default"
+# No remote HEAD means the hook cannot know the checkpoint, so it refuses even
+# an otherwise ordinary feature push rather than guessing from branch names.
+git -C "$githook_lab" symbolic-ref -d refs/remotes/origin/HEAD
+run_prepush "refs/heads/feat/x $prepush_head refs/heads/feat/x $prepush_zero" 1 "could not resolve the default branch"
+git -C "$githook_lab" symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/master
 
 # Rewriting history: the remote commit is not an ancestor of the local one.
 # This is what --force, -f, +refspec and --mirror all reduce to, so it is the

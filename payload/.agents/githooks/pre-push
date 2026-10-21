@@ -34,33 +34,23 @@ refuse() {
 
 command -v git >/dev/null 2>&1 || refuse "git is unavailable (failing closed)"
 
-# The default branch, resolved locally. `git remote show` would be accurate but
-# needs the network, which a hook must not depend on. If the symbolic ref is
-# unset the check degrades to a name match and says so rather than passing
-# silently, because a repository whose default branch is `master`, `develop` or
-# `trunk` must not be protected only when it happens to be called `main`.
+# The default branch must resolve from the local remote HEAD. `git remote show`
+# would need the network, which a hook must not depend on. A guessed branch
+# name can protect the wrong branch, so an absent, malformed, or stale remote
+# HEAD refuses every push until the repository is refreshed deliberately.
+[ -n "$remote_name" ] \
+  || refuse "remote name is unavailable; cannot resolve the default branch (failing closed)"
+symref=$(git symbolic-ref --quiet "refs/remotes/$remote_name/HEAD" 2>/dev/null || true)
 default_ref=""
-default_resolved=no
-if [ -n "$remote_name" ]; then
-  symref=$(git symbolic-ref --quiet "refs/remotes/$remote_name/HEAD" 2>/dev/null || true)
-  # Only trust it when the prefix was actually there. A symref pointing outside
-  # its own namespace left the full ref in default_ref, which then matched no
-  # branch and silently disabled this check.
-  case "$symref" in
-    "refs/remotes/$remote_name/"?*)
+case "$symref" in
+  "refs/remotes/$remote_name/"?*)
+    if git show-ref --verify --quiet "$symref"; then
       default_ref=${symref#refs/remotes/$remote_name/}
-      default_resolved=yes
-      ;;
-  esac
-fi
-
-# With no trustworthy remote HEAD, fall back to a set of conventional default
-# names rather than to `main` alone: a repository whose default is `master` or
-# `develop` must not be unprotected merely because of its name. The configured
-# init.defaultBranch joins the set when present.
-fallback_defaults="main master develop trunk"
-configured_default=$(git config --get init.defaultBranch 2>/dev/null || true)
-[ -n "$configured_default" ] && fallback_defaults="$fallback_defaults $configured_default"
+    fi
+    ;;
+esac
+[ -n "$default_ref" ] \
+  || refuse "could not resolve the default branch for '$remote_name' (failing closed); refresh remote HEAD before pushing"
 
 while read -r local_ref local_sha remote_ref remote_sha; do
   [ -n "${remote_ref:-}" ] || continue
@@ -82,16 +72,8 @@ while read -r local_ref local_sha remote_ref remote_sha; do
 
   # 3. The default branch is a human-review checkpoint, so that merging a pull
   #    request cannot be bypassed by pushing straight to the branch it targets.
-  if [ "$default_resolved" = yes ]; then
-    if [ "$short_remote" = "$default_ref" ]; then
-      refuse "this would push directly to the default branch '$default_ref'. That is reserved for a person, because it bypasses pull-request review. Open a pull request, or ask the user to push."
-    fi
-  else
-    for candidate in $fallback_defaults; do
-      if [ "$short_remote" = "$candidate" ]; then
-        refuse "this would push to '$short_remote', a conventional default-branch name. The real default could not be resolved for '$remote_name' ('git remote set-head $remote_name --auto' fixes that), so this is refused on the name alone. Ask the user to confirm."
-      fi
-    done
+  if [ "$short_remote" = "$default_ref" ]; then
+    refuse "this would push directly to the default branch '$default_ref'. That is reserved for a person, because it bypasses pull-request review. Open a pull request, or ask the user to push."
   fi
 done
 

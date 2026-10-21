@@ -141,6 +141,8 @@ esac
 for path in \
   AGENTS.md \
   .agents/AGENTS.md \
+  .agents/docs/agent-rules.md \
+  .agents/docs/testing.md \
   .agents/docs/scratch-files.md \
   .agents/docs/git-guideline/git-commit.md \
   .agents/docs/git-guideline/pr-evidence.md \
@@ -156,6 +158,7 @@ search_active_instructions() {
     AGENTS.md \
     .agents/AGENTS.md \
     .agents/docs/agent-rules.md \
+    .agents/docs/testing.md \
     .agents/docs/scratch-files.md \
     .agents/docs/git-guideline \
     .agents/skills \
@@ -173,6 +176,10 @@ search_active_instructions() {
 # on a consumer-specific seed heading.
 search_active_instructions 'Collaborative Git Safety Boundary' \
   || fail "active instruction search is not working — its negative results cannot be trusted"
+grep -Fq '[`testing.md`](testing.md)' .agents/docs/agent-rules.md \
+  || fail "agent rules do not route testing work to the scenario-driven contract"
+search_active_instructions 'Scenario-Driven Testing' \
+  || fail "scenario-driven testing contract is not on an active instruction surface"
 
 for legacy_path in \
   .agents/docs/git-commit.md \

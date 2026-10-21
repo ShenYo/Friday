@@ -10,6 +10,7 @@ expected='
 AGENTS.md
 .agents/AGENTS.md
 .agents/docs/agent-rules.md
+.agents/docs/testing.md
 .agents/docs/scratch-files.md
 .agents/docs/git-guideline/git-commit.md
 .agents/docs/git-guideline/pr-evidence.md

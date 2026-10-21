@@ -49,16 +49,16 @@ skills or install a consumer's domain workflow.
 
 ## Current operating context
 
-> **中文摘要**：Friday 的可攜成果必須由專案本身承載；TDD、Wayfinder 等
-> helper 可以選用但不可成為 baseline 前提。十個 managed-core 檔維持封閉
+> **中文摘要**：Friday 的可攜成果必須由專案本身承載；輔助工具可以選用但
+> 不可成為 baseline 前提。十一個 managed-core 檔維持封閉
 > byte-exact 範圍，seed、runtime integration 與 overlay 仍由 consumer 擁有。
 > 現行 guard 安全修正已在 payload 與 self-check 實作；B06 的 immutable SHA、
 > 手動採用及 rollback 責任不變，backup、replay 與外部 runtime 仍待完成。
 
 Portable outcomes belong in project-controlled documentation, tests, or
-automation. TDD, Wayfinder, and similar helpers may be used by an operator,
-but no consumer may require them to bootstrap or satisfy the Friday contract.
-The closed ten-file managed core remains the only byte-exact comparison set;
+automation. Optional helpers may assist an operator, but no consumer may
+require them to bootstrap or satisfy the Friday contract. The closed
+eleven-file managed core remains the only byte-exact comparison set;
 consumer seeds, runtime integration, and overlays remain consumer-owned and
 are reconciled manually.
 
@@ -203,11 +203,12 @@ launch command for either.
 
 ## Ownership: managed core, seeds, and overlays
 
-The managed core is exact: existing consumers compare these ten files
+The managed core is exact: existing consumers compare these eleven files
 byte-for-byte with their reviewed Friday version.
 
 ```
 .agents/docs/agent-rules.md
+.agents/docs/testing.md
 .agents/docs/scratch-files.md
 .agents/docs/git-guideline/git-commit.md
 .agents/docs/git-guideline/pr-evidence.md
@@ -261,9 +262,9 @@ upgrade. Pin a reviewed Friday commit first; use a placeholder rather than a
 mutable branch name:
 
 ```sh
-PIN=<reviewed-Friday-SHA>
-FRIDAY=/path/to/Friday
-TARGET=/path/to/consumer
+PIN='replace-with-reviewed-immutable-Friday-SHA'
+FRIDAY='/absolute/path/to/Friday'
+TARGET='/absolute/path/to/consumer'
 
 test "$(git -C "$FRIDAY" rev-parse HEAD)" = "$PIN"
 test -z "$(git -C "$FRIDAY" status --porcelain)"
@@ -271,7 +272,7 @@ bash "$FRIDAY/install.sh" --check "$TARGET"
 ```
 
 Read every `CONFLICT` and reconcile it in a reviewed consumer change. Sync
-only the ten managed-core paths listed above, then prove each has the exact
+only the eleven managed-core paths listed above, then prove each has the exact
 bytes of `"$FRIDAY/payload/$rel"`. Preserve consumer seeds, runtime
 integration, and overlays; do not copy a whole `.agents/` directory.
 
@@ -282,6 +283,7 @@ as an update engine:
 (cd "$TARGET" && bash .agents/hooks/check-collaborative-git.sh)
 for rel in \
   .agents/docs/agent-rules.md \
+  .agents/docs/testing.md \
   .agents/docs/scratch-files.md \
   .agents/docs/git-guideline/git-commit.md \
   .agents/docs/git-guideline/pr-evidence.md \

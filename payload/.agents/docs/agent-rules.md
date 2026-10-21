@@ -25,3 +25,6 @@ compatible rule.
    project-controlled documentation, tests, or automation. Personal or vendor
    Skills may assist but are optional; when absent, follow the project contract
    without installing, copying, or implicitly requiring a Skill.
+   For testing work, apply the scenario-driven contract in
+   [`testing.md`](testing.md) when the requested outcome needs behavioral
+   evidence.

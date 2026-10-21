@@ -79,6 +79,11 @@ Run this check every time, before staging a commit and before pushing.
 A secret that never enters the index is the only case this check can fully
 resolve, which is why it runs before staging rather than after.
 
+A `pre-commit` hook enforces this one mechanically: see the enforcement layers
+below. It reports the rule and the file and never echoes the matched value. It
+recognises common credential formats, so treat it as a net under the check
+rather than a replacement for reading the diff.
+
 ## Human-review checkpoints
 
 These are not destructive, and some are reversible. They are reserved for a
@@ -123,17 +128,35 @@ looks merged, and the mistake costs unpushed work.
 
 ## Runtime guardrails and verification limits
 
-Friday installs and checks a Claude Code `PreToolUse` adapter and a Codex
-`PreToolUse` adapter for `Bash` and `apply_patch`. Both invoke the shared
-guard, which refuses the operations in the prohibitions table and the
-hook-enforceable checkpoints, and the checker validates their wiring and
-executes the configured launchers against allow and block payloads.
+Two layers enforce parts of this document. They see different things, which is
+why both exist.
 
-What the guard does **not** enforce, and what therefore depends on these
+**The runtime guard.** Friday installs and checks a Claude Code `PreToolUse`
+adapter and a Codex `PreToolUse` adapter for `Bash` and `apply_patch`. Both
+invoke the shared guard, which refuses the operations in the prohibitions table
+and the hook-enforceable checkpoints. It sees the command string and nothing
+else: it cannot read a staged diff, and `git commit -F -` passes the message on
+stdin where it is invisible. The checker validates the wiring and executes the
+configured launchers against allow and block payloads.
+
+**The commit-time Git hooks.** `.agents/githooks/pre-commit` and
+`.agents/githooks/commit-msg`, wired through `core.hooksPath` at install, see
+the staged diff and the message however it was supplied, and apply to a
+person's commits as well as an agent's. `pre-commit` refuses staged content
+matching known credential formats. `commit-msg` refuses a message that breaks
+the format rules in [`git-commit.md`](git-commit.md), including a summary too
+vague to trace to one task. The runtime guard refuses `--no-verify`, its
+bundled short form, and `-c core.hooksPath`, without which either hook could be
+skipped. The checker executes both in a scratch repository.
+
+What **neither** layer enforces, and what therefore depends on these
 instructions being followed:
 
-- The traceability rules. No hook can tell whether a commit mixes two tasks.
-- The sensitive-information check. The guard does not scan diffs.
+- Whether a commit actually covers one task. A vague summary is refused because
+  a lumped commit cannot be given a specific one, but a specific-sounding
+  summary on a mixed commit passes.
+- Whether a value the scanner does not recognise is a secret. It matches
+  formats, not meaning, so a custom or low-entropy credential passes.
 - The self-approval rule, as described above.
 - Any checkpoint reached through a path the guard does not pattern-match, such
   as an unusual command spelling, a wrapper script, or a GitHub API call that

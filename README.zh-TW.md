@@ -225,7 +225,10 @@ tool hooks，由 installer 透過 `core.hooksPath` 接上。
 [`pre-commit`](./payload/.agents/githooks/pre-commit) 掃描 staged 內容中的憑證、
 [`commit-msg`](./payload/.agents/githooks/commit-msg) 強制訊息契約、
 [`pre-push`](./payload/.agents/githooks/pre-push) 則依 Git 即將送出的 refs 判斷，
-因此刪除 ref、改寫歷史或推送 default branch，無論指令怎麼拼寫都會被拒絕。它們
+因此刪除 ref、改寫歷史或推送 default branch，無論指令怎麼拼寫都會被拒絕。
+對一個完全沒有 ref 的 remote 做第一次推送則會放行：沒有 default branch 要保護、
+沒有 ref 可刪、也沒有歷史可改寫，而拒絕它會讓「建立一個 repository」在不繞過
+hook 的前提下變得不可能。它們
 與 managed core 其餘檔案一樣需要逐位元組比對：先前版本的清單遺漏了它們，使得
 下方的對帳流程在無聲中並不完整。
 
@@ -440,7 +443,9 @@ bin/friday-lock write <target>     # 經審查的調和完成後刷新
 | --- | --- | --- |
 | `in sync` | 每個記錄的檔案都相符，payload 也沒動 | 不用做事 |
 | `drifted` | consumer 裡的檔案與 lock 記錄的不符 | 有人在本機改了 managed-core 檔，去調和它 |
-| `behind` | lock 寫下之後，payload 的內容移動了 | 以一次經審查的 commit 接收變更，然後 `friday-lock write` |
+| `behind` | lock 寫下之後，Friday 的 payload 前進了 | 以一次經審查的 commit 接收變更，然後 `friday-lock write` |
+| `ahead` | 這個 consumer 持有 Friday 尚未合併的 payload | **不要**把 payload 蓋上去 |
+| `diverged` | 兩條 payload 線並存，互不包含 | 先 checkout 你真正要帶的那條 Friday 分支 |
 
 **`behind` 是依內容判斷，不是比對 commit。** 一個只改 README 的 Friday commit
 不會移動任何 payload 雜湊，因此不會觸發任何東西 —— 這正是讓每日排程檢查安靜到

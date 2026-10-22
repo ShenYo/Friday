@@ -745,6 +745,13 @@ prepush_head=$(git -C "$githook_lab" rev-parse HEAD)
 # while a direct push to that default must not.
 git -C "$githook_lab" update-ref refs/remotes/origin/master "$prepush_head"
 git -C "$githook_lab" symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/master
+# A real bare remote, not only remote-tracking refs. The hook now asks
+# `git ls-remote` to tell an EMPTY remote from one whose HEAD will not resolve,
+# and those two cases cannot be simulated with local refs alone.
+prepush_remote="$githook_lab/../origin.git"
+git init -q --bare "$prepush_remote"
+git -C "$githook_lab" remote add origin "$prepush_remote" 2>/dev/null || true
+git -C "$githook_lab" push -q --no-verify origin "HEAD:refs/heads/master" 2>/dev/null || true
 
 # Two divergent commits, so the non-fast-forward rule can actually be reached.
 # Without them every probe carried an all-zero remote sha and that rule -- the
@@ -765,10 +772,45 @@ run_prepush "refs/heads/feat/x $prepush_zero refs/heads/feat/x $prepush_head" 1 
 run_prepush "refs/heads/feat/x $prepush_head refs/heads/feat/x $prepush_zero" 0 ""
 # The resolved non-main default is reserved for a person.
 run_prepush "refs/heads/master $prepush_head refs/heads/master $prepush_zero" 1 "default"
-# No remote HEAD means the hook cannot know the checkpoint, so it refuses even
-# an otherwise ordinary feature push rather than guessing from branch names.
+# Three situations that look identical from inside the hook and are not. The
+# previous revision had ONE probe here, expecting "could not resolve the
+# default branch" against a remote that did not exist -- so it was really
+# testing the unreachable case while claiming to test the dangling one.
+#
+# a. The remote HAS refs and its HEAD will not resolve. There is a default
+#    branch; the hook cannot see which. It must refuse.
 git -C "$githook_lab" symbolic-ref -d refs/remotes/origin/HEAD
 run_prepush "refs/heads/feat/x $prepush_head refs/heads/feat/x $prepush_zero" 1 "could not resolve the default branch"
+
+# b. The remote has NO refs at all -- the first push to a repository that was
+#    just created. Nothing this hook forbids can apply, and refusing made
+#    creating a repository impossible without bypassing the hook.
+prepush_empty="$githook_lab/../origin-empty.git"
+git init -q --bare "$prepush_empty"
+set +e
+prepush_boot=$(cd "$githook_lab" \
+  && printf 'refs/heads/main %s refs/heads/main %s\n' "$prepush_head" "$prepush_zero" \
+  | "$repo_root/.agents/githooks/pre-push" empty-origin "$prepush_empty" 2>&1)
+prepush_boot_code=$?
+set -e
+[ "$prepush_boot_code" -eq 0 ] \
+  || fail "pre-push refused the first push to an EMPTY remote ($prepush_boot_code): $prepush_boot"
+
+# c. The remote cannot be reached at all. The hook cannot tell (a) from (b),
+#    so it fails closed.
+set +e
+prepush_unreach=$(cd "$githook_lab" \
+  && printf 'refs/heads/feat/x %s refs/heads/feat/x %s\n' "$prepush_head" "$prepush_zero" \
+  | "$repo_root/.agents/githooks/pre-push" gone-origin "$githook_lab/../no-such-remote.git" 2>&1)
+prepush_unreach_code=$?
+set -e
+[ "$prepush_unreach_code" -eq 1 ] \
+  || fail "pre-push did not refuse an unreachable remote ($prepush_unreach_code): $prepush_unreach"
+case "$prepush_unreach" in
+  *"could not reach"*) ;;
+  *) fail "pre-push refused an unreachable remote for the wrong reason: $prepush_unreach" ;;
+esac
+
 git -C "$githook_lab" symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/master
 
 # Rewriting history: the remote commit is not an ancestor of the local one.

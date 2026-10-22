@@ -171,6 +171,28 @@ check_lock() {
     fi
   done < <(jq -r '.mirrors | to_entries[] | "\(.key)\t\(.value.source)\t\(.value.source_sha256)\t\(.value.local_sha256)"' "$lock")
 
+  # Content alone says the two differ, never which is newer. The recorded
+  # payload commit does: if Friday's current payload commit is an ancestor of
+  # the one the lock holds, the consumer is carrying something Friday has not
+  # merged yet -- it is AHEAD, and copying the payload over it would silently
+  # revert work. `friday-propagate` relies on this distinction.
+  local direction=behind lock_commit cur_commit
+  lock_commit=$(jq -r '.friday.commit // "unknown"' "$lock")
+  cur_commit=$(git -C "$KIT_ROOT" log -1 --format=%H -- payload/ 2>/dev/null || echo unknown)
+  if [ "$lock_commit" != unknown ] && [ "$cur_commit" != unknown ] \
+     && [ "$lock_commit" != "$cur_commit" ] \
+     && git -C "$KIT_ROOT" cat-file -e "${lock_commit}^{commit}" 2>/dev/null; then
+    if git -C "$KIT_ROOT" merge-base --is-ancestor "$cur_commit" "$lock_commit" 2>/dev/null; then
+      # The consumer recorded a payload Friday's checkout does not contain yet.
+      direction=ahead
+    elif ! git -C "$KIT_ROOT" merge-base --is-ancestor "$lock_commit" "$cur_commit" 2>/dev/null; then
+      # Neither contains the other. Two payload lines exist -- typically an
+      # unmerged branch on one side or the other -- and nothing here can say
+      # which should win.
+      direction=diverged
+    fi
+  fi
+
   local recorded
   recorded=$(jq -r '(.managed_core | length) + (.mirrors | length)' "$lock")
   echo "target:  $target"
@@ -184,7 +206,11 @@ check_lock() {
   fi
   if [ ${#behind[@]} -gt 0 ]; then
     echo ""
-    echo "BEHIND -- Friday's payload moved on these since the lock was written:"
+    case "$direction" in
+      ahead)    echo "AHEAD -- this consumer holds a payload Friday has not merged yet:" ;;
+      diverged) echo "DIVERGED -- this consumer and Friday hold different payload lines:" ;;
+      *)        echo "BEHIND -- Friday's payload moved on these since the lock was written:" ;;
+    esac
     printf '  %s\n' "${behind[@]}"
   fi
 
@@ -195,8 +221,12 @@ check_lock() {
   fi
   if [ ${#behind[@]} -gt 0 ]; then
     echo ""
-    echo "status: behind"
-    echo "Take the change in a reviewed consumer commit, then re-run 'friday-lock write'."
+    echo "status: $direction"
+    case "$direction" in
+      ahead)    echo "Friday has not merged this yet. Do not copy the payload over it." ;;
+      diverged) echo "Reconcile the two payload lines before syncing either way; check out the Friday branch you mean to carry." ;;
+      *)        echo "Take the change in a reviewed consumer commit, then re-run 'friday-lock write'." ;;
+    esac
     return 1
   fi
   echo ""

@@ -241,7 +241,10 @@ than runtime tool hooks, wired by the installer through `core.hooksPath`.
 credentials, [`commit-msg`](./payload/.agents/githooks/commit-msg) enforces the
 message contract, and [`pre-push`](./payload/.agents/githooks/pre-push) decides
 from the refs Git is about to send, so a deletion, a history rewrite or a push
-to the default branch is refused however the command was spelled. They are
+to the default branch is refused however the command was spelled. The first
+push to a remote with no refs at all is allowed: there is no default branch to
+protect, nothing to delete and no history to rewrite, and refusing it made
+creating a repository impossible without bypassing the hook. They are
 byte-exact like the rest of the core: an earlier revision of this list omitted
 them, which left the reconciliation recipe below silently incomplete.
 
@@ -463,7 +466,9 @@ Three states, and the distinction is the point:
 | --- | --- | --- |
 | `in sync` | every recorded file matches and the payload has not moved | nothing |
 | `drifted` | a file in the consumer no longer matches what the lock recorded | somebody edited a managed-core file locally; reconcile it |
-| `behind` | the payload's content moved since the lock was written | take the change in a reviewed commit, then `friday-lock write` |
+| `behind` | Friday's payload moved since the lock was written | take the change in a reviewed commit, then `friday-lock write` |
+| `ahead` | the consumer holds a payload Friday has not merged yet | do **not** copy the payload over it |
+| `diverged` | two payload lines exist, neither containing the other | check out the Friday branch you mean to carry |
 
 **`behind` is decided by content, never by comparing commits.** A Friday commit
 that only touches a README moves no payload hash and so raises nothing. That is

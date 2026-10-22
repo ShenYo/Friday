@@ -481,6 +481,44 @@ as neither fails the tool loudly rather than shipping unchecked — the gap that
 once let three githooks sit outside the byte-exact set while the docs still
 said eleven.
 
+## Carrying a change out to consumers
+
+A managed-core change has to reach every consumer, and doing that from memory
+is how the five stale counts happened.
+
+```sh
+bin/friday-propagate --dry-run ~/Github_Folks/pet_care ~/Desktop/Finance_App_Project
+bin/friday-propagate           ~/Github_Folks/pet_care ~/Desktop/Finance_App_Project
+```
+
+Per consumer it asks [`friday-lock`](./bin/friday-lock) where that repository
+stands, and **only when it is `behind`** branches from its `main`, copies the
+managed-core files whose content actually moved, refreshes the lock, commits,
+pushes and opens a pull request.
+
+It refuses rather than guesses:
+
+| situation | what happens |
+| --- | --- |
+| `in sync` | nothing, quietly |
+| `drifted` | **refused** — somebody edited a managed-core file there; copying over it would destroy the edit and the reason for it |
+| working tree not clean | **refused**, not stashed around |
+| the branch already exists | **refused** |
+| `gh` fails after the push | reported as a failure with the command to finish by hand, never counted as opened |
+
+**It never merges.** The human review checkpoint is the one control in this
+platform that has never been bypassed, and a propagation tool is a poor place
+to start.
+
+### Why this is a local command and not a CI bot
+
+The four repositories are private and span three accounts, so a CI-hosted bot
+needs a cross-repository token with write access to all of them, living in a
+secret. A developer machine's `gh` already has that access — scoped to a
+person rather than to an always-on workflow — and the end result is identical:
+pull requests a human still merges. Issue #7 covers the CI-hosted variant if
+the repositories ever go public or a token is issued.
+
 ## Runtime behaviour measured on the Claude side
 
 Measured in a consumer on **Claude Code 2.1.306** (2026-10-22), in disposable

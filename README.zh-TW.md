@@ -456,6 +456,41 @@ Jarvis 與 Friday 不是 payload consumer，但它們各自保有三個 payload 
 失敗，而不是悄悄被發出去卻從不比對 —— 那正是當初讓三個 githooks 落在 byte-exact
 集合之外、而文件還寫著十一檔的那個缺口。
 
+## 把變更帶到各個 consumer
+
+managed core 的變更必須到達每一個 consumer，而憑記憶做這件事，正是那五處
+過期數字的由來。
+
+```sh
+bin/friday-propagate --dry-run ~/Github_Folks/pet_care ~/Desktop/Finance_App_Project
+bin/friday-propagate           ~/Github_Folks/pet_care ~/Desktop/Finance_App_Project
+```
+
+它會逐一詢問 [`friday-lock`](./bin/friday-lock) 該 repository 的狀態，
+**只有在 `behind` 時**才從它的 `main` 開分支、複製內容真的移動過的
+managed-core 檔案、刷新 lock、commit、push、開 PR。
+
+它選擇拒絕而不是猜測：
+
+| 情況 | 行為 |
+| --- | --- |
+| `in sync` | 安靜地什麼都不做 |
+| `drifted` | **拒絕** —— 那裡有人改過 managed-core 檔，覆蓋過去會同時銷毀那個修改與它的理由 |
+| 工作樹不乾淨 | **拒絕**，不會用 stash 繞過 |
+| 分支已存在 | **拒絕** |
+| push 之後 `gh` 失敗 | 回報為失敗並附上手動完成的指令，絕不算成已開啟 |
+
+**它永遠不會 merge。** 人工審核 checkpoint 是這個平台唯一從未被繞過的控制，
+而一個傳播工具不是開這個先例的好地方。
+
+### 為什麼是本機指令而不是 CI bot
+
+四個 repository 都是 private 且分屬三個帳號，所以 CI 託管的 bot 需要一把對
+全部都有寫入權的跨 repo token 常駐在 secret 裡。開發機上的 `gh` 本來就有這個
+權限 —— 而且它綁定在一個人身上，不是綁在一個永遠在線的 workflow 上 —— 而
+最終結果完全相同：開出 PR，仍由人 merge。issue #7 保留給「repo 轉 public 或
+核發 token 之後」的 CI 版本。
+
 ## 在 Claude 側實測到的 runtime 行為
 
 在某個消費端、以 **Claude Code 2.1.306** 於一次性 fixture 中實測（2026-10-22），

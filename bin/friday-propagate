@@ -1,0 +1,177 @@
+#!/usr/bin/env bash
+# Carry a managed-core change out to consumers, as pull requests.
+#
+#   bin/friday-propagate [--dry-run] <consumer-path>...
+#
+# What it does per consumer: ask friday-lock where it stands, and only when it
+# is `behind`, branch from its main, copy the managed-core files whose content
+# moved, refresh the lock, commit, push and open a pull request.
+#
+# What it never does:
+#
+#   merge            the human review checkpoint is the one control in this
+#                    platform that has never been bypassed, and a propagation
+#                    tool is a poor place to start
+#   touch a drifted  `drifted` means somebody edited a managed-core file in
+#   consumer         that repository. Copying over it would destroy the edit
+#                    and the reason for it. Reported and skipped.
+#   force-push       never; nor does it touch an existing branch
+#   work on a dirty  a consumer with uncommitted changes is refused outright
+#   tree             rather than stashed around
+#
+# Why this runs here and not in CI: the four repositories are private and span
+# three accounts, so a CI-hosted bot needs a cross-repository PAT with write
+# access to all of them, sitting in a secret. This machine's `gh` already has
+# that access, scoped to a person rather than to an always-on workflow, and
+# the end result is identical -- pull requests a human still merges. See
+# issue #7.
+set -uo pipefail
+
+KIT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+PAYLOAD="$KIT_ROOT/payload"
+LOCK="$KIT_ROOT/bin/friday-lock"
+BRANCH_PREFIX=chore/sync-managed-core
+dry_run=false
+
+die() { echo "friday-propagate: $*" >&2; exit 2; }
+note() { printf '  %s\n' "$*"; }
+
+[ "${1:-}" = "--dry-run" ] && { dry_run=true; shift; }
+[ $# -ge 1 ] || die "usage: friday-propagate [--dry-run] <consumer-path>..."
+command -v gh >/dev/null || die "'gh' is required to open pull requests."
+[ -x "$LOCK" ] || die "missing $LOCK"
+
+payload_commit=$(git -C "$KIT_ROOT" log -1 --format=%H -- payload/ 2>/dev/null) \
+  || die "cannot read Friday's payload history"
+short=${payload_commit:0:7}
+
+# The managed core is classified in one place; this reads it rather than
+# carrying a second copy that could disagree.
+managed=()
+while IFS= read -r line; do
+  line=${line%%#*}
+  line=$(printf '%s' "$line" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+  case "$line" in ''|'!'*) continue ;; esac
+  managed+=("$line")
+done < "$KIT_ROOT/bin/managed-core.txt"
+
+opened=0; skipped=0; refused=0
+
+for target in "$@"; do
+  [ -d "$target" ] || { echo "friday-propagate: no such path: $target" >&2; refused=$((refused + 1)); continue; }
+  target=$(cd "$target" && pwd -P)
+  name=$(basename "$target")
+  echo "$name"
+
+  status=$("$LOCK" check "$target" 2>&1)
+  state=$(printf '%s' "$status" | grep '^status:' | sed 's/status: //')
+
+  case "$state" in
+    "in sync")
+      note "in sync — nothing to carry"; skipped=$((skipped + 1)); continue ;;
+    drifted)
+      note "DRIFTED — a managed-core file was edited in this repository."
+      printf '%s' "$status" | sed -n '/^DRIFTED/,/^$/p' | sed 's/^/    /'
+      note "Reconcile it by hand first. Nothing was touched."
+      refused=$((refused + 1)); continue ;;
+    behind) ;;
+    *)
+      note "could not read a status from friday-lock:"; printf '%s\n' "$status" | sed 's/^/    /'
+      refused=$((refused + 1)); continue ;;
+  esac
+
+  # Which files actually moved. Only these are copied -- a consumer's own
+  # files are never in this list, because only managed core is.
+  moved=()
+  for rel in "${managed[@]}"; do
+    [ -f "$target/$rel" ] || { moved+=("$rel"); continue; }
+    cmp -s "$PAYLOAD/$rel" "$target/$rel" || moved+=("$rel")
+  done
+  [ ${#moved[@]} -gt 0 ] || { note "behind, but no managed-core file differs — nothing to do"; skipped=$((skipped + 1)); continue; }
+
+  note "behind on ${#moved[@]} file(s):"
+  printf '    %s\n' "${moved[@]}"
+
+  if [ -n "$(git -C "$target" status --porcelain 2>/dev/null)" ]; then
+    note "REFUSED — the working tree is not clean. Commit or stash first."
+    refused=$((refused + 1)); continue
+  fi
+
+  branch="$BRANCH_PREFIX-$short"
+  if git -C "$target" rev-parse --verify --quiet "$branch" >/dev/null \
+     || git -C "$target" ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+    note "REFUSED — branch '$branch' already exists. Finish or delete it first."
+    refused=$((refused + 1)); continue
+  fi
+
+  if $dry_run; then
+    note "dry run — would open '$branch' with the files above"
+    opened=$((opened + 1)); continue
+  fi
+
+  git -C "$target" checkout -q main 2>/dev/null || { note "REFUSED — no main branch"; refused=$((refused + 1)); continue; }
+  git -C "$target" pull -q --ff-only origin main || { note "REFUSED — main is not fast-forwardable"; refused=$((refused + 1)); continue; }
+  git -C "$target" checkout -q -b "$branch"
+
+  for rel in "${moved[@]}"; do
+    mkdir -p "$target/$(dirname "$rel")"
+    cp "$PAYLOAD/$rel" "$target/$rel"
+    case "$rel" in .agents/hooks/*.sh|.agents/githooks/*) chmod +x "$target/$rel" ;; esac
+    git -C "$target" add "$rel"
+  done
+  "$LOCK" write "$target" >/dev/null
+  git -C "$target" add .friday-lock.json
+
+  list=$(printf '  %s\n' "${moved[@]}")
+  git -C "$target" commit -q -F - <<MSG
+chore(agents): sync the managed core to Friday $short
+
+Adopt the managed-core files whose content moved in Friday. Only the
+files below changed; this repository's own seeds and overlays are
+untouched.
+
+$list
+The lock is what identified them: friday-lock reported this repository
+as behind and named each path before anything was copied.
+
+Byte-identical to Friday payload at $payload_commit.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+MSG
+  git -C "$target" push -q -u origin "$branch" 2>/dev/null || { note "push failed"; refused=$((refused + 1)); continue; }
+
+  if ! url=$(cd "$target" && gh pr create --base main --head "$branch" \
+    --title "chore(agents): sync the managed core to Friday $short" \
+    --body "Opened by \`friday-propagate\` from Friday \`$payload_commit\`.
+
+Managed-core files whose content moved:
+
+\`\`\`
+${moved[*]}
+\`\`\`
+
+\`friday-lock\` reported this repository as \`behind\` and named each path
+before anything was copied. This repository's own seeds and overlays are
+untouched — only managed core is ever carried.
+
+Verify before merging:
+
+\`\`\`sh
+bash ~/.Friday/bin/friday-lock check .
+bash .agents/hooks/check-collaborative-git.sh
+\`\`\`
+
+This tool never merges. The human review checkpoint stands." 2>&1 | tail -1); then
+    note "the branch is pushed, but opening the pull request failed:"
+    note "  $url"
+    note "open it by hand: cd $target && gh pr create --base main --head $branch"
+    refused=$((refused + 1))
+    continue
+  fi
+  note "opened $url"
+  opened=$((opened + 1))
+done
+
+echo ""
+echo "opened=$opened skipped=$skipped refused=$refused"
+[ "$refused" -eq 0 ]

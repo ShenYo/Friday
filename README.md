@@ -454,6 +454,41 @@ string that is definitely present before trusting any negative result.
 
 That paragraph records the original failure, not current pet-care behavior.
 
+## Knowing where a consumer stands
+
+`install.sh` writes `.friday-lock.json` into the target: the Friday commit it
+was installed from, and the sha256 of every managed-core file as installed.
+[`bin/friday-lock`](./bin/friday-lock) reads it back.
+
+```sh
+bin/friday-lock check <target>     # or run it from inside the consumer
+bin/friday-lock write <target>     # refresh after a reviewed reconciliation
+```
+
+Three states, and the distinction is the point:
+
+| state | means | what to do |
+| --- | --- | --- |
+| `in sync` | every recorded file matches and the payload has not moved | nothing |
+| `drifted` | a file in the consumer no longer matches what the lock recorded | somebody edited a managed-core file locally; reconcile it |
+| `behind` | the payload's content moved since the lock was written | take the change in a reviewed commit, then `friday-lock write` |
+
+**`behind` is decided by content, never by comparing commits.** A Friday commit
+that only touches a README moves no payload hash and so raises nothing. That is
+what makes a daily scheduled check quiet enough to be worth running.
+
+Jarvis and Friday are not payload consumers, but they carry `.githooks` copies
+of three payload files. The lock records **both** hashes for those — the
+payload's and the local copy's — so drift on either side is caught without the
+tool needing to know what the documented pointer-line delta is. That stays a
+human-reviewed `diff`, which is the honest place for it.
+
+[`bin/managed-core.txt`](./bin/managed-core.txt) is the single source of truth
+for which files are managed and which are consumer-owned. A payload file listed
+as neither fails the tool loudly rather than shipping unchecked — the gap that
+once let three githooks sit outside the byte-exact set while the docs still
+said eleven.
+
 ## Runtime behaviour measured on the Claude side
 
 Measured in a consumer on **Claude Code 2.1.306** (2026-10-22), in disposable

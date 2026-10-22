@@ -431,6 +431,39 @@ Jarvis settings。
 
 這一段記錄的是當時那次失敗的經過，並不代表目前 pet-care 的實際行為。
 
+## 知道某個 consumer 站在哪裡
+
+`install.sh` 會在目標寫入 `.friday-lock.json`：記錄安裝時的 Friday commit，
+以及每個 managed-core 檔案當時的 sha256。
+[`bin/friday-lock`](./bin/friday-lock) 負責讀回來比對。
+
+```sh
+bin/friday-lock check <target>     # 也可以直接在 consumer 內部執行
+bin/friday-lock write <target>     # 經審查的調和完成後刷新
+```
+
+三種狀態，而這個區分正是重點：
+
+| 狀態 | 意思 | 該做什麼 |
+| --- | --- | --- |
+| `in sync` | 每個記錄的檔案都相符，payload 也沒動 | 不用做事 |
+| `drifted` | consumer 裡的檔案與 lock 記錄的不符 | 有人在本機改了 managed-core 檔，去調和它 |
+| `behind` | lock 寫下之後，payload 的內容移動了 | 以一次經審查的 commit 接收變更，然後 `friday-lock write` |
+
+**`behind` 是依內容判斷，不是比對 commit。** 一個只改 README 的 Friday commit
+不會移動任何 payload 雜湊，因此不會觸發任何東西 —— 這正是讓每日排程檢查安靜到
+值得一直跑的原因。
+
+Jarvis 與 Friday 不是 payload consumer，但它們各自保有三個 payload 檔的
+`.githooks` 副本。lock 對這些檔案**同時記錄兩邊**的雜湊 —— payload 的與本機副本
+的 —— 所以任一邊走樣都抓得到，而工具不需要知道那段「文件指標行」的差異長什麼樣。
+那件事留給人工審查的 `diff`，那才是它誠實的歸屬。
+
+[`bin/managed-core.txt`](./bin/managed-core.txt) 是「哪些檔案屬於 managed、
+哪些屬於 consumer」的唯一真實來源。一個兩邊都沒登記的 payload 檔會讓工具大聲
+失敗，而不是悄悄被發出去卻從不比對 —— 那正是當初讓三個 githooks 落在 byte-exact
+集合之外、而文件還寫著十一檔的那個缺口。
+
 ## 在 Claude 側實測到的 runtime 行為
 
 在某個消費端、以 **Claude Code 2.1.306** 於一次性 fixture 中實測（2026-10-22），

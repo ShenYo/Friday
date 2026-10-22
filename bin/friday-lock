@@ -1,0 +1,203 @@
+#!/usr/bin/env bash
+# Record and verify a consumer's position against Friday's managed core.
+#
+#   bin/friday-lock write <target>    write or refresh <target>/.friday-lock.json
+#   bin/friday-lock check [<target>]  verify it  (default target: the cwd)
+#
+# Three states, and the distinction matters:
+#
+#   in sync   every recorded file matches, and the payload has not moved
+#   drifted   a file in the target no longer matches what the lock recorded
+#             -- somebody edited a managed-core file in the consumer
+#   behind    the payload's content moved since the lock was written
+#             -- Friday shipped a change the consumer has not taken
+#
+# `behind` is decided by comparing CONTENT, never by comparing commits. A
+# Friday commit that only touches a README moves no payload hash and so
+# produces no `behind`, which is what keeps a scheduled check quiet enough to
+# be worth running daily.
+#
+# Mirrors (Jarvis and Friday keep .githooks copies of payload files, differing
+# only in the lines that point at documentation) record BOTH sides: the
+# payload's hash at sync time and the local copy's own hash. Drift in either
+# direction is caught without this tool needing to know what the allowed delta
+# is -- that stays a human-reviewed `diff`, which is the honest place for it.
+set -uo pipefail
+
+KIT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+PAYLOAD="$KIT_ROOT/payload"
+LIST="$KIT_ROOT/bin/managed-core.txt"
+LOCK_NAME=.friday-lock.json
+
+die() { echo "friday-lock: $*" >&2; exit 2; }
+
+command -v jq >/dev/null || die "'jq' is required."
+[ -d "$PAYLOAD" ] || die "payload missing at $PAYLOAD -- is this the Friday repo?"
+[ -f "$LIST" ] || die "missing $LIST"
+
+# sha256 under either coreutils or BSD; the project has been bitten before by
+# assuming one layout, so neither is assumed here.
+if command -v sha256sum >/dev/null; then
+  sha256() { sha256sum "$1" | cut -d' ' -f1; }
+elif command -v shasum >/dev/null; then
+  sha256() { shasum -a 256 "$1" | cut -d' ' -f1; }
+else
+  die "need sha256sum or shasum"
+fi
+
+managed=()
+owned=()
+while IFS= read -r line; do
+  line=${line%%#*}
+  line=$(printf '%s' "$line" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+  [ -n "$line" ] || continue
+  case "$line" in
+    '!'*) owned+=("${line#!}") ;;
+    *)    managed+=("$line") ;;
+  esac
+done < "$LIST"
+[ ${#managed[@]} -gt 0 ] || die "no managed-core entries in $LIST"
+
+# Every payload file must be classified. An unclassified one would be shipped
+# to consumers and never compared -- exactly the gap that let three githooks
+# sit outside the byte-exact set while the docs still said eleven.
+unclassified=0
+while IFS= read -r src; do
+  rel=${src#"$PAYLOAD"/}
+  found=0
+  for m in "${managed[@]}"; do [ "$m" = "$rel" ] && found=1 && break; done
+  if [ "$found" -eq 0 ]; then
+    for o in "${owned[@]}"; do [ "$o" = "$rel" ] && found=1 && break; done
+  fi
+  [ "$found" -eq 1 ] || { echo "friday-lock: payload file is classified neither managed nor consumer-owned: $rel" >&2; unclassified=1; }
+done < <(find "$PAYLOAD" -type f -print)
+[ "$unclassified" -eq 0 ] || die "classify it in $LIST before this tool can be trusted."
+
+for m in "${managed[@]}"; do
+  [ -f "$PAYLOAD/$m" ] || die "managed-core entry has no payload file: $m"
+done
+
+# --- mirrors -----------------------------------------------------------------
+# A repository that is not a payload consumer may still carry copies, wired
+# through core.hooksPath. Discovered, not hardcoded: whatever sits in
+# .githooks/ and has a payload counterpart of the same basename is a mirror.
+mirror_rels() {
+  local target=$1 f base
+  [ -d "$target/.githooks" ] || return 0
+  for f in "$target/.githooks"/*; do
+    [ -f "$f" ] || continue
+    base=$(basename "$f")
+    [ -f "$PAYLOAD/.agents/githooks/$base" ] || continue
+    printf '%s\n' ".githooks/$base"
+  done
+}
+mirror_source() { printf '%s\n' ".agents/githooks/$(basename "$1")"; }
+
+friday_commit() { git -C "$KIT_ROOT" rev-parse HEAD 2>/dev/null || printf 'unknown\n'; }
+
+# --- write -------------------------------------------------------------------
+write_lock() {
+  local target=$1 rel src json
+  [ -d "$target" ] || die "no such target: $target"
+  target=$(cd "$target" && pwd -P)
+
+  json=$(jq -n --arg commit "$(friday_commit)" --arg date "$(date -u +%Y-%m-%d)" \
+    '{friday:{repo:"ShenYo/Friday",commit:$commit,synced:$date},managed_core:{},mirrors:{}}')
+
+  for rel in "${managed[@]}"; do
+    [ -f "$target/$rel" ] || continue
+    json=$(printf '%s' "$json" | jq --arg k "$rel" --arg v "$(sha256 "$target/$rel")" \
+      '.managed_core[$k] = $v')
+  done
+
+  while IFS= read -r rel; do
+    [ -n "$rel" ] || continue
+    src=$(mirror_source "$rel")
+    json=$(printf '%s' "$json" | jq \
+      --arg k "$rel" --arg s "$src" \
+      --arg ps "$(sha256 "$PAYLOAD/$src")" --arg ls "$(sha256 "$target/$rel")" \
+      '.mirrors[$k] = {source:$s, source_sha256:$ps, local_sha256:$ls}')
+  done < <(mirror_rels "$target")
+
+  printf '%s\n' "$json" > "$target/$LOCK_NAME"
+  echo "wrote $target/$LOCK_NAME"
+}
+
+# --- check -------------------------------------------------------------------
+check_lock() {
+  local target=${1:-.} lock rel want have psrc pwant
+  [ -d "$target" ] || die "no such target: $target"
+  target=$(cd "$target" && pwd -P)
+  lock="$target/$LOCK_NAME"
+  [ -f "$lock" ] || die "no $LOCK_NAME in $target -- run 'friday-lock write $target' first."
+  jq -e . "$lock" >/dev/null 2>&1 || die "$LOCK_NAME is not valid JSON"
+
+  local -a drifted=() behind=()
+
+  while IFS=$'\t' read -r rel want; do
+    [ -n "$rel" ] || continue
+    if [ ! -f "$target/$rel" ]; then
+      drifted+=("$rel (missing)")
+      continue
+    fi
+    have=$(sha256 "$target/$rel")
+    [ "$have" = "$want" ] || drifted+=("$rel")
+    # The payload moving is a separate axis from the target being edited.
+    if [ -f "$PAYLOAD/$rel" ]; then
+      pwant=$(sha256 "$PAYLOAD/$rel")
+      [ "$pwant" = "$want" ] || behind+=("$rel")
+    fi
+  done < <(jq -r '.managed_core | to_entries[] | "\(.key)\t\(.value)"' "$lock")
+
+  while IFS=$'\t' read -r rel psrc want have_recorded; do
+    [ -n "$rel" ] || continue
+    if [ ! -f "$target/$rel" ]; then
+      drifted+=("$rel (missing)")
+      continue
+    fi
+    have=$(sha256 "$target/$rel")
+    [ "$have" = "$have_recorded" ] || drifted+=("$rel")
+    if [ -f "$PAYLOAD/$psrc" ]; then
+      pwant=$(sha256 "$PAYLOAD/$psrc")
+      [ "$pwant" = "$want" ] || behind+=("$rel (source $psrc)")
+    fi
+  done < <(jq -r '.mirrors | to_entries[] | "\(.key)\t\(.value.source)\t\(.value.source_sha256)\t\(.value.local_sha256)"' "$lock")
+
+  local recorded
+  recorded=$(jq -r '(.managed_core | length) + (.mirrors | length)' "$lock")
+  echo "target:  $target"
+  echo "friday:  $(jq -r '.friday.commit' "$lock") (synced $(jq -r '.friday.synced' "$lock"))"
+  echo "checked: $recorded file(s)"
+
+  if [ ${#drifted[@]} -gt 0 ]; then
+    echo ""
+    echo "DRIFTED -- these no longer match what the lock recorded:"
+    printf '  %s\n' "${drifted[@]}"
+  fi
+  if [ ${#behind[@]} -gt 0 ]; then
+    echo ""
+    echo "BEHIND -- Friday's payload moved on these since the lock was written:"
+    printf '  %s\n' "${behind[@]}"
+  fi
+
+  if [ ${#drifted[@]} -gt 0 ]; then
+    echo ""
+    echo "status: drifted"
+    return 1
+  fi
+  if [ ${#behind[@]} -gt 0 ]; then
+    echo ""
+    echo "status: behind"
+    echo "Take the change in a reviewed consumer commit, then re-run 'friday-lock write'."
+    return 1
+  fi
+  echo ""
+  echo "status: in sync"
+  return 0
+}
+
+case "${1:-}" in
+  write) shift; [ $# -ge 1 ] || die "usage: friday-lock write <target>"; write_lock "$1" ;;
+  check) shift; check_lock "${1:-.}" ;;
+  *) echo "usage: friday-lock write <target> | friday-lock check [<target>]" >&2; exit 2 ;;
+esac

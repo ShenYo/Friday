@@ -135,17 +135,34 @@ case "$codex_command_output" in
   *fatal:*) fail "unresolved Git root leaked Git diagnostics: $codex_command_output" ;;
 esac
 
+# The launcher appends the inherited PATH to its pinned list, so naming a
+# missing directory is only half the condition: the caller's PATH has to lack
+# the tool as well. Passing /bin for that worked on macOS, where /bin is
+# sparse, and did nothing on Linux, where /bin is a symlink to /usr/bin and
+# carries the whole toolset -- the launcher ran normally and the probe failed
+# in CI while passing locally. Use an empty directory on both sides instead.
+toolless_dir=$(mktemp -d)
+fixture_roots+=("$toolless_dir")
 missing_path_launcher=$(printf '%s' "$collaborative_launcher" \
-  | sed 's@/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin@/definitely-missing@g')
-run_codex_command "$missing_path_launcher" "$harmless_bash" 2 /bin "$repo_root"
+  | sed "s@/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin@$toolless_dir@g")
+run_codex_command "$missing_path_launcher" "$harmless_bash" 2 "$toolless_dir" "$repo_root"
 case "$codex_command_output" in
   *'BLOCKED: required executable unavailable: git'*) ;;
   *) fail "missing Git dependency did not produce a concise BLOCKED message: $codex_command_output" ;;
 esac
 
+# Simulating a missing bash by naming a real directory is not portable: it
+# assumed bash lives in /bin and not /usr/bin, which holds on macOS and is
+# false on Linux, where /usr/bin/bash exists and the substitution simulates
+# nothing. The launcher then ran normally and the probe failed in CI while
+# passing locally. Build a directory that definitely has git and definitely
+# has no bash instead, so the condition is real on any platform.
+bashless_dir=$(mktemp -d)
+fixture_roots+=("$bashless_dir")
+ln -s "$(command -v git)" "$bashless_dir/git"
 missing_bash_launcher=$(printf '%s' "$collaborative_launcher" \
-  | sed 's@PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin${PATH:+:$PATH}"@PATH="/usr/bin"@')
-run_codex_command "$missing_bash_launcher" "$harmless_bash" 2 /bin "$repo_root"
+  | sed "s@PATH=\"/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin\${PATH:+:\$PATH}\"@PATH=\"$bashless_dir\"@")
+run_codex_command "$missing_bash_launcher" "$harmless_bash" 2 "$bashless_dir" "$repo_root"
 case "$codex_command_output" in
   *'BLOCKED: required executable unavailable: bash'*) ;;
   *) fail "missing Bash dependency did not produce a concise BLOCKED message: $codex_command_output" ;;
@@ -243,8 +260,8 @@ esac
 
 claude_missing_path_launcher=$claude_launcher
 claude_launcher=$(printf '%s' "$claude_missing_path_launcher" \
-  | sed 's@/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin@/definitely-missing@g')
-run_claude_command "$harmless_bash" 2 "BLOCKED: required" /bin "$repo_root"
+  | sed "s@/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin@$toolless_dir@g")
+run_claude_command "$harmless_bash" 2 "BLOCKED: required" "$toolless_dir" "$repo_root"
 case "$claude_command_output" in
   *'BLOCKED: required executable unavailable: git'*) ;;
   *) fail "Claude launcher did not fail closed on a missing Git dependency: $claude_command_output" ;;
@@ -279,8 +296,16 @@ run_claude_command "$force_push" 2 "permanently agent-prohibited" /bin "$repo_ro
 run_claude_command "$harmless_bash" 0 "" /bin / CLAUDE_PROJECT_DIR="$claude_decoy_root"
 
 set +e
-missing_jq_output=$(sed 's@/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin@/definitely-missing@g' "$guard" \
-  | env PATH=/bin /bin/bash 2>&1)
+# This probe is specifically about jq, so the directory must carry the guard's
+# other dependencies and lack only that one. An entirely empty directory makes
+# the guard report the first missing tool instead, which is cat.
+jqless_dir=$(mktemp -d)
+fixture_roots+=("$jqless_dir")
+for dependency in cat grep; do
+  ln -s "$(command -v "$dependency")" "$jqless_dir/$dependency"
+done
+missing_jq_output=$(sed "s@/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin@$jqless_dir@g" "$guard" \
+  | env PATH="$jqless_dir" /bin/bash 2>&1)
 missing_jq_exit=$?
 set -e
 [ "$missing_jq_exit" -eq 2 ] \

@@ -193,7 +193,7 @@ runtime 自己要補的證據工作。Gemini CLI 與 `agy` 在這裡仍是 pendi
 
 ## 所有權：Managed Core、Seeds 與 Overlays
 
-Managed core 是精確比對的：既有消費端會把這十一個檔案，與他們審查過的
+Managed core 是精確比對的：既有消費端會把這十四個檔案，與他們審查過的
 Friday 版本逐位元組（byte-for-byte）比對。
 
 ```
@@ -205,10 +205,22 @@ Friday 版本逐位元組（byte-for-byte）比對。
 .agents/docs/git-guideline/safety-boundary.md
 .agents/hooks/check-collaborative-git.sh
 .agents/hooks/guard-collaborative-git.sh
+.agents/githooks/pre-commit
+.agents/githooks/commit-msg
+.agents/githooks/pre-push
 .agents/skills/git/commit/SKILL.md
 .agents/skills/git/create-pr/SKILL.md
 .agents/skills/git/push/SKILL.md
 ```
+
+這三個 [`githooks`](./payload/.agents/githooks) 檔案是 Git hooks，而非 runtime
+tool hooks，由 installer 透過 `core.hooksPath` 接上。
+[`pre-commit`](./payload/.agents/githooks/pre-commit) 掃描 staged 內容中的憑證、
+[`commit-msg`](./payload/.agents/githooks/commit-msg) 強制訊息契約、
+[`pre-push`](./payload/.agents/githooks/pre-push) 則依 Git 即將送出的 refs 判斷，
+因此刪除 ref、改寫歷史或推送 default branch，無論指令怎麼拼寫都會被拒絕。它們
+與 managed core 其餘檔案一樣需要逐位元組比對：先前版本的清單遺漏了它們，使得
+下方的對帳流程在無聲中並不完整。
 
 以下這些屬於空白 repository 的 seeds 或 runtime integration，並不是
 managed core。既有消費端需要自行以人工方式調和它們：

@@ -207,7 +207,7 @@ launch command for either.
 
 ## Ownership: managed core, seeds, and overlays
 
-The managed core is exact: existing consumers compare these eleven files
+The managed core is exact: existing consumers compare these fourteen files
 byte-for-byte with their reviewed Friday version.
 
 ```
@@ -219,10 +219,23 @@ byte-for-byte with their reviewed Friday version.
 .agents/docs/git-guideline/safety-boundary.md
 .agents/hooks/check-collaborative-git.sh
 .agents/hooks/guard-collaborative-git.sh
+.agents/githooks/pre-commit
+.agents/githooks/commit-msg
+.agents/githooks/pre-push
 .agents/skills/git/commit/SKILL.md
 .agents/skills/git/create-pr/SKILL.md
 .agents/skills/git/push/SKILL.md
 ```
+
+The three [`githooks`](./payload/.agents/githooks) files are Git hooks rather
+than runtime tool hooks, wired by the installer through `core.hooksPath`.
+[`pre-commit`](./payload/.agents/githooks/pre-commit) scans staged content for
+credentials, [`commit-msg`](./payload/.agents/githooks/commit-msg) enforces the
+message contract, and [`pre-push`](./payload/.agents/githooks/pre-push) decides
+from the refs Git is about to send, so a deletion, a history rewrite or a push
+to the default branch is refused however the command was spelled. They are
+byte-exact like the rest of the core: an earlier revision of this list omitted
+them, which left the reconciliation recipe below silently incomplete.
 
 The following are blank-repository seeds or runtime integration, not the
 managed core. Existing consumers reconcile them manually:

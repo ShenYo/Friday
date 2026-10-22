@@ -1,5 +1,7 @@
 # Friday
 
+**English** · [繁體中文](./README.zh-TW.md)
+
 > **中文摘要**：Friday 是可版控的 shared project baseline；Jarvis 是個人層。
 > 先以 `--check` 預覽，再安裝封閉的 allowlist。衝突絕不覆寫，現有專案需經
 > 人工審查後調和。
@@ -97,8 +99,9 @@ This section is normative for Friday's MVP lifecycle.
 
 Vendor Skills, including Matt Pocock Skills, remain Jarvis-owned and
 vendor-pristine. Friday manages only the portable project-local output contract
-in `scratch-files.md`; it neither installs nor copies vendor Skills and does
-not claim runtime invocation or precedence enforcement.
+in [`scratch-files.md`](./payload/.agents/docs/scratch-files.md); it neither
+installs nor copies vendor Skills and does not claim runtime invocation or
+precedence enforcement.
 
 ## Quick start
 
@@ -172,7 +175,8 @@ wiring fails now rather than the first time someone relies on the boundary.
 
 ## Starting an agent in a bootstrapped project
 
-> **中文摘要**：安裝只 seed root `AGENTS.md` 與 `.agents/AGENTS.md` 的 agent
+> **中文摘要**：安裝只 seed root [`AGENTS.md`](./payload/AGENTS.md) 與
+> [`.agents/AGENTS.md`](./payload/.agents/AGENTS.md) 的 agent
 > instructions；不會生成 root `CLAUDE.md`、`GEMINI.md` 或 `setup-ai.sh`。先讀
 > 兩個 AGENTS，再選擇已安裝的單一 runtime 啟動；各 runtime 的 trust 與原生行為
 > 仍須各自驗證。
@@ -251,8 +255,8 @@ regular-file `.agents/hooks/check-project-agent-integration.sh`; when present,
 the managed core checker runs it and propagates failures. Friday does not ship
 that extension.
 
-This is an explicit static allowlist in `install.sh`, not automatic payload
-discovery. A new payload file fails inventory validation until it is reviewed
+This is an explicit static allowlist in [`install.sh`](./install.sh), not
+automatic payload discovery. A new payload file fails inventory validation until it is reviewed
 and added to that list. There is no manifest or update engine in this MVP.
 
 ## Updating an existing consumer
@@ -313,7 +317,8 @@ equality or native runtime enforcement in either consumer.
 
 ## Safety model and limits
 
-`guard-collaborative-git.sh` runs before every Bash tool call and refuses:
+[`guard-collaborative-git.sh`](./payload/.agents/hooks/guard-collaborative-git.sh)
+runs before every Bash tool call and refuses:
 
 - `git push --force` / `--force-with-lease`, `reset --hard`, `clean`,
   `branch -D`, `stash clear|drop`, `worktree remove`,
@@ -329,14 +334,16 @@ hash before relying on Codex; callback delivery, exit handling, handler order,
 and fail-closed behavior are not verified. Gemini remains pending. This setup
 is a guardrail, not a security boundary.
 
-The three Git skills are the other half. `safety-boundary.md` treats invoking
+The three Git skills are the other half.
+[`safety-boundary.md`](./payload/.agents/docs/git-guideline/safety-boundary.md) treats invoking
 `$git-commit`, `$git-push` or `$git-create-pr` as the authorisation for that
 one action in that one turn — so committing and pushing stay deliberate acts
 rather than something an agent drifts into.
 
 ### Why the self-check matters
 
-`check-collaborative-git.sh` verifies the runtime wiring *and* feeds the guard
+[`check-collaborative-git.sh`](./payload/.agents/hooks/check-collaborative-git.sh)
+verifies the runtime wiring *and* feeds the guard
 safe Bash and `apply_patch` payloads, failing if a prohibited payload is not
 blocked. The Codex seed uses project-local hooks supported on macOS/Linux;
 Windows behavior is unverified.
@@ -374,10 +381,10 @@ differences, not who authored them or whether an update is safe to merge.
 
 **Existing consumers reconcile manually.** The managed-core files are the
 only byte-identical comparison set. Seeds, runtime integration, and consumer
-overlays may differ by project and need manual reconciliation. `.gitignore` is
-an ordinary allowlisted seed: a target with different content conflicts before
-any write. Friday's blank-repository MVP intentionally does not parse or merge
-`.gitignore` marker blocks.
+overlays may differ by project and need manual reconciliation.
+[`.gitignore`](./payload/.gitignore) is an ordinary allowlisted seed: a target
+with different content conflicts before any write. Friday's blank-repository
+MVP intentionally does not parse or merge `.gitignore` marker blocks.
 
 Before promoting changes from a consumer such as pet-care, agree the shared
 file list and verify every transitive reference is shipped or explicitly
@@ -405,7 +412,8 @@ That paragraph records the original failure, not current pet-care behavior.
 
 ## Verification and tests
 
-Run `bash tests/install-smoke.sh /absolute/path/to/retained-test-output`.
+Run `bash` [`tests/install-smoke.sh`](./tests/install-smoke.sh)
+`/absolute/path/to/retained-test-output`.
 The check creates disposable Git fixtures, installs the repository's actual
 payload, and retains evidence for review. It never installs into an existing
 project. Cleanup is a separate, explicitly authorized operation.

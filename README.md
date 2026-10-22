@@ -364,6 +364,33 @@ Windows behavior is unverified.
 That last one is the case worth having. A guard that has been neutered looks
 exactly like a guard that is working, right up until it matters.
 
+## Friday's own branch protection
+
+This repository is private on a plan where GitHub branch protection and
+rulesets are unavailable, so the protection it would otherwise configure --
+no direct push to the default branch, no force push, no ref deletion --
+cannot be set server-side. [`.githooks/pre-push`](./.githooks/pre-push) is the
+local substitute, wired with:
+
+```sh
+git config core.hooksPath .githooks
+```
+
+It is the same hook Friday ships to consumers at
+[`payload/.agents/githooks/pre-push`](./payload/.agents/githooks/pre-push),
+differing only in the document its messages point at. It decides from the refs
+Git is about to send rather than from the command text, so a deletion, a
+history rewrite and a push to the default branch are refused however the
+command was spelled -- `--force`, `-f`, a leading `+` on the refspec,
+`--mirror`, `--delete` and `:ref` all reduce to the same two tests.
+
+Three limits are worth stating plainly. It protects this clone only: a fresh
+clone carries no `core.hooksPath` and is unprotected until someone sets it. It
+cannot require a review approval, which is inherently server-side. And it is a
+guard against mistakes, not a control surface -- the installer does not apply
+Friday's payload to Friday itself, so this repository's commits are not covered
+by the commit-time hooks that consumers get.
+
 ## Non-goals and recovery
 
 Friday installs entrypoints and a shared router, but it does not install a

@@ -346,6 +346,30 @@ payload，只要有禁止的 payload 沒被擋下，就會判定失敗。Codex �
 最後這一點，正是值得特別留意的地方。一個被動過手腳、形同虛設的 guard，
 看起來會和一個正常運作的 guard 一模一樣——直到真正出事的那一刻才會顯現。
 
+## Friday 自身的 branch protection
+
+這個 repository 是 private,而所屬方案無法使用 GitHub branch protection 與
+rulesets,因此原本該設定的保護 —— 禁止直接推送 default branch、禁止 force
+push、禁止刪除 ref —— 無法在 server 端設定。
+[`.githooks/pre-push`](./.githooks/pre-push) 是本機的替代方案,接法:
+
+```sh
+git config core.hooksPath .githooks
+```
+
+它與 Friday 出貨給 consumer 的
+[`payload/.agents/githooks/pre-push`](./payload/.agents/githooks/pre-push)
+是同一個 hook,只有訊息指向的文件不同。它依 Git 即將送出的 refs 判斷,而非
+依指令文字,因此刪除 ref、改寫歷史與推送 default branch,無論指令怎麼拼寫都會
+被拒絕 —— `--force`、`-f`、refspec 前綴 `+`、`--mirror`、`--delete` 與 `:ref`
+最終都歸結到同樣的兩項測試。
+
+有三個限制必須講清楚。它只保護這個 clone:新 clone 不帶 `core.hooksPath`,在
+有人設定之前都沒有保護。它無法要求 review approval,那本質上屬於 server 端。
+而它是防止失誤的護欄,不是控制面 —— installer 不會把 Friday 的 payload 安裝到
+Friday 自己,所以這個 repository 的 commit 並不受 consumer 所擁有的 commit-time
+hooks 覆蓋。
+
 ## 非目標與復原
 
 Friday 會安裝進入點與一個共用的 router，但它不會安裝 domain glossary、

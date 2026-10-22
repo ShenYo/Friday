@@ -42,25 +42,27 @@ adapter 共用同一份經審查的 guard 實作，而不會對 Friday 的檔案
 
 Friday 刻意不做成一個通用的 runtime manager。它檢查的是靜態的 Codex 接線（wiring），
 而不是原生的 callback 行為、exit handling、handler 順序，或 fail-closed 的強制
-執行；Gemini 的支援仍是 pending。它也不會自動探索任意 Skills，或安裝消費端專屬的
-domain workflow。
+執行；Gemini 的支援仍是 pending。這四項已在某個消費端的 Claude 側實測（見下方
+「在 Claude 側實測到的 runtime 行為」），但 Codex 是另一個 adapter，對它而言
+仍未驗證。Friday 也不會自動探索任意 Skills，或安裝消費端專屬的 domain workflow。
 
 ## 現行運作情境
 
 > **摘要**：Friday 的可攜成果必須由專案本身承載；輔助工具可以選用但
-> 不可成為 baseline 前提。十一個 managed-core 檔維持封閉
+> 不可成為 baseline 前提。十四個 managed-core 檔維持封閉
 > byte-exact 範圍，seed、runtime integration 與 overlay 仍由 consumer 擁有。
 > 現行 guard 安全修正已在 payload 與 self-check 實作；B06 的 immutable SHA、
 > 手動採用及 rollback 責任不變，backup、replay 與外部 runtime 仍待完成。
 
 可攜的成果應該放在專案自己管控的文件、測試或自動化裡。輔助工具可以協助操作者，
 但沒有任何消費端被允許把這些輔助工具當成 bootstrap 或滿足 Friday 契約的前提。
-封閉的十一檔 managed core，始終是唯一的 byte-exact 比對集合；消費端的 seeds、
+封閉的十四檔 managed core，始終是唯一的 byte-exact 比對集合；消費端的 seeds、
 runtime integration 與 overlay，仍由消費端自行擁有並以人工方式調和。
 
 目前的 payload 已實作 guard 的安全性更新，其 self-check 也會演練相關的允許與
 禁止指令形式。但這僅是靜態且針對 guard 本身的證據，並不足以證明原生的 callback
-傳遞、exit handling、執行順序或 fail-closed 的強制執行。發行版本仍是經審查的
+傳遞、exit handling、執行順序或 fail-closed 的強制執行。那些是在消費端的
+Claude 側另行建立的，不是由這個 self-check 證明的。發行版本仍是經審查的
 immutable SHA，採用方式仍是人工進行；當需要 rollback 時，由 Friday 維護者提出，
 消費端的擁有者負責執行。指定備援維護者、真正的新機器 replay、進一步的消費端
 replay，以及 external-runtime 的收尾，都仍待完成。
@@ -274,7 +276,7 @@ bash "$FRIDAY/install.sh" --check "$TARGET"
 ```
 
 請讀過每一個 `CONFLICT`，並在一次經審查的消費端變更中調和它。只同步上面
-列出的十一個 managed-core 路徑，然後逐一證明它們的內容，與
+列出的十四個 managed-core 路徑，然後逐一證明它們的內容，與
 `"$FRIDAY/payload/$rel"` 完全一致。請保留消費端自己的 seeds、runtime
 integration 與 overlay；不要整個複製一份 `.agents/` 目錄。
 
@@ -326,8 +328,9 @@ runtime 的強制執行。
 遇到以上任一情況的 agent，會被告知改請使用者自己手動執行該指令。Claude
 Code 的 Bash，以及 Codex 的 Bash/`apply_patch`，都收到了靜態的專案接線，
 指向這個共用的 guard。在依賴 Codex 之前，請先審查受信任的專案 hook
-定義，以及釘選的 Friday hash；其 callback 傳遞、exit handling、handler
-順序，以及 fail-closed 行為，目前都尚未被驗證。Gemini 仍是 pending。
+定義，以及釘選的 Friday hash；就 Codex 而言，其 callback 傳遞、exit
+handling、handler 順序，以及 fail-closed 行為都尚未被驗證。Gemini 仍是
+pending。這四項都已在 Claude 側實測 —— 見下方。
 這套機制是一個 guardrail，而不是一個安全邊界（security boundary）。
 
 另外一半則是那三個 Git skills。
@@ -427,6 +430,37 @@ Jarvis settings。
 才會去信任任何「找不到」的結果。
 
 這一段記錄的是當時那次失敗的經過，並不代表目前 pet-care 的實際行為。
+
+## 在 Claude 側實測到的 runtime 行為
+
+在某個消費端、以 **Claude Code 2.1.306** 於一次性 fixture 中實測（2026-10-22），
+證據記錄在該消費端而不是這裡。Friday 自己的 self-check 證明不了其中任何一項 ——
+它是靜態接線與 guard 直接探測的證據。Codex 是另一個 adapter，這些結論都不轉移。
+
+**`onFailure: "block"` 確實做到 payload 所假設的事。** hook 以 0 與 2 以外的
+exit code 結束時會擋下工具呼叫，超過 `timeout` 時也會；交給模型的訊息會寫出
+`blocking because onFailure is "block"`。
+
+**不設 `onFailure` 時，失敗的 hook 會靜默 fail-open。** 同一個 hook 以 127
+結束、但省略該欄位時，指令照常執行，而模型完全沒被告知任何事 —— 沒有錯誤、
+沒有警告。從 session 內部看，壞掉的 guard 與沒有 guard 無法區分。這個 payload
+的每個 handler 都宣告了該欄位；拿掉它的後果現在是已知的，而不是假設的。
+
+**同一個 matcher 下的 handler 是並行執行，不照宣告順序。** 讓第一個 handler
+先睡兩秒，第二個 handler 的工作仍比它早 2.0 秒完成。即使其中一個擋下，所有
+handler 仍會執行；而當多個都擋下時，只有一個理由會送達模型，且不一定是宣告在
+前的那個。擋下本身是可靠的：任何 handler exit 2 都會拒絕該呼叫。這個 payload
+沒有任何東西依賴順序，但未來若有 handler 假設自己會先跑、或假設只有自己會被
+聽見，那就會是錯的。
+
+**Hook 來源是疊加的，不能用來解除 guard。** 放在
+`.claude/settings.local.json` 或透過 `--settings` 提供的放行 handler，會與
+專案中拒絕的 handler **一起**執行，而該呼叫仍然被擋下。把整個 `--settings`
+檔傳成 `{}` 也移除不了任何東西：專案的 handler 照樣執行、照樣擋下。所以
+`claude --settings <空檔>.json` 不是一條繞過路徑。
+
+未實測：user 層 `~/.claude/settings.json` 的優先序 —— 要測就得把憑證複製到
+暫存目錄；以及關於 Codex 或 Gemini 的任何事。
 
 ## 驗證與測試
 

@@ -46,13 +46,15 @@ a dependency on Friday's filesystem.
 
 Friday is deliberately not a universal runtime manager. It checks static Codex
 wiring, not native callback behavior, exit handling, handler order, or
-fail-closed enforcement; Gemini is pending. It does not discover arbitrary
-skills or install a consumer's domain workflow.
+fail-closed enforcement; Gemini is pending. Those four were measured on the
+Claude side in a consumer (see "Runtime behaviour measured on the Claude side"
+below) and remain unverified for Codex, which is a different adapter. Friday
+does not discover arbitrary skills or install a consumer's domain workflow.
 
 ## Current operating context
 
 > **中文摘要**：Friday 的可攜成果必須由專案本身承載；輔助工具可以選用但
-> 不可成為 baseline 前提。十一個 managed-core 檔維持封閉
+> 不可成為 baseline 前提。十四個 managed-core 檔維持封閉
 > byte-exact 範圍，seed、runtime integration 與 overlay 仍由 consumer 擁有。
 > 現行 guard 安全修正已在 payload 與 self-check 實作；B06 的 immutable SHA、
 > 手動採用及 rollback 責任不變，backup、replay 與外部 runtime 仍待完成。
@@ -60,14 +62,15 @@ skills or install a consumer's domain workflow.
 Portable outcomes belong in project-controlled documentation, tests, or
 automation. Optional helpers may assist an operator, but no consumer may
 require them to bootstrap or satisfy the Friday contract. The closed
-eleven-file managed core remains the only byte-exact comparison set;
+fourteen-file managed core remains the only byte-exact comparison set;
 consumer seeds, runtime integration, and overlays remain consumer-owned and
 are reconciled manually.
 
 The current payload implements the guard security updates, and its self-check
 exercises the relevant allowed and blocked command forms. That is static and
 direct-guard evidence only; it does not establish native callback delivery,
-exit handling, ordering, or fail-closed enforcement. Releases remain reviewed
+exit handling, ordering, or fail-closed enforcement. Those were established
+separately on the Claude side, in a consumer, not by this self-check. Releases remain reviewed
 immutable SHAs, adoption remains manual, and the Friday maintainer proposes a
 rollback while the consumer owner performs it. A named backup maintainer,
 real new-machine replay, a further consumer replay, and external-runtime
@@ -289,7 +292,7 @@ bash "$FRIDAY/install.sh" --check "$TARGET"
 ```
 
 Read every `CONFLICT` and reconcile it in a reviewed consumer change. Sync
-only the eleven managed-core paths listed above, then prove each has the exact
+only the fourteen managed-core paths listed above, then prove each has the exact
 bytes of `"$FRIDAY/payload/$rel"`. Preserve consumer seeds, runtime
 integration, and overlays; do not copy a whole `.agents/` directory.
 
@@ -343,9 +346,10 @@ runs before every Bash tool call and refuses:
 An agent that hits one is told to ask the user to run the command themselves.
 Claude Code Bash and Codex Bash/`apply_patch` receive static project wiring to
 the shared guard. Review the trusted project hook definition and pinned Friday
-hash before relying on Codex; callback delivery, exit handling, handler order,
-and fail-closed behavior are not verified. Gemini remains pending. This setup
-is a guardrail, not a security boundary.
+hash before relying on Codex; for Codex, callback delivery, exit handling,
+handler order, and fail-closed behavior are not verified. Gemini remains
+pending. All four were measured on the Claude side — see below. This setup is
+a guardrail, not a security boundary.
 
 The three Git skills are the other half.
 [`safety-boundary.md`](./payload/.agents/docs/git-guideline/safety-boundary.md) treats invoking
@@ -449,6 +453,44 @@ passing vacuously. It now uses `grep`, and first proves the search can find a
 string that is definitely present before trusting any negative result.
 
 That paragraph records the original failure, not current pet-care behavior.
+
+## Runtime behaviour measured on the Claude side
+
+Measured in a consumer on **Claude Code 2.1.306** (2026-10-22), in disposable
+fixtures, and recorded there rather than here. Friday's own self-check proves
+none of it — it is static wiring and direct-guard evidence. Codex is a
+different adapter and none of this transfers to it.
+
+**`onFailure: "block"` does what the payload assumes.** A hook exiting a code
+other than 0 or 2 blocks the tool call, and so does one that overruns its
+`timeout`; the message handed to the model says `blocking because onFailure is
+"block"`.
+
+**Without `onFailure`, a failing hook fails open silently.** The same hook
+exiting 127 with the field omitted let the command run, and the model was told
+nothing at all — no error, no warning. A guard that breaks is then
+indistinguishable from no guard, from inside the session. Every handler in
+this payload declares the field; the consequence of ever dropping it is now
+known rather than assumed.
+
+**Handlers under one matcher run concurrently, not in declared order.** With a
+first handler sleeping two seconds, the second handler's work completed 2.0 s
+earlier. All handlers run even when one of them blocks, and when several
+block, only one reason reaches the model — not necessarily the first declared.
+Blocking itself is reliable: any handler exiting 2 refuses the call. Nothing
+in this payload depends on ordering, but a future handler that assumes it runs
+first, or that it alone will be heard, would be wrong.
+
+**Hook sources merge; they cannot be used to lift a guard.** A permissive
+handler in `.claude/settings.local.json`, or supplied through `--settings`,
+runs *alongside* a project handler that refuses, and the call is still
+blocked. Passing `{}` as an entire `--settings` file removes nothing: the
+project handler still ran and still blocked. So `claude --settings
+<empty>.json` is not a bypass.
+
+Not measured: precedence for user-level `~/.claude/settings.json`, which could
+not be reached without copying a credential into a temporary directory; and
+anything at all about Codex or Gemini.
 
 ## Verification and tests
 

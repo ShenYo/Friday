@@ -16,8 +16,11 @@ compatible rule.
    unavailable.
 5. **Safety and authority.** Follow
    [`git-guideline/safety-boundary.md`](git-guideline/safety-boundary.md) for
-   Git and GitHub operations. Do not infer authorization for commits, remote
-   writes, deletion, or discard actions.
+   Git and GitHub operations. Committing and pushing a non-default branch are
+   your own call there, on the condition that each commit carries one task's
+   context and no sensitive value. Never infer authorization for a deletion, a
+   discard, a history rewrite, or an operation that document reserves for human
+   review, such as merging a pull request or pushing to the default branch.
 6. **Git state.** Before an edit batch and before a commit, inspect the
    current branch, `HEAD`, and working-tree status. Repeat that inspection
    after an external change, branch switch, or unexpected drift.
@@ -25,3 +28,6 @@ compatible rule.
    project-controlled documentation, tests, or automation. Personal or vendor
    Skills may assist but are optional; when absent, follow the project contract
    without installing, copying, or implicitly requiring a Skill.
+   For testing work, apply the scenario-driven contract in
+   [`testing.md`](testing.md) when the requested outcome needs behavioral
+   evidence.

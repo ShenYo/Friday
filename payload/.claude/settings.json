@@ -6,7 +6,10 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash .claude/hooks/guard-collaborative-git.sh"
+            "command": "PATH=\"/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin${PATH:+:$PATH}\"; export PATH; for required in git bash; do if ! command -v \"$required\" >/dev/null 2>&1; then echo \"BLOCKED: required executable unavailable: $required\" >&2; exit 2; fi; done; guard_rel=\".claude/hooks/guard-collaborative-git.sh\"; git_root=\"$(git rev-parse --show-toplevel 2>/dev/null)\"; env_root=\"${CLAUDE_PROJECT_DIR:-}\"; if [ -z \"$git_root\" ] && [ -z \"$env_root\" ]; then echo \"BLOCKED: unable to resolve the Git repository root.\" >&2; exit 2; fi; guard_path=\"\"; for candidate_root in \"$git_root\" \"$env_root\"; do if [ -n \"$candidate_root\" ] && [ -f \"$candidate_root/$guard_rel\" ] && [ -r \"$candidate_root/$guard_rel\" ]; then guard_path=\"$candidate_root/$guard_rel\"; break; fi; done; if [ -z \"$guard_path\" ]; then echo \"BLOCKED: required guard unavailable: $guard_rel\" >&2; exit 2; fi; exec bash \"$guard_path\"",
+            "timeout": 30,
+            "onFailure": "block",
+            "statusMessage": "Checking collaborative Git safety boundary"
           }
         ]
       }

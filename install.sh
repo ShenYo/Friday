@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Install the agent-management payload into a target repository, then verify it.
 #
-#   ~/Friday/install.sh [target-repo-path]     (default: current directory)
+#   ~/.Friday/install.sh [target-repo-path]    (default: current directory)
 #
 # --check previews without writing. Installation adds missing files, preserves
 # identical files, and refuses conflicts before making any target changes.
@@ -44,12 +44,16 @@ files=(
   AGENTS.md
   .agents/AGENTS.md
   .agents/docs/agent-rules.md
+  .agents/docs/testing.md
   .agents/docs/scratch-files.md
   .agents/docs/git-guideline/git-commit.md
   .agents/docs/git-guideline/pr-evidence.md
   .agents/docs/git-guideline/safety-boundary.md
   .agents/hooks/check-collaborative-git.sh
   .agents/hooks/guard-collaborative-git.sh
+  .agents/githooks/pre-commit
+  .agents/githooks/commit-msg
+  .agents/githooks/pre-push
   .agents/skills/git/commit/SKILL.md
   .agents/skills/git/create-pr/SKILL.md
   .agents/skills/git/push/SKILL.md
@@ -155,8 +159,34 @@ done
 [ "$copied" -eq 0 ] && echo "  (payload already current)"
 
 for rel in "${files[@]}"; do
-  case "$rel" in .agents/hooks/*.sh) chmod +x "$TARGET/$rel" ;; esac
+  case "$rel" in
+    .agents/hooks/*.sh) chmod +x "$TARGET/$rel" ;;
+    .agents/githooks/*) chmod +x "$TARGET/$rel" ;;
+  esac
 done
+
+# --- Wire the commit-time hooks ---------------------------------------------
+# core.hooksPath is per-clone config, not tracked, so it has to be set here.
+# These hooks are where the secret scan and the message checks actually run: a
+# runtime tool hook cannot see a staged diff, and `git commit -F -` hides the
+# message from it entirely. Setting this replaces .git/hooks wholesale, so a
+# target already using husky or another manager needs a deliberate decision
+# rather than a silent override.
+existing_hooks_path=$(git -C "$TARGET" config --local core.hooksPath 2>/dev/null || true)
+if [ -n "$existing_hooks_path" ] && [ "$existing_hooks_path" != .agents/githooks ]; then
+  echo "error: $TARGET already sets core.hooksPath to '$existing_hooks_path'." >&2
+  echo "       Reconcile that with .agents/githooks in a reviewed change;" >&2
+  echo "       nothing was changed." >&2
+  exit 1
+fi
+if [ -d "$TARGET/.git/hooks" ] \
+  && [ -n "$(find "$TARGET/.git/hooks" -type f ! -name '*.sample' -print -quit 2>/dev/null)" ]; then
+  echo "error: $TARGET has hooks in .git/hooks that core.hooksPath would bypass." >&2
+  echo "       Move or remove them deliberately; nothing was changed." >&2
+  exit 1
+fi
+git -C "$TARGET" config core.hooksPath .agents/githooks
+echo "  wired  core.hooksPath -> .agents/githooks"
 
 # --- Wire runtime hooks -----------------------------------------------------
 # Runtime hook paths must hold links, not copies, so both adapters share the

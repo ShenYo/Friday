@@ -1,5 +1,7 @@
 # Friday
 
+**English** · [繁體中文](./README.zh-TW.md)
+
 > **中文摘要**：Friday 是可版控的 shared project baseline；Jarvis 是個人層。
 > 先以 `--check` 預覽，再安裝封閉的 allowlist。衝突絕不覆寫，現有專案需經
 > 人工審查後調和。
@@ -47,6 +49,30 @@ wiring, not native callback behavior, exit handling, handler order, or
 fail-closed enforcement; Gemini is pending. It does not discover arbitrary
 skills or install a consumer's domain workflow.
 
+## Current operating context
+
+> **中文摘要**：Friday 的可攜成果必須由專案本身承載；輔助工具可以選用但
+> 不可成為 baseline 前提。十一個 managed-core 檔維持封閉
+> byte-exact 範圍，seed、runtime integration 與 overlay 仍由 consumer 擁有。
+> 現行 guard 安全修正已在 payload 與 self-check 實作；B06 的 immutable SHA、
+> 手動採用及 rollback 責任不變，backup、replay 與外部 runtime 仍待完成。
+
+Portable outcomes belong in project-controlled documentation, tests, or
+automation. Optional helpers may assist an operator, but no consumer may
+require them to bootstrap or satisfy the Friday contract. The closed
+eleven-file managed core remains the only byte-exact comparison set;
+consumer seeds, runtime integration, and overlays remain consumer-owned and
+are reconciled manually.
+
+The current payload implements the guard security updates, and its self-check
+exercises the relevant allowed and blocked command forms. That is static and
+direct-guard evidence only; it does not establish native callback delivery,
+exit handling, ordering, or fail-closed enforcement. Releases remain reviewed
+immutable SHAs, adoption remains manual, and the Friday maintainer proposes a
+rollback while the consumer owner performs it. A named backup maintainer,
+real new-machine replay, a further consumer replay, and external-runtime
+closure are still pending.
+
 ## Lifecycle governance (B06)
 
 > **中文摘要**：Friday 的 MVP 採「可審查 SHA + consumer 手動採用」模式：
@@ -73,16 +99,57 @@ This section is normative for Friday's MVP lifecycle.
 
 Vendor Skills, including Matt Pocock Skills, remain Jarvis-owned and
 vendor-pristine. Friday manages only the portable project-local output contract
-in `scratch-files.md`; it neither installs nor copies vendor Skills and does
-not claim runtime invocation or precedence enforcement.
+in [`scratch-files.md`](./payload/.agents/docs/scratch-files.md); it neither
+installs nor copies vendor Skills and does not claim runtime invocation or
+precedence enforcement.
 
 ## Quick start
 
+> **中文摘要**：blank project 先在乾淨、固定 SHA 的 Friday checkout 上預覽，
+> 再 install、再預覽並檢查差異；這是 copy-based baseline，不是複製整個 Friday
+> repo 或把 consumer symlink 到它。既有 consumer 請走後面的 manual reconciliation。
+
+For a new blank repository, first obtain a separately reviewed Friday checkout
+at an immutable commit. Prerequisites are Git, Bash, and `jq`. Do not use a
+dirty Friday checkout as the example source: this creates a new checkout at
+the reviewed pin. Before running it, replace both absolute paths and the
+literal SHA placeholder. The commands do not create a commit, install a
+runtime, or configure credentials.
+
 ```sh
-git clone git@github.com:ShenYo/Friday.git /path/to/Friday
-/path/to/Friday/install.sh --check /path/to/your/repo
-/path/to/Friday/install.sh /path/to/your/repo
+(
+  set -eu
+  TARGET='/absolute/path/to/new-project'
+  FRIDAY='/absolute/path/to/new-Friday-checkout'
+  PIN='replace-with-reviewed-immutable-Friday-SHA'
+
+  command -v git >/dev/null
+  command -v bash >/dev/null
+  command -v jq >/dev/null
+  test ! -e "$FRIDAY"
+  test ! -L "$FRIDAY"
+  git clone https://github.com/ShenYo/Friday.git "$FRIDAY"
+  git -C "$FRIDAY" checkout --detach "$PIN"
+  test "$(git -C "$FRIDAY" rev-parse HEAD)" = "$PIN"
+  test -z "$(git -C "$FRIDAY" status --porcelain)"
+  test ! -e "$TARGET"
+  test ! -L "$TARGET"
+  mkdir -p "$TARGET"
+  git -C "$TARGET" init
+  bash "$FRIDAY/install.sh" --check "$TARGET"
+  bash "$FRIDAY/install.sh" "$TARGET"
+  bash "$FRIDAY/install.sh" --check "$TARGET"
+  (cd "$TARGET" && bash .agents/hooks/check-collaborative-git.sh)
+  git -C "$TARGET" diff --check
+  git -C "$TARGET" status --short
+)
 ```
+
+The first preview reports `NEW`, `IDENTICAL`, or `CONFLICT`; resolve every
+conflict in a reviewed change before retrying. Review the resulting worktree
+diff, then decide separately whether and how to commit it under the target
+repository's own rules. Friday copies its closed payload into the target; it
+does not copy the whole Friday repository or link the target back to Friday.
 
 Requires `jq` and a blank or compatible target with a `.git/` directory
 (linked worktrees are not supported). The target is the repository root, not
@@ -106,31 +173,69 @@ result before retrying; never run concurrent installers against one target.
 The install ends by running the payload's own self-check, so broken runtime
 wiring fails now rather than the first time someone relies on the boundary.
 
-Use the complete sequence for a blank repository:
+## Starting an agent in a bootstrapped project
+
+> **中文摘要**：安裝只 seed root [`AGENTS.md`](./payload/AGENTS.md) 與
+> [`.agents/AGENTS.md`](./payload/.agents/AGENTS.md) 的 agent
+> instructions；不會生成 root `CLAUDE.md`、`GEMINI.md` 或 `setup-ai.sh`。先讀
+> 兩個 AGENTS，再選擇已安裝的單一 runtime 啟動；各 runtime 的 trust 與原生行為
+> 仍須各自驗證。
+
+From the target repository root, read the two installed instruction entrypoints
+before asking an agent to change anything:
 
 ```sh
-/path/to/Friday/install.sh --check /path/to/your/repo
-/path/to/Friday/install.sh /path/to/your/repo
-/path/to/Friday/install.sh --check /path/to/your/repo
+cd '/absolute/path/to/new-project'
+sed -n '1,240p' AGENTS.md
+sed -n '1,240p' .agents/AGENTS.md
 ```
+
+If Claude Code is already installed, launch it from that root with `claude`.
+If Codex is already installed, launch it separately from that root with
+`codex`; choose the runtime you intend to use rather than treating both as an
+automatic sequence. In the first prompt, ask it to read the root instructions
+and report the instruction documents it loaded plus its branch, HEAD, and
+working-tree status before editing.
+
+Friday does not generate root `CLAUDE.md`, `GEMINI.md`, or `setup-ai.sh`.
+Claude users therefore need a verified Claude entrypoint or an explicit
+session prompt to read the AGENTS files; this README cannot guarantee automatic
+AGENTS loading. Native workspace trust, callback delivery, precedence, and
+other runtime behavior remain runtime-specific evidence work. Gemini CLI and
+`agy` remain pending here, so this guide intentionally provides no speculative
+launch command for either.
 
 ## Ownership: managed core, seeds, and overlays
 
-The managed core is exact: existing consumers compare these ten files
+The managed core is exact: existing consumers compare these fourteen files
 byte-for-byte with their reviewed Friday version.
 
 ```
 .agents/docs/agent-rules.md
+.agents/docs/testing.md
 .agents/docs/scratch-files.md
 .agents/docs/git-guideline/git-commit.md
 .agents/docs/git-guideline/pr-evidence.md
 .agents/docs/git-guideline/safety-boundary.md
 .agents/hooks/check-collaborative-git.sh
 .agents/hooks/guard-collaborative-git.sh
+.agents/githooks/pre-commit
+.agents/githooks/commit-msg
+.agents/githooks/pre-push
 .agents/skills/git/commit/SKILL.md
 .agents/skills/git/create-pr/SKILL.md
 .agents/skills/git/push/SKILL.md
 ```
+
+The three [`githooks`](./payload/.agents/githooks) files are Git hooks rather
+than runtime tool hooks, wired by the installer through `core.hooksPath`.
+[`pre-commit`](./payload/.agents/githooks/pre-commit) scans staged content for
+credentials, [`commit-msg`](./payload/.agents/githooks/commit-msg) enforces the
+message contract, and [`pre-push`](./payload/.agents/githooks/pre-push) decides
+from the refs Git is about to send, so a deletion, a history rewrite or a push
+to the default branch is refused however the command was spelled. They are
+byte-exact like the rest of the core: an earlier revision of this list omitted
+them, which left the reconciliation recipe below silently incomplete.
 
 The following are blank-repository seeds or runtime integration, not the
 managed core. Existing consumers reconcile them manually:
@@ -163,8 +268,8 @@ regular-file `.agents/hooks/check-project-agent-integration.sh`; when present,
 the managed core checker runs it and propagates failures. Friday does not ship
 that extension.
 
-This is an explicit static allowlist in `install.sh`, not automatic payload
-discovery. A new payload file fails inventory validation until it is reviewed
+This is an explicit static allowlist in [`install.sh`](./install.sh), not
+automatic payload discovery. A new payload file fails inventory validation until it is reviewed
 and added to that list. There is no manifest or update engine in this MVP.
 
 ## Updating an existing consumer
@@ -174,9 +279,9 @@ upgrade. Pin a reviewed Friday commit first; use a placeholder rather than a
 mutable branch name:
 
 ```sh
-PIN=<reviewed-Friday-SHA>
-FRIDAY=/path/to/Friday
-TARGET=/path/to/consumer
+PIN='replace-with-reviewed-immutable-Friday-SHA'
+FRIDAY='/absolute/path/to/Friday'
+TARGET='/absolute/path/to/consumer'
 
 test "$(git -C "$FRIDAY" rev-parse HEAD)" = "$PIN"
 test -z "$(git -C "$FRIDAY" status --porcelain)"
@@ -184,7 +289,7 @@ bash "$FRIDAY/install.sh" --check "$TARGET"
 ```
 
 Read every `CONFLICT` and reconcile it in a reviewed consumer change. Sync
-only the ten managed-core paths listed above, then prove each has the exact
+only the eleven managed-core paths listed above, then prove each has the exact
 bytes of `"$FRIDAY/payload/$rel"`. Preserve consumer seeds, runtime
 integration, and overlays; do not copy a whole `.agents/` directory.
 
@@ -195,6 +300,7 @@ as an update engine:
 (cd "$TARGET" && bash .agents/hooks/check-collaborative-git.sh)
 for rel in \
   .agents/docs/agent-rules.md \
+  .agents/docs/testing.md \
   .agents/docs/scratch-files.md \
   .agents/docs/git-guideline/git-commit.md \
   .agents/docs/git-guideline/pr-evidence.md \
@@ -224,7 +330,8 @@ equality or native runtime enforcement in either consumer.
 
 ## Safety model and limits
 
-`guard-collaborative-git.sh` runs before every Bash tool call and refuses:
+[`guard-collaborative-git.sh`](./payload/.agents/hooks/guard-collaborative-git.sh)
+runs before every Bash tool call and refuses:
 
 - `git push --force` / `--force-with-lease`, `reset --hard`, `clean`,
   `branch -D`, `stash clear|drop`, `worktree remove`,
@@ -240,20 +347,49 @@ hash before relying on Codex; callback delivery, exit handling, handler order,
 and fail-closed behavior are not verified. Gemini remains pending. This setup
 is a guardrail, not a security boundary.
 
-The three Git skills are the other half. `safety-boundary.md` treats invoking
+The three Git skills are the other half.
+[`safety-boundary.md`](./payload/.agents/docs/git-guideline/safety-boundary.md) treats invoking
 `$git-commit`, `$git-push` or `$git-create-pr` as the authorisation for that
 one action in that one turn — so committing and pushing stay deliberate acts
 rather than something an agent drifts into.
 
 ### Why the self-check matters
 
-`check-collaborative-git.sh` verifies the runtime wiring *and* feeds the guard
+[`check-collaborative-git.sh`](./payload/.agents/hooks/check-collaborative-git.sh)
+verifies the runtime wiring *and* feeds the guard
 safe Bash and `apply_patch` payloads, failing if a prohibited payload is not
 blocked. The Codex seed uses project-local hooks supported on macOS/Linux;
 Windows behavior is unverified.
 
 That last one is the case worth having. A guard that has been neutered looks
 exactly like a guard that is working, right up until it matters.
+
+## Friday's own branch protection
+
+This repository is private on a plan where GitHub branch protection and
+rulesets are unavailable, so the protection it would otherwise configure --
+no direct push to the default branch, no force push, no ref deletion --
+cannot be set server-side. [`.githooks/pre-push`](./.githooks/pre-push) is the
+local substitute, wired with:
+
+```sh
+git config core.hooksPath .githooks
+```
+
+It is the same hook Friday ships to consumers at
+[`payload/.agents/githooks/pre-push`](./payload/.agents/githooks/pre-push),
+differing only in the document its messages point at. It decides from the refs
+Git is about to send rather than from the command text, so a deletion, a
+history rewrite and a push to the default branch are refused however the
+command was spelled -- `--force`, `-f`, a leading `+` on the refspec,
+`--mirror`, `--delete` and `:ref` all reduce to the same two tests.
+
+Three limits are worth stating plainly. It protects this clone only: a fresh
+clone carries no `core.hooksPath` and is unprotected until someone sets it. It
+cannot require a review approval, which is inherently server-side. And it is a
+guard against mistakes, not a control surface -- the installer does not apply
+Friday's payload to Friday itself, so this repository's commits are not covered
+by the commit-time hooks that consumers get.
 
 ## Non-goals and recovery
 
@@ -285,10 +421,10 @@ differences, not who authored them or whether an update is safe to merge.
 
 **Existing consumers reconcile manually.** The managed-core files are the
 only byte-identical comparison set. Seeds, runtime integration, and consumer
-overlays may differ by project and need manual reconciliation. `.gitignore` is
-an ordinary allowlisted seed: a target with different content conflicts before
-any write. Friday's blank-repository MVP intentionally does not parse or merge
-`.gitignore` marker blocks.
+overlays may differ by project and need manual reconciliation.
+[`.gitignore`](./payload/.gitignore) is an ordinary allowlisted seed: a target
+with different content conflicts before any write. Friday's blank-repository
+MVP intentionally does not parse or merge `.gitignore` marker blocks.
 
 Before promoting changes from a consumer such as pet-care, agree the shared
 file list and verify every transitive reference is shipped or explicitly
@@ -316,7 +452,8 @@ That paragraph records the original failure, not current pet-care behavior.
 
 ## Verification and tests
 
-Run `bash tests/install-smoke.sh /absolute/path/to/retained-test-output`.
+Run `bash` [`tests/install-smoke.sh`](./tests/install-smoke.sh)
+`/absolute/path/to/retained-test-output`.
 The check creates disposable Git fixtures, installs the repository's actual
 payload, and retains evidence for review. It never installs into an existing
 project. Cleanup is a separate, explicitly authorized operation.

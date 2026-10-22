@@ -6,11 +6,13 @@ disable-model-invocation: true
 
 # Git Commit
 
-Treat explicit manual invocation as commit authorization for the current turn
-only. Do not infer commit intent outside this skill. Read
-`.agents/docs/git-guideline/safety-boundary.md` and
-`.agents/docs/git-guideline/git-commit.md` before acting; it is the source of
-truth for the message format and safety rules.
+This skill is the procedure for committing correctly, not a permission to
+commit. Committing is at the agent's discretion — see the default posture in
+`.agents/docs/git-guideline/safety-boundary.md` — so the same rules apply
+whether or not this skill was invoked. Read that document and
+`.agents/docs/git-guideline/git-commit.md` before acting; together they are the
+source of truth for the message format, the one-task-per-commit traceability
+rule, and the sensitive-information check that runs before staging.
 
 ## Inspect and stage
 

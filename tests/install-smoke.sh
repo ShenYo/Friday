@@ -10,12 +10,16 @@ expected='
 AGENTS.md
 .agents/AGENTS.md
 .agents/docs/agent-rules.md
+.agents/docs/testing.md
 .agents/docs/scratch-files.md
 .agents/docs/git-guideline/git-commit.md
 .agents/docs/git-guideline/pr-evidence.md
 .agents/docs/git-guideline/safety-boundary.md
 .agents/hooks/check-collaborative-git.sh
 .agents/hooks/guard-collaborative-git.sh
+.agents/githooks/pre-commit
+.agents/githooks/commit-msg
+.agents/githooks/pre-push
 .agents/skills/git/commit/SKILL.md
 .agents/skills/git/create-pr/SKILL.md
 .agents/skills/git/push/SKILL.md
@@ -35,8 +39,17 @@ for rel in $expected; do grep -q "^NEW $rel$" "$run/preview.log"; done
 [ ! -e "$run/fresh/AGENTS.md" ] && [ ! -e "$run/fresh/.agents" ]
 bash "$kit/install.sh" "$run/fresh" > "$run/install.log"
 for rel in $expected; do cmp "$kit/payload/$rel" "$run/fresh/$rel"; done
-grep -Fqx '| Remote write | `git push`; creating, editing, closing, or merging a PR; any GitHub issue, release, or repository mutation |' "$run/fresh/.agents/docs/git-guideline/safety-boundary.md"
-grep -Fqx '| Local deletion or discard | deleting any file or directory; `git rm`; `git restore`; `git checkout -- <path>` |' "$run/fresh/.agents/docs/git-guideline/safety-boundary.md"
+# The installed policy must still carry the three load-bearing parts of the
+# boundary: that ordinary commits are the agent's own call, that integrating a
+# change is a person's, and that deleting a ref is never the agent's.
+boundary="$run/fresh/.agents/docs/git-guideline/safety-boundary.md"
+grep -Fq '**Committing is at the agent'"'"'s discretion.**' "$boundary"
+grep -Fq 'One commit carries one task'"'"'s context.' "$boundary"
+grep -Fq 'Check for sensitive information before committing and pushing' "$boundary"
+grep -Fq '| Merging a pull request |' "$boundary"
+grep -Fq '| Pushing directly to the default branch |' "$boundary"
+grep -Fq 'must not approve a pull request containing its own work' "$boundary"
+grep -Fq '| Deleting refs |' "$boundary"
 [ "$(readlink "$run/fresh/.claude/hooks/guard-collaborative-git.sh")" = ../../.agents/hooks/guard-collaborative-git.sh ]
 [ -L "$run/fresh/.codex/hooks/guard-collaborative-git.sh" ]
 [ "$(readlink "$run/fresh/.codex/hooks/guard-collaborative-git.sh")" = ../../.agents/hooks/guard-collaborative-git.sh ]

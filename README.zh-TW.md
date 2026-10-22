@@ -443,7 +443,9 @@ bin/friday-lock write <target>     # 經審查的調和完成後刷新
 | --- | --- | --- |
 | `in sync` | 每個記錄的檔案都相符，payload 也沒動 | 不用做事 |
 | `drifted` | consumer 裡的檔案與 lock 記錄的不符 | 有人在本機改了 managed-core 檔，去調和它 |
-| `behind` | lock 寫下之後，payload 的內容移動了 | 以一次經審查的 commit 接收變更，然後 `friday-lock write` |
+| `behind` | lock 寫下之後，Friday 的 payload 前進了 | 以一次經審查的 commit 接收變更，然後 `friday-lock write` |
+| `ahead` | 這個 consumer 持有 Friday 尚未合併的 payload | **不要**把 payload 蓋上去 |
+| `diverged` | 兩條 payload 線並存，互不包含 | 先 checkout 你真正要帶的那條 Friday 分支 |
 
 **`behind` 是依內容判斷，不是比對 commit。** 一個只改 README 的 Friday commit
 不會移動任何 payload 雜湊，因此不會觸發任何東西 —— 這正是讓每日排程檢查安靜到

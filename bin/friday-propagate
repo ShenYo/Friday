@@ -74,11 +74,29 @@ for target in "$@"; do
       printf '%s' "$status" | sed -n '/^DRIFTED/,/^$/p' | sed 's/^/    /'
       note "Reconcile it by hand first. Nothing was touched."
       refused=$((refused + 1)); continue ;;
+    ahead)
+      note "AHEAD — this consumer holds a payload Friday has not merged yet."
+      note "Copying over it would silently revert that work. Nothing was touched."
+      refused=$((refused + 1)); continue ;;
+    diverged)
+      note "DIVERGED — this consumer and Friday hold different payload lines."
+      note "Check out the Friday branch you mean to carry. Nothing was touched."
+      refused=$((refused + 1)); continue ;;
     behind) ;;
     *)
       note "could not read a status from friday-lock:"; printf '%s\n' "$status" | sed 's/^/    /'
       refused=$((refused + 1)); continue ;;
   esac
+
+  # Branch state is read before anything is decided: the lock compares against
+  # whatever the consumer currently has checked out, so a consumer sitting on a
+  # feature branch is being judged on work that is not on its main.
+  consumer_branch=$(git -C "$target" branch --show-current 2>/dev/null)
+  if [ "$consumer_branch" != main ]; then
+    note "REFUSED — this consumer is on '$consumer_branch', not main."
+    note "The lock was read against that branch, not against what would be branched from."
+    refused=$((refused + 1)); continue
+  fi
 
   # Which files actually moved. Only these are copied -- a consumer's own
   # files are never in this list, because only managed core is.

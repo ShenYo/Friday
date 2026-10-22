@@ -466,7 +466,9 @@ Three states, and the distinction is the point:
 | --- | --- | --- |
 | `in sync` | every recorded file matches and the payload has not moved | nothing |
 | `drifted` | a file in the consumer no longer matches what the lock recorded | somebody edited a managed-core file locally; reconcile it |
-| `behind` | the payload's content moved since the lock was written | take the change in a reviewed commit, then `friday-lock write` |
+| `behind` | Friday's payload moved since the lock was written | take the change in a reviewed commit, then `friday-lock write` |
+| `ahead` | the consumer holds a payload Friday has not merged yet | do **not** copy the payload over it |
+| `diverged` | two payload lines exist, neither containing the other | check out the Friday branch you mean to carry |
 
 **`behind` is decided by content, never by comparing commits.** A Friday commit
 that only touches a README moves no payload hash and so raises nothing. That is

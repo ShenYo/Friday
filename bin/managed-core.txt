@@ -1,0 +1,28 @@
+# The managed core: files a consumer must keep byte-identical to the payload.
+# This is the single source of truth for that list -- bin/friday-lock reads it
+# and verifies, against install.sh's own allowlist, that every payload file is
+# classified here or below. A payload file that is neither fails loudly rather
+# than being silently unchecked.
+.agents/docs/agent-rules.md
+.agents/docs/testing.md
+.agents/docs/scratch-files.md
+.agents/docs/git-guideline/git-commit.md
+.agents/docs/git-guideline/pr-evidence.md
+.agents/docs/git-guideline/safety-boundary.md
+.agents/hooks/check-collaborative-git.sh
+.agents/hooks/guard-collaborative-git.sh
+.agents/githooks/pre-commit
+.agents/githooks/commit-msg
+.agents/githooks/pre-push
+.agents/skills/git/commit/SKILL.md
+.agents/skills/git/create-pr/SKILL.md
+.agents/skills/git/push/SKILL.md
+
+# --- consumer-owned ---
+# Seeds and runtime integration. The consumer owns these; they are reconciled
+# by hand and are never compared byte-for-byte.
+!AGENTS.md
+!.agents/AGENTS.md
+!.gitignore
+!.claude/settings.json
+!.codex/hooks.json

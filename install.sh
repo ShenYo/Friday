@@ -198,6 +198,12 @@ for link in "${links[@]}"; do
   echo "  linked $rel"
 done
 
+# --- Record the position ------------------------------------------------------
+# The lock is what lets a consumer answer "which Friday am I on, and has
+# anything moved since?" without a human comparing files by hand. Written
+# last, so it records the state the install actually produced.
+bash "$KIT_ROOT/bin/friday-lock" write "$TARGET" | sed 's/^/  /'
+
 # --- Verify -----------------------------------------------------------------
 # The payload ships its own check, which feeds the guard a force-push payload
 # and fails if it is not blocked. Running it here means a bad install is caught

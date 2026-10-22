@@ -277,5 +277,31 @@ if PATH="$run/no-jq-bin" /bin/bash "$kit/install.sh" "$run/missing-jq" > "$run/m
 fi
 grep -q "'jq' is required" "$run/missing-jq.log"
 [ ! -e "$run/missing-jq/AGENTS.md" ] && [ ! -e "$run/missing-jq/.agents" ]
+# --- the lock the install writes ---------------------------------------------
+# Assert all three states, not only the happy one. Three plainly wrong
+# implementations have passed a suite here before, each time because the suite
+# only ever checked that the right thing reported right.
+target lock
+/bin/bash "$kit/install.sh" "$run/lock" > "$run/lock.log" 2>&1
+[ -f "$run/lock/.friday-lock.json" ] || { echo 'FAIL: install wrote no lock' >&2; exit 1; }
+jq -e . "$run/lock/.friday-lock.json" >/dev/null || { echo 'FAIL: lock is not valid JSON' >&2; exit 1; }
+/bin/bash "$kit/bin/friday-lock" check "$run/lock" | grep -q 'status: in sync' \
+  || { echo 'FAIL: a fresh install does not check in sync' >&2; exit 1; }
+
+printf '\n# drift\n' >> "$run/lock/.agents/docs/testing.md"
+if /bin/bash "$kit/bin/friday-lock" check "$run/lock" > "$run/lock-drift.log" 2>&1; then
+  echo 'FAIL: an edited managed-core file still reported success' >&2; exit 1
+fi
+grep -q 'status: drifted' "$run/lock-drift.log" || { echo 'FAIL: edit not reported as drifted' >&2; exit 1; }
+grep -q 'agents/docs/testing.md' "$run/lock-drift.log" || { echo 'FAIL: drift did not name the file' >&2; exit 1; }
+cp "$kit/payload/.agents/docs/testing.md" "$run/lock/.agents/docs/testing.md"
+
+rm "$run/lock/.agents/githooks/commit-msg"
+if /bin/bash "$kit/bin/friday-lock" check "$run/lock" > "$run/lock-missing.log" 2>&1; then
+  echo 'FAIL: a missing managed-core file still reported success' >&2; exit 1
+fi
+grep -q 'missing' "$run/lock-missing.log" || { echo 'FAIL: missing file not reported as missing' >&2; exit 1; }
+echo "PASS: lock written on install; drift and deletion are both refused"
+
 echo "PASS: live payload, preview states, self-check, idempotence, conflict/type/symlink gates, arguments and prerequisites"
 echo "Retained fixture evidence: $run"

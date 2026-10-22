@@ -108,6 +108,11 @@ precedence enforcement.
 
 ## Quick start
 
+> Adopting an **existing** project, where `--check` reports CONFLICT lines?
+> [`ADOPTING.md`](./ADOPTING.md) has the decision tree for reading them —
+> which are expected overlays and which are real.
+
+
 > **中文摘要**：blank project 先在乾淨、固定 SHA 的 Friday checkout 上預覽，
 > 再 install、再預覽並檢查差異；這是 copy-based baseline，不是複製整個 Friday
 > repo 或把 consumer symlink 到它。既有 consumer 請走後面的 manual reconciliation。
@@ -301,20 +306,7 @@ as an update engine:
 
 ```sh
 (cd "$TARGET" && bash .agents/hooks/check-collaborative-git.sh)
-for rel in \
-  .agents/docs/agent-rules.md \
-  .agents/docs/testing.md \
-  .agents/docs/scratch-files.md \
-  .agents/docs/git-guideline/git-commit.md \
-  .agents/docs/git-guideline/pr-evidence.md \
-  .agents/docs/git-guideline/safety-boundary.md \
-  .agents/hooks/check-collaborative-git.sh \
-  .agents/hooks/guard-collaborative-git.sh \
-  .agents/skills/git/commit/SKILL.md \
-  .agents/skills/git/create-pr/SKILL.md \
-  .agents/skills/git/push/SKILL.md; do
-  cmp "$TARGET/$rel" "$FRIDAY/payload/$rel"
-done
+bash "$FRIDAY/bin/friday-lock" check "$TARGET"
 git -C "$TARGET" diff --check
 ```
 
@@ -453,6 +445,41 @@ passing vacuously. It now uses `grep`, and first proves the search can find a
 string that is definitely present before trusting any negative result.
 
 That paragraph records the original failure, not current pet-care behavior.
+
+## Knowing where a consumer stands
+
+`install.sh` writes `.friday-lock.json` into the target: the Friday commit it
+was installed from, and the sha256 of every managed-core file as installed.
+[`bin/friday-lock`](./bin/friday-lock) reads it back.
+
+```sh
+bin/friday-lock check <target>     # or run it from inside the consumer
+bin/friday-lock write <target>     # refresh after a reviewed reconciliation
+```
+
+Three states, and the distinction is the point:
+
+| state | means | what to do |
+| --- | --- | --- |
+| `in sync` | every recorded file matches and the payload has not moved | nothing |
+| `drifted` | a file in the consumer no longer matches what the lock recorded | somebody edited a managed-core file locally; reconcile it |
+| `behind` | the payload's content moved since the lock was written | take the change in a reviewed commit, then `friday-lock write` |
+
+**`behind` is decided by content, never by comparing commits.** A Friday commit
+that only touches a README moves no payload hash and so raises nothing. That is
+what makes a daily scheduled check quiet enough to be worth running.
+
+Jarvis and Friday are not payload consumers, but they carry `.githooks` copies
+of three payload files. The lock records **both** hashes for those — the
+payload's and the local copy's — so drift on either side is caught without the
+tool needing to know what the documented pointer-line delta is. That stays a
+human-reviewed `diff`, which is the honest place for it.
+
+[`bin/managed-core.txt`](./bin/managed-core.txt) is the single source of truth
+for which files are managed and which are consumer-owned. A payload file listed
+as neither fails the tool loudly rather than shipping unchecked — the gap that
+once let three githooks sit outside the byte-exact set while the docs still
+said eleven.
 
 ## Runtime behaviour measured on the Claude side
 

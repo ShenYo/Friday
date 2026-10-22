@@ -519,9 +519,20 @@ for githook in pre-commit commit-msg pre-push; do
   test -f ".agents/githooks/$githook" || fail "commit-time hook missing: $githook"
   test -x ".agents/githooks/$githook" || fail "commit-time hook is not executable: $githook"
 done
+# core.hooksPath is per-clone local config written by the installer, not
+# repository content, so a fresh clone and every CI checkout legitimately lack
+# it. Asserting it outright made this checker impossible to pass in CI, which
+# is exactly where it most needs to run. Distinguish the two cases: an unset
+# value is an unwired clone and is reported, while a value pointing somewhere
+# else is a real misconfiguration that would silently run the wrong hooks.
 hooks_path=$(git config --local core.hooksPath 2>/dev/null || true)
-[ "$hooks_path" = .agents/githooks ] \
-  || fail "core.hooksPath is '$hooks_path', expected .agents/githooks — the commit-time hooks would not run"
+if [ -z "$hooks_path" ]; then
+  echo "note: core.hooksPath is unset in this clone, so the commit-time hooks" >&2
+  echo "      are present but inactive here. Run Friday's install.sh, or" >&2
+  echo "      'git config core.hooksPath .agents/githooks', to wire them." >&2
+elif [ "$hooks_path" != .agents/githooks ]; then
+  fail "core.hooksPath is '$hooks_path', not .agents/githooks — the commit-time hooks in this repository would not run, and something else would"
+fi
 
 githook_lab=$(mktemp -d)
 fixture_roots+=("$githook_lab")

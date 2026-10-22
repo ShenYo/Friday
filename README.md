@@ -52,7 +52,7 @@ skills or install a consumer's domain workflow.
 ## Current operating context
 
 > **中文摘要**：Friday 的可攜成果必須由專案本身承載；輔助工具可以選用但
-> 不可成為 baseline 前提。十一個 managed-core 檔維持封閉
+> 不可成為 baseline 前提。十四個 managed-core 檔維持封閉
 > byte-exact 範圍，seed、runtime integration 與 overlay 仍由 consumer 擁有。
 > 現行 guard 安全修正已在 payload 與 self-check 實作；B06 的 immutable SHA、
 > 手動採用及 rollback 責任不變，backup、replay 與外部 runtime 仍待完成。

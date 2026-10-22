@@ -60,7 +60,7 @@ skills or install a consumer's domain workflow.
 Portable outcomes belong in project-controlled documentation, tests, or
 automation. Optional helpers may assist an operator, but no consumer may
 require them to bootstrap or satisfy the Friday contract. The closed
-eleven-file managed core remains the only byte-exact comparison set;
+fourteen-file managed core remains the only byte-exact comparison set;
 consumer seeds, runtime integration, and overlays remain consumer-owned and
 are reconciled manually.
 
@@ -289,7 +289,7 @@ bash "$FRIDAY/install.sh" --check "$TARGET"
 ```
 
 Read every `CONFLICT` and reconcile it in a reviewed consumer change. Sync
-only the eleven managed-core paths listed above, then prove each has the exact
+only the fourteen managed-core paths listed above, then prove each has the exact
 bytes of `"$FRIDAY/payload/$rel"`. Preserve consumer seeds, runtime
 integration, and overlays; do not copy a whole `.agents/` directory.
 

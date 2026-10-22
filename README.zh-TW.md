@@ -48,14 +48,14 @@ domain workflow。
 ## 現行運作情境
 
 > **摘要**：Friday 的可攜成果必須由專案本身承載；輔助工具可以選用但
-> 不可成為 baseline 前提。十一個 managed-core 檔維持封閉
+> 不可成為 baseline 前提。十四個 managed-core 檔維持封閉
 > byte-exact 範圍，seed、runtime integration 與 overlay 仍由 consumer 擁有。
 > 現行 guard 安全修正已在 payload 與 self-check 實作；B06 的 immutable SHA、
 > 手動採用及 rollback 責任不變，backup、replay 與外部 runtime 仍待完成。
 
 可攜的成果應該放在專案自己管控的文件、測試或自動化裡。輔助工具可以協助操作者，
 但沒有任何消費端被允許把這些輔助工具當成 bootstrap 或滿足 Friday 契約的前提。
-封閉的十一檔 managed core，始終是唯一的 byte-exact 比對集合；消費端的 seeds、
+封閉的十四檔 managed core，始終是唯一的 byte-exact 比對集合；消費端的 seeds、
 runtime integration 與 overlay，仍由消費端自行擁有並以人工方式調和。
 
 目前的 payload 已實作 guard 的安全性更新，其 self-check 也會演練相關的允許與
@@ -274,7 +274,7 @@ bash "$FRIDAY/install.sh" --check "$TARGET"
 ```
 
 請讀過每一個 `CONFLICT`，並在一次經審查的消費端變更中調和它。只同步上面
-列出的十一個 managed-core 路徑，然後逐一證明它們的內容，與
+列出的十四個 managed-core 路徑，然後逐一證明它們的內容，與
 `"$FRIDAY/payload/$rel"` 完全一致。請保留消費端自己的 seeds、runtime
 integration 與 overlay；不要整個複製一份 `.agents/` 目錄。
 

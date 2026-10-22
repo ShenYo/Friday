@@ -55,21 +55,47 @@ staged_diff=$(git diff --cached --no-color --text --diff-filter=ACMRT -U0 \
   --src-prefix=a/ --dst-prefix=b/ 2>/dev/null) \
   || refuse "unable to read the staged diff (failing closed)"
 
+# This file is the rule table, so its own added lines are patterns by
+# definition and must not be scanned. Derive the path instead of naming it:
+# core.hooksPath decides where the hook lives -- `.agents/githooks` in a
+# payload consumer, `.githooks` in Jarvis and Friday, `payload/.agents/githooks`
+# if a producer points at what it ships -- and a hardcoded string silently
+# stops exempting the moment the file sits anywhere else, which makes this
+# file impossible to commit. $0 mirrors how core.hooksPath was set, so an
+# absolute setting needs the repo root stripped. If the path cannot be
+# resolved the exemption is dropped rather than guessed: that makes the scan
+# stricter, never weaker.
+self_rel=$0
+case $self_rel in
+  /*)
+    self_root=$(git rev-parse --show-toplevel 2>/dev/null) || self_root=''
+    if [ -n "$self_root" ]; then
+      self_rel=${self_rel#"$self_root"/}
+    else
+      self_rel=''
+    fi
+    ;;
+esac
+# Still absolute (outside the work tree) or empty: exempt nothing.
+case $self_rel in
+  /*) self_rel='' ;;
+esac
+
 # Two exemptions, both narrow, because a scanner that cannot describe its own
 # rules is a scanner nobody can maintain:
 #
 #  - this file is the rule table, so its added lines are patterns by
-#    definition and are never scanned;
+#    definition and are never scanned (see $self_rel above);
 #  - any single line carrying the marker below is skipped, for a documented
 #    example or a test fixture that must look like the real thing.
 #
 # The marker is deliberately per-line and must be justified where it appears.
 # It is not a file-level or directory-level opt-out.
-added=$(printf '%s\n' "$staged_diff" | awk '
+added=$(printf '%s\n' "$staged_diff" | awk -v self_rel="$self_rel" '
     # The whole header after "+++ ", not $2: Git does not quote a plain space,
     # so a path like ".agents/githooks/pre-commit notes" collapsed onto the
     # exempt path under a whitespace split and skipped the entire file.
-    /^\+\+\+ / { f = substr($0, 5); sub(/^b\//, "", f); skip = (f == ".agents/githooks/pre-commit"); next }
+    /^\+\+\+ / { f = substr($0, 5); sub(/^b\//, "", f); skip = (self_rel != "" && f == self_rel); next }
     /^\+/ && $0 !~ /^\+\+\+/ {
       if (skip) next
       if (index($0, "secret-scan:allow") > 0) next
@@ -95,8 +121,8 @@ added=$stripped_added
 # Name the rule and the files it matched, never the matched value.
 where_of() {
   local pat=$1
-  printf '%s\n' "$staged_diff" | awk -v pat="$pat" '
-      /^\+\+\+ / { f = substr($0, 5); sub(/^b\//, "", f); skip = (f == ".agents/githooks/pre-commit"); next }
+  printf '%s\n' "$staged_diff" | awk -v pat="$pat" -v self_rel="$self_rel" '
+      /^\+\+\+ / { f = substr($0, 5); sub(/^b\//, "", f); skip = (self_rel != "" && f == self_rel); next }
       /^\+/ && $0 !~ /^\+\+\+/ {
         if (skip) next
         if (index($0, "secret-scan:allow") > 0) next

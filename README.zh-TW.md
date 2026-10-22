@@ -225,7 +225,10 @@ tool hooks，由 installer 透過 `core.hooksPath` 接上。
 [`pre-commit`](./payload/.agents/githooks/pre-commit) 掃描 staged 內容中的憑證、
 [`commit-msg`](./payload/.agents/githooks/commit-msg) 強制訊息契約、
 [`pre-push`](./payload/.agents/githooks/pre-push) 則依 Git 即將送出的 refs 判斷，
-因此刪除 ref、改寫歷史或推送 default branch，無論指令怎麼拼寫都會被拒絕。它們
+因此刪除 ref、改寫歷史或推送 default branch，無論指令怎麼拼寫都會被拒絕。
+對一個完全沒有 ref 的 remote 做第一次推送則會放行：沒有 default branch 要保護、
+沒有 ref 可刪、也沒有歷史可改寫，而拒絕它會讓「建立一個 repository」在不繞過
+hook 的前提下變得不可能。它們
 與 managed core 其餘檔案一樣需要逐位元組比對：先前版本的清單遺漏了它們，使得
 下方的對帳流程在無聲中並不完整。
 

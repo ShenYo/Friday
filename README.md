@@ -108,6 +108,11 @@ precedence enforcement.
 
 ## Quick start
 
+> Adopting an **existing** project, where `--check` reports CONFLICT lines?
+> [`ADOPTING.md`](./ADOPTING.md) has the decision tree for reading them —
+> which are expected overlays and which are real.
+
+
 > **中文摘要**：blank project 先在乾淨、固定 SHA 的 Friday checkout 上預覽，
 > 再 install、再預覽並檢查差異；這是 copy-based baseline，不是複製整個 Friday
 > repo 或把 consumer symlink 到它。既有 consumer 請走後面的 manual reconciliation。
@@ -301,20 +306,7 @@ as an update engine:
 
 ```sh
 (cd "$TARGET" && bash .agents/hooks/check-collaborative-git.sh)
-for rel in \
-  .agents/docs/agent-rules.md \
-  .agents/docs/testing.md \
-  .agents/docs/scratch-files.md \
-  .agents/docs/git-guideline/git-commit.md \
-  .agents/docs/git-guideline/pr-evidence.md \
-  .agents/docs/git-guideline/safety-boundary.md \
-  .agents/hooks/check-collaborative-git.sh \
-  .agents/hooks/guard-collaborative-git.sh \
-  .agents/skills/git/commit/SKILL.md \
-  .agents/skills/git/create-pr/SKILL.md \
-  .agents/skills/git/push/SKILL.md; do
-  cmp "$TARGET/$rel" "$FRIDAY/payload/$rel"
-done
+bash "$FRIDAY/bin/friday-lock" check "$TARGET"
 git -C "$TARGET" diff --check
 ```
 

@@ -179,7 +179,21 @@ for target in "$@"; do
     git -C "$target" add "$rel"
   done
   "$LOCK" write "$target" >/dev/null
-  git -C "$target" add "$(basename "$(lock_of "$target")")"
+  # Stage every lock name the target has or had. `write` may have retired the
+  # other one, and `git add` on the new path alone leaves that deletion
+  # unstaged -- the commit then carries both records, and `check` refuses a
+  # fresh clone of it. A name is passed only when it exists or is tracked,
+  # because a pathspec matching neither is an error. Scoped to these two
+  # paths, so this is not a blanket add across a mixed tree.
+  lock_paths=()
+  for lock_name in "$CONSUMER_LOCK" "$MIRROR_LOCK"; do
+    if [ -e "$target/$lock_name" ] \
+      || git -C "$target" ls-files --error-unmatch "$lock_name" >/dev/null 2>&1; then
+      lock_paths+=("$lock_name")
+    fi
+  done
+  [ ${#lock_paths[@]} -gt 0 ] || die "$target has no lock to stage after write"
+  git -C "$target" add -A -- "${lock_paths[@]}"
 
   list=$(printf '  %s\n' "${moved[@]}")
   git -C "$target" commit -q -F - <<MSG

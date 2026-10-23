@@ -156,23 +156,49 @@ write_lock() {
       '.mirrors[$k] = {source:$s, source_sha256:$ps, local_sha256:$ls}')
   done < <(mirror_rels "$target")
 
-  local n_core n_mirror name
+  local n_core n_mirror name other
   n_core=$(printf '%s' "$json" | jq '.managed_core | length')
   n_mirror=$(printf '%s' "$json" | jq '.mirrors | length')
   if [ "$n_core" -gt 0 ]; then
     name=$CONSUMER_LOCK
-    [ -f "$target/$MIRROR_LOCK" ] && rm -f "$target/$MIRROR_LOCK"
+    other=$MIRROR_LOCK
   elif [ "$n_mirror" -gt 0 ]; then
     # A mirror record carries no managed_core at all, so the file's shape
     # matches its name.
     json=$(printf '%s' "$json" | jq 'del(.managed_core)')
     name=$MIRROR_LOCK
-    [ -f "$target/$CONSUMER_LOCK" ] && rm -f "$target/$CONSUMER_LOCK"
+    other=$CONSUMER_LOCK
   else
     die "$target has neither managed core nor mirrored hooks -- nothing to record."
   fi
-  printf '%s\n' "$json" > "$target/$name"
+
+  # Write through a temporary file in the same directory, so a reader either
+  # sees the previous record or the new one and never a half-written file, and
+  # an interrupted run never leaves the target with no record at all.
+  local tmp="$target/.${name}.tmp.$$"
+  printf '%s\n' "$json" > "$tmp" || die "could not write $tmp"
+  mv -f "$tmp" "$target/$name" || { rm -f "$tmp"; die "could not install $target/$name"; }
   echo "wrote $target/$name"
+
+  # Only then retire the other name, and only when it really is one of ours.
+  # The name alone is not proof: "hooks.json" is generic enough that a target
+  # may use it for something else, and an earlier revision deleted exactly
+  # that -- an unrelated {"someToolConfig":...} vanished without a word.
+  if [ -f "$target/$other" ]; then
+    if is_friday_record "$target/$other"; then
+      rm -f "$target/$other"
+      echo "retired $target/$other"
+    else
+      echo "friday-lock: left $target/$other alone -- it is not a Friday record." >&2
+      echo "friday-lock: both names are now present; reconcile it before running check." >&2
+    fi
+  fi
+}
+
+# A Friday record is identified by its contents, never by its filename.
+is_friday_record() {
+  jq -e '(.friday.repo? // "") == "ShenYo/Friday" and (.friday.commit? | type) == "string"' \
+    "$1" >/dev/null 2>&1
 }
 
 # --- check -------------------------------------------------------------------
@@ -191,6 +217,14 @@ check_lock() {
     die "no $CONSUMER_LOCK or $MIRROR_LOCK in $target -- run 'friday-lock write $target' first."
   fi
   jq -e . "$lock" >/dev/null 2>&1 || die "$(basename "$lock") is not valid JSON"
+  # Valid JSON at the right path is not a record. An unrelated file -- or a
+  # truncated one -- used to reach the end of this function and report
+  # "in sync" over zero files, which is the worst possible answer: a green
+  # light from a check that examined nothing.
+  is_friday_record "$lock" \
+    || die "$(basename "$lock") is not a Friday record (no .friday.repo/.friday.commit) -- run 'friday-lock write $target' or remove it."
+  [ "$(jq -r '(.managed_core // {} | length) + (.mirrors // {} | length)' "$lock")" -gt 0 ] \
+    || die "$(basename "$lock") records no files -- nothing to check. Run 'friday-lock write $target'."
 
   local -a drifted=() behind=()
 

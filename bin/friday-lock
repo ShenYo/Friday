@@ -164,10 +164,22 @@ check_lock() {
       continue
     fi
     have=$(sha256 "$target/$rel")
-    [ "$have" = "$have_recorded" ] || drifted+=("$rel")
+    # Since ShenYo/Friday#18 a mirror must EQUAL its payload source. Comparing
+    # only against the recorded hash would call a mirror that was never in step
+    # "in sync", because the lock would have recorded the mismatch as the
+    # baseline. Anchor on equality, then use the recorded hash to say which
+    # side moved.
     if [ -f "$PAYLOAD/$psrc" ]; then
       pwant=$(sha256 "$PAYLOAD/$psrc")
-      [ "$pwant" = "$want" ] || behind+=("$rel (source $psrc)")
+      if [ "$have" != "$pwant" ]; then
+        if [ "$have" = "$have_recorded" ]; then
+          behind+=("$rel (source $psrc)")
+        else
+          drifted+=("$rel")
+        fi
+      fi
+    else
+      [ "$have" = "$have_recorded" ] || drifted+=("$rel")
     fi
   done < <(jq -r '.mirrors | to_entries[] | "\(.key)\t\(.value.source)\t\(.value.source_sha256)\t\(.value.local_sha256)"' "$lock")
 

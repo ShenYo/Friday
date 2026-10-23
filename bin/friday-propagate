@@ -31,6 +31,7 @@ KIT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 PAYLOAD="$KIT_ROOT/payload"
 LOCK="$KIT_ROOT/bin/friday-lock"
 BRANCH_PREFIX=chore/sync-managed-core
+LOCK_NAME=.friday-lock.json
 dry_run=false
 
 die() { echo "friday-propagate: $*" >&2; exit 2; }
@@ -100,11 +101,38 @@ for target in "$@"; do
 
   # Which files actually moved. Only these are copied -- a consumer's own
   # files are never in this list, because only managed core is.
+  # A repository that records no managed core is not a payload consumer -- it
+  # only mirrors some hooks, the way Jarvis does. Treating "file absent" as
+  # "behind" there would install the whole managed core into a repository that
+  # deliberately has no .agents/ tree, which is what an earlier revision did
+  # to a fixture.
+  is_consumer=no
+  if [ -f "$target/$LOCK_NAME" ] \
+     && [ "$(jq -r '.managed_core // {} | length' "$target/$LOCK_NAME")" -gt 0 ]; then
+    is_consumer=yes
+  fi
+
   moved=()
-  for rel in "${managed[@]}"; do
-    [ -f "$target/$rel" ] || { moved+=("$rel"); continue; }
-    cmp -s "$PAYLOAD/$rel" "$target/$rel" || moved+=("$rel")
-  done
+  if [ "$is_consumer" = yes ]; then
+    for rel in "${managed[@]}"; do
+      [ -f "$target/$rel" ] || { moved+=("$rel"); continue; }
+      cmp -s "$PAYLOAD/$rel" "$target/$rel" || moved+=("$rel")
+    done
+  fi
+  # Mirrors: the .githooks copies a non-consumer keeps, wired through
+  # core.hooksPath. They are byte-identical to their payload source, so there
+  # is nothing to re-apply -- the pointer deltas that used to make this a
+  # hand-written step were removed in #18 precisely because a hand-written
+  # step gets skipped. The source for each is recorded in the lock.
+  mirror_src=()
+  if [ -f "$target/$LOCK_NAME" ]; then
+    while IFS=$'\t' read -r rel src; do
+      [ -n "$rel" ] || continue
+      if [ ! -f "$target/$rel" ] || ! cmp -s "$PAYLOAD/$src" "$target/$rel"; then
+        moved+=("$rel"); mirror_src+=("$rel=$src")
+      fi
+    done < <(jq -r '.mirrors // {} | to_entries[] | "\(.key)\t\(.value.source)"' "$target/$LOCK_NAME")
+  fi
   [ ${#moved[@]} -gt 0 ] || { note "behind, but no managed-core file differs — nothing to do"; skipped=$((skipped + 1)); continue; }
 
   note "behind on ${#moved[@]} file(s):"
@@ -132,9 +160,13 @@ for target in "$@"; do
   git -C "$target" checkout -q -b "$branch"
 
   for rel in "${moved[@]}"; do
+    src=$rel
+    for pair in ${mirror_src+"${mirror_src[@]}"}; do
+      [ "${pair%%=*}" = "$rel" ] && src=${pair#*=} && break
+    done
     mkdir -p "$target/$(dirname "$rel")"
-    cp "$PAYLOAD/$rel" "$target/$rel"
-    case "$rel" in .agents/hooks/*.sh|.agents/githooks/*) chmod +x "$target/$rel" ;; esac
+    cp "$PAYLOAD/$src" "$target/$rel"
+    case "$rel" in .agents/hooks/*.sh|.agents/githooks/*|.githooks/*) chmod +x "$target/$rel" ;; esac
     git -C "$target" add "$rel"
   done
   "$LOCK" write "$target" >/dev/null

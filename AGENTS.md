@@ -14,14 +14,14 @@ the same rules this repository ships, and the authority on them.
 
 Each step ends on the condition that says it is done.
 
-1. **List a new file in all three places.** These are `install.sh`'s
+1. **Add or remove a file in all three places.** These are `install.sh`'s
    `files=( … )` allowlist,
    [`bin/managed-core.txt`](bin/managed-core.txt) (either a managed entry or
    a `!`-prefixed consumer-owned one), and the `expected` inventory at the top
    of `tests/install-smoke.sh`. The first two tools refuse a payload they
-   cannot account for. The smoke test fails in step 3 if its inventory is
-   missing the file. Done when, with the new file in place, neither of these
-   appears:
+   cannot account for. The smoke test fails in step 3 when its inventory and
+   the payload disagree, and it names the path and the direction. Done when,
+   with the change in place, neither of these appears:
 
    ```text
    bin/friday-lock check .                  → classified neither managed nor consumer-owned
@@ -31,30 +31,42 @@ Each step ends on the condition that says it is done.
 2. **Keep the mirrors byte-identical.** `.githooks/` holds copies of
    `payload/.agents/githooks/`, and this repository runs them. Copy the changed
    hook over and run `bin/friday-lock write .` in the **same commit**. Done when
-   `bin/friday-lock check .` reports `in sync`. That command is the one that
-   compares the mirrors with the payload. A forgotten copy shows up there as
-   `behind`.
+   `bin/friday-lock check .` reports `in sync`. A forgotten copy shows up there
+   as `behind`. `hooks-drift.yml` makes the same comparison on every pull
+   request that touches a hook, and also fails a hook that is no longer
+   executable, because git skips such a hook without stopping the commit.
 
 3. **Prove it in a real install.** Run
    `bash tests/install-smoke.sh docs/temp/<purpose>/<date>`. Done when both
    `PASS:` lines print. This is the checker run that counts, because it
    self-checks inside a fresh install.
 
-4. **After merge, propagate from the merged `main`.** Propagation compares
-   consumers with the payload *checked out here*. A checkout still on the
-   feature branch, or on a `main` that was not pulled, reports every consumer
-   `in sync` and opens nothing. So first run `git switch main && git pull
-   --ff-only`, and confirm that `git log -1 --format=%h -- payload/` names the
-   merge you expect. Then run `bin/friday-propagate --dry-run <consumer>…`,
-   read the file list, and run it again without `--dry-run`. Done when every
+4. **After merge, propagate from a clean, current `main`.** Propagation
+   copies the payload *as checked out here* and labels it with the last commit
+   that touched `payload/`. That goes wrong in two directions:
+
+   - A checkout behind `origin/main` lacks the change, so it cannot carry it.
+     Consumers read `in sync`, or `ahead`, which is refused, and nothing is
+     opened.
+   - A feature branch, or uncommitted edits under `payload/`, go out as if
+     merged, labelled with a commit that does not contain them.
+
+   So first run `git switch main && git pull --ff-only`. Then confirm that
+   `git status --porcelain -- payload/` prints nothing and that
+   `git rev-parse HEAD` equals `git rev-parse origin/main`. After that,
+   `git log -1 --format=%h -- payload/` names the commit the sync branch and
+   the lock will carry. For a merged pull request this is the PR's own commit,
+   not the merge commit, because git skips a merge whose `payload/` matches
+   its parent's. Then run `bin/friday-propagate --dry-run <consumer>…`, read
+   the file list, and run it again without `--dry-run`. Done when every
    consumer that was `behind` has a pull request. A person merges each one.
 
 ## What the files will not tell you
 
 - **Consumer-owned files reach new installs only.** Propagation carries managed
   core and skips every `!` entry, because a consumer reconciles its seeds by
-  hand. To change existing consumers' `AGENTS.md`, `.gitignore`,
-  `.claude/settings.json` or `.codex/hooks.json`, open a pull request in each.
+  hand. To change one of those files (the `!` entries in
+  `bin/managed-core.txt`) in existing consumers, open a pull request in each.
 - **Root `hooks.json` is a sha256 record** of the three mirrors. Hook
   *configuration* is `payload/.codex/hooks.json`. The two names look alike and
   are unrelated.

@@ -475,10 +475,16 @@ that only touches a README moves no payload hash and so raises nothing. That is
 what makes a daily scheduled check quiet enough to be worth running.
 
 Jarvis and Friday are not payload consumers, but they carry `.githooks` copies
-of three payload files. The lock records **both** hashes for those — the
-payload's and the local copy's — so drift on either side is caught without the
-tool needing to know what the documented pointer-line delta is. That stays a
-human-reviewed `diff`, which is the honest place for it.
+of three payload files. Those copies are **byte-identical** to their payload
+source, so `friday-lock` anchors on equality: a mirror that differs is reported
+whichever side moved, and the recorded hashes say which.
+
+They used to differ in six lines naming a documentation path, because the right
+path depends on who is running the file. The hooks now resolve it themselves,
+so one file is correct in a consumer, in Friday and in a repository that only
+mirrors it. The delta was removed because a delta re-applied by hand is a delta
+that gets missed — which is exactly what happened the last time the payload
+moved, in four places at once.
 
 [`bin/managed-core.txt`](./bin/managed-core.txt) is the single source of truth
 for which files are managed and which are consumer-owned. A payload file listed

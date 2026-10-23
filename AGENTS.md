@@ -51,6 +51,12 @@ Each step ends on the condition that says it is done.
    - A feature branch, or uncommitted edits under `payload/`, go out as if
      merged, labelled with a commit that does not contain them.
 
+   Run it while no other agent is working in this checkout. Propagation reads
+   the commit once, at the start, but copies each consumer's files as they are
+   when it reaches that consumer, so an edit made in between ships under the
+   wrong label. On a machine where several agent runtimes share `~/.Friday`,
+   that is not hypothetical.
+
    So first run `git switch main && git pull --ff-only`. Then confirm that
    `git status --porcelain -- payload/` prints nothing and that
    `git rev-parse HEAD` equals `git rev-parse origin/main`. After that,

@@ -27,7 +27,36 @@ set -uo pipefail
 KIT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 PAYLOAD="$KIT_ROOT/payload"
 LIST="$KIT_ROOT/bin/managed-core.txt"
-LOCK_NAME=.friday-lock.json
+# Two names for one record, because they describe two different things and a
+# reader should not have to open the file to tell them apart.
+#
+#   .friday-lock.json  a payload CONSUMER: managed core installed, byte-exact.
+#                      Keeps the prefix: the file exists because the repository
+#                      adopted this payload, and it is Friday that reads it
+#                      back and proposes the update.
+#   hooks.json         a repository that only BORROWS some hooks -- Jarvis, and
+#                      Friday itself. Neither has an .agents/ tree and neither
+#                      is a target install.sh can run against.
+#
+#                      No prefix, deliberately. Two earlier names carried one:
+#                      "mirror" read as though the repositories were bound
+#                      together, and ".friday-hooks" said the hooks were
+#                      Friday's rather than this repository's. Neither is true.
+#                      The repositories are maintained separately and serve
+#                      different audiences; Jarvis takes 3 of Friday's 19
+#                      payload files and nothing else, and Friday depends on
+#                      Jarvis for nothing. So the file is named for the only
+#                      thing it is: a record of the hooks this repository
+#                      keeps.
+#
+# A consumer file carrying an empty managed_core would have said "I am not a
+# consumer" only to someone who opened it. The name says it now.
+#
+# In this repository, hooks.json sits at the root and is a sha256 record. It is
+# not hook configuration -- that is payload/.codex/hooks.json, which ships to
+# consumers. Different directories, unrelated purposes.
+CONSUMER_LOCK=.friday-lock.json
+MIRROR_LOCK=hooks.json
 
 die() { echo "friday-lock: $*" >&2; exit 2; }
 
@@ -127,8 +156,49 @@ write_lock() {
       '.mirrors[$k] = {source:$s, source_sha256:$ps, local_sha256:$ls}')
   done < <(mirror_rels "$target")
 
-  printf '%s\n' "$json" > "$target/$LOCK_NAME"
-  echo "wrote $target/$LOCK_NAME"
+  local n_core n_mirror name other
+  n_core=$(printf '%s' "$json" | jq '.managed_core | length')
+  n_mirror=$(printf '%s' "$json" | jq '.mirrors | length')
+  if [ "$n_core" -gt 0 ]; then
+    name=$CONSUMER_LOCK
+    other=$MIRROR_LOCK
+  elif [ "$n_mirror" -gt 0 ]; then
+    # A mirror record carries no managed_core at all, so the file's shape
+    # matches its name.
+    json=$(printf '%s' "$json" | jq 'del(.managed_core)')
+    name=$MIRROR_LOCK
+    other=$CONSUMER_LOCK
+  else
+    die "$target has neither managed core nor mirrored hooks -- nothing to record."
+  fi
+
+  # Write through a temporary file in the same directory, so a reader either
+  # sees the previous record or the new one and never a half-written file, and
+  # an interrupted run never leaves the target with no record at all.
+  local tmp="$target/.${name}.tmp.$$"
+  printf '%s\n' "$json" > "$tmp" || die "could not write $tmp"
+  mv -f "$tmp" "$target/$name" || { rm -f "$tmp"; die "could not install $target/$name"; }
+  echo "wrote $target/$name"
+
+  # Only then retire the other name, and only when it really is one of ours.
+  # The name alone is not proof: "hooks.json" is generic enough that a target
+  # may use it for something else, and an earlier revision deleted exactly
+  # that -- an unrelated {"someToolConfig":...} vanished without a word.
+  if [ -f "$target/$other" ]; then
+    if is_friday_record "$target/$other"; then
+      rm -f "$target/$other"
+      echo "retired $target/$other"
+    else
+      echo "friday-lock: left $target/$other alone -- it is not a Friday record." >&2
+      echo "friday-lock: both names are now present; reconcile it before running check." >&2
+    fi
+  fi
+}
+
+# A Friday record is identified by its contents, never by its filename.
+is_friday_record() {
+  jq -e '(.friday.repo? // "") == "ShenYo/Friday" and (.friday.commit? | type) == "string"' \
+    "$1" >/dev/null 2>&1
 }
 
 # --- check -------------------------------------------------------------------
@@ -136,9 +206,25 @@ check_lock() {
   local target=${1:-.} lock rel want have psrc pwant
   [ -d "$target" ] || die "no such target: $target"
   target=$(cd "$target" && pwd -P)
-  lock="$target/$LOCK_NAME"
-  [ -f "$lock" ] || die "no $LOCK_NAME in $target -- run 'friday-lock write $target' first."
-  jq -e . "$lock" >/dev/null 2>&1 || die "$LOCK_NAME is not valid JSON"
+  if [ -f "$target/$CONSUMER_LOCK" ] && [ -f "$target/$MIRROR_LOCK" ]; then
+    die "$target has both $CONSUMER_LOCK and $MIRROR_LOCK -- a repository is one or the other. Remove the wrong one."
+  fi
+  if [ -f "$target/$CONSUMER_LOCK" ]; then
+    lock="$target/$CONSUMER_LOCK"
+  elif [ -f "$target/$MIRROR_LOCK" ]; then
+    lock="$target/$MIRROR_LOCK"
+  else
+    die "no $CONSUMER_LOCK or $MIRROR_LOCK in $target -- run 'friday-lock write $target' first."
+  fi
+  jq -e . "$lock" >/dev/null 2>&1 || die "$(basename "$lock") is not valid JSON"
+  # Valid JSON at the right path is not a record. An unrelated file -- or a
+  # truncated one -- used to reach the end of this function and report
+  # "in sync" over zero files, which is the worst possible answer: a green
+  # light from a check that examined nothing.
+  is_friday_record "$lock" \
+    || die "$(basename "$lock") is not a Friday record (no .friday.repo/.friday.commit) -- run 'friday-lock write $target' or remove it."
+  [ "$(jq -r '(.managed_core // {} | length) + (.mirrors // {} | length)' "$lock")" -gt 0 ] \
+    || die "$(basename "$lock") records no files -- nothing to check. Run 'friday-lock write $target'."
 
   local -a drifted=() behind=()
 
@@ -155,7 +241,7 @@ check_lock() {
       pwant=$(sha256 "$PAYLOAD/$rel")
       [ "$pwant" = "$want" ] || behind+=("$rel")
     fi
-  done < <(jq -r '.managed_core | to_entries[] | "\(.key)\t\(.value)"' "$lock")
+  done < <(jq -r '.managed_core // {} | to_entries[] | "\(.key)\t\(.value)"' "$lock")
 
   while IFS=$'\t' read -r rel psrc want have_recorded; do
     [ -n "$rel" ] || continue
@@ -181,7 +267,7 @@ check_lock() {
     else
       [ "$have" = "$have_recorded" ] || drifted+=("$rel")
     fi
-  done < <(jq -r '.mirrors | to_entries[] | "\(.key)\t\(.value.source)\t\(.value.source_sha256)\t\(.value.local_sha256)"' "$lock")
+  done < <(jq -r '.mirrors // {} | to_entries[] | "\(.key)\t\(.value.source)\t\(.value.source_sha256)\t\(.value.local_sha256)"' "$lock")
 
   # Content alone says the two differ, never which is newer. The recorded
   # payload commit does: if Friday's current payload commit is an ancestor of
@@ -206,7 +292,7 @@ check_lock() {
   fi
 
   local recorded
-  recorded=$(jq -r '(.managed_core | length) + (.mirrors | length)' "$lock")
+  recorded=$(jq -r '(.managed_core // {} | length) + (.mirrors // {} | length)' "$lock")
   echo "target:  $target"
   echo "friday:  $(jq -r '.friday.commit' "$lock") (synced $(jq -r '.friday.synced' "$lock"))"
   echo "checked: $recorded file(s)"

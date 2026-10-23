@@ -430,6 +430,28 @@ Jarvis settings。
 
 `install.sh` 會在目標寫入 `.friday-lock.json`：記錄安裝時的 Friday commit，
 以及每個 managed-core 檔案當時的 sha256。
+
+檔名有**兩種**，因為一個 repository 只會是兩者之一，而讀者不該為了分辨它是哪
+一種而必須打開檔案：
+
+| 檔案 | 該 repository 是 | 記錄什麼 |
+| --- | --- | --- |
+| `.friday-lock.json` | payload **consumer** | managed core，逐位元組精確 |
+| `hooks.json` | **借用 hook** 的 repository —— Jarvis，以及這個 repository | 三個 `.githooks` 副本，沒有 `.agents/` 樹 |
+
+`hooks.json` 刻意不帶任何前綴。先前兩個名字都帶了：`mirror-` 讀起來像兩個
+repository 被綁在一起，而 `.friday-hooks` 則說成那些 hook 是 Friday 的、而不是
+持有它的 repository 自己的。兩者都不成立 —— 這些 repository 各自維護、服務不同
+對象，Jarvis 只取這十九個 payload 檔案中的三個，而 Friday 完全不依賴 Jarvis。
+`.friday-lock.json` 保留前綴，因為 consumer 的那份檔案確實與 Friday 有關：該
+repository 採用了這份 payload，而讀回它並提出更新的正是 Friday。
+
+hooks 的記錄完全不帶 `managed_core` 這個 key，所以檔案的形狀與它的名字一致。
+`friday-lock` 會依目標實際擁有的內容決定檔名，並拒絕同時持有兩者的 repository。
+
+在這個 repository 裡，根目錄的 `hooks.json` 就是那份 sha256 記錄，它不是 hook
+設定 —— 後者是會發送給 consumer 的
+[`payload/.codex/hooks.json`](./payload/.codex/hooks.json)。
 [`bin/friday-lock`](./bin/friday-lock) 負責讀回來比對。
 
 ```sh

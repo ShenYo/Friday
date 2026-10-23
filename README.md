@@ -453,6 +453,32 @@ That paragraph records the original failure, not current pet-care behavior.
 
 `install.sh` writes `.friday-lock.json` into the target: the Friday commit it
 was installed from, and the sha256 of every managed-core file as installed.
+
+There are **two names**, because a repository is one of two things and a reader
+should not have to open the file to tell which:
+
+| file | the repository is | holds |
+| --- | --- | --- |
+| `.friday-lock.json` | a payload **consumer** | managed core, byte-exact |
+| `hooks.json` | a repository that **borrows hooks** — Jarvis, and this repository | three `.githooks` copies, no `.agents/` tree |
+
+`hooks.json` carries no prefix on purpose. Two earlier names carried one:
+`mirror-` read as though the repositories were bound together, and
+`.friday-hooks` said the hooks were Friday's rather than the holding
+repository's. Neither is true — the repositories are maintained separately and
+serve different audiences, Jarvis takes three of these nineteen payload files
+and nothing else, and Friday depends on Jarvis for nothing. `.friday-lock.json`
+keeps its prefix because a consumer's file genuinely is about Friday: the
+repository adopted this payload, and it is Friday that reads the file back and
+proposes the update.
+
+A hooks record carries no `managed_core` key at all, so its shape matches its
+name. `friday-lock` picks the name from what the target actually has, and
+refuses a repository holding both.
+
+In this repository, root `hooks.json` is that sha256 record. It is not hook
+configuration: that is [`payload/.codex/hooks.json`](./payload/.codex/hooks.json),
+which ships to consumers.
 [`bin/friday-lock`](./bin/friday-lock) reads it back.
 
 ```sh

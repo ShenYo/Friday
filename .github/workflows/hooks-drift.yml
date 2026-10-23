@@ -44,6 +44,12 @@ jobs:
         run: |
           jq -r '.mirrors // {} | to_entries[] | "\(.key)\t\(.value.source)"' \
             hooks.json > /tmp/mirrors.src
+          # Content alone is not enough: git silently skips a hook that is
+          # not executable ("hint: ... hook was ignored because it's not set
+          # as executable") and the commit goes through, while cmp and
+          # sha256sum both still match. So the mode git records is checked
+          # too, for the mirror and for the payload it is copied from -- cp
+          # carries a lost bit from one to the other.
           fail=0
           while IFS=$'\t' read -r mirror src; do
             if cmp -s "payload/$src" "$mirror"; then
@@ -52,12 +58,20 @@ jobs:
               echo "DIFFERS  $mirror  (payload/$src)"
               fail=1
             fi
+            for f in "$mirror" "payload/$src"; do
+              mode=$(git ls-files -s -- "$f" | cut -d' ' -f1)
+              if [ "$mode" != 100755 ]; then
+                echo "MODE     $f is ${mode:-untracked}, not 100755 -- git would skip it"
+                fail=1
+              fi
+            done
           done < /tmp/mirrors.src
           exit "$fail"
       - name: Report what a failure above means
         if: failure()
         run: |
-          echo "A mirror no longer matches the payload, or no longer matches hooks.json."
+          echo "A mirror no longer matches the payload or hooks.json, or a hook lost its"
+          echo "executable mode (restore with: git update-index --chmod=+x <file>)."
           echo "Mirrors are byte-identical to payload/.agents/githooks/. In the same"
           echo "commit as the payload change, copy it and refresh the record:"
           echo "    cp payload/.agents/githooks/<hook> .githooks/<hook>"

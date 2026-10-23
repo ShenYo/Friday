@@ -168,7 +168,14 @@ for target in "$@"; do
 
   git -C "$target" checkout -q main 2>/dev/null || { note "REFUSED — no main branch"; refused=$((refused + 1)); continue; }
   git -C "$target" pull -q --ff-only origin main || { note "REFUSED — main is not fast-forwardable"; refused=$((refused + 1)); continue; }
-  git -C "$target" checkout -q -b "$branch"
+  # Checked, because this script runs without `set -e`: an unchecked failure
+  # here left the target on the main it had just pulled, and everything below
+  # -- copy, stage, commit -- then landed on main. Reproduced by making the
+  # branch creation fail: the consumer's main gained the sync commit.
+  git -C "$target" checkout -q -b "$branch" || {
+    note "REFUSED — could not create '$branch' (another run may hold it); main left untouched"
+    refused=$((refused + 1)); continue
+  }
 
   for rel in "${moved[@]}"; do
     src=$rel
@@ -213,6 +220,13 @@ Byte-identical to Friday payload at $payload_commit.
 
 Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
 MSG
+  # A refused commit -- the target's own commit hooks run here -- must not be
+  # followed by a push of a branch that carries nothing.
+  if ! git -C "$target" rev-parse --verify --quiet "$branch" >/dev/null \
+     || [ "$(git -C "$target" rev-parse "$branch")" = "$(git -C "$target" rev-parse main)" ]; then
+    note "REFUSED — the commit did not land; the copied files are staged on '$branch', nothing was pushed"
+    refused=$((refused + 1)); continue
+  fi
   git -C "$target" push -q -u origin "$branch" 2>/dev/null || { note "push failed"; refused=$((refused + 1)); continue; }
 
   if ! url=$(cd "$target" && gh pr create --base main --head "$branch" \

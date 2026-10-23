@@ -26,6 +26,31 @@ AGENTS.md
 .gitignore
 .claude/settings.json
 .codex/hooks.json'
+links='.claude/hooks/guard-collaborative-git.sh .codex/hooks/guard-collaborative-git.sh'
+
+# Compare `expected` with what the installer actually listed or wrote, and say
+# which way it differs. Under set -e a bare comparison or a grep -q loop exits
+# 1 with no message at all, which is what both a new payload file missing
+# from this list and a removed one still in it used to look like.
+inventory_check() {
+  local label=$1 want have extra missing
+  want=$(printf '%s\n' $expected $links | sort)
+  have=$(printf '%s\n' "$2" | sort)
+  [ "$want" = "$have" ] && return 0
+  extra=$(comm -13 <(printf '%s\n' "$want") <(printf '%s\n' "$have"))
+  missing=$(comm -23 <(printf '%s\n' "$want") <(printf '%s\n' "$have"))
+  echo "FAIL: $label differs from 'expected' at the top of $0" >&2
+  if [ -n "$extra" ]; then
+    echo "  present but not listed -- a new payload file? add it to 'expected':" >&2
+    printf '    %s\n' $extra >&2
+  fi
+  if [ -n "$missing" ]; then
+    echo "  listed but not present -- a removed payload file? remove it from 'expected':" >&2
+    printf '    %s\n' $missing >&2
+  fi
+  echo "  install.sh and bin/managed-core.txt must change the same way." >&2
+  exit 1
+}
 target() { git init -q "$run/$1"; }
 reject() {
   if bash "$kit/install.sh" "$@" > "$run/rejection.log" 2>&1; then
@@ -35,7 +60,7 @@ reject() {
 
 target fresh
 bash "$kit/install.sh" --check "$run/fresh" > "$run/preview.log"
-for rel in $expected; do grep -q "^NEW $rel$" "$run/preview.log"; done
+inventory_check "the install preview" "$(sed -n 's/^NEW //p' "$run/preview.log")"
 [ ! -e "$run/fresh/AGENTS.md" ] && [ ! -e "$run/fresh/.agents" ]
 bash "$kit/install.sh" "$run/fresh" > "$run/install.log"
 for rel in $expected; do cmp "$kit/payload/$rel" "$run/fresh/$rel"; done
@@ -184,9 +209,8 @@ mkdir -p "$run/fresh/docs/temp/probe"
 touch "$run/fresh/docs/temp/probe/file.md"
 git -C "$run/fresh" check-ignore -v docs/temp/probe/file.md > "$run/ignore.log"
 grep -q 'docs/temp/' "$run/ignore.log"
-actual=$(cd "$run/fresh" && { printf '%s\n' AGENTS.md .gitignore; find .agents .claude .codex \( -type f -o -type l \) -print; } | sort)
-expected_installed=$(printf '%s\n' $expected .claude/hooks/guard-collaborative-git.sh .codex/hooks/guard-collaborative-git.sh | sort)
-[ "$actual" = "$expected_installed" ]
+actual=$(cd "$run/fresh" && { printf '%s\n' AGENTS.md .gitignore; find .agents .claude .codex \( -type f -o -type l \) -print; })
+inventory_check "the installed tree" "$actual"
 printf 'local overlay\n' > "$run/fresh/local.txt"
 printf '# local hook\n' > "$run/fresh/.agents/hooks/local.sh"
 chmod 600 "$run/fresh/.agents/hooks/local.sh"

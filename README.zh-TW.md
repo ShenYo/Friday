@@ -452,9 +452,14 @@ bin/friday-lock write <target>     # 經審查的調和完成後刷新
 值得一直跑的原因。
 
 Jarvis 與 Friday 不是 payload consumer，但它們各自保有三個 payload 檔的
-`.githooks` 副本。lock 對這些檔案**同時記錄兩邊**的雜湊 —— payload 的與本機副本
-的 —— 所以任一邊走樣都抓得到，而工具不需要知道那段「文件指標行」的差異長什麼樣。
-那件事留給人工審查的 `diff`，那才是它誠實的歸屬。
+`.githooks` 副本。那些副本與 payload 來源**逐位元組相同**，所以 `friday-lock`
+以「相等」為基準：只要 mirror 有差異就會被回報，而記錄下的兩個雜湊負責指出是哪
+一邊動了。
+
+它們過去在六行文件路徑上不同，因為正確的路徑取決於誰在執行這個檔案。現在 hook
+自己解析，所以同一份檔案在 consumer、在 Friday、在只做 mirror 的 repo 裡都正確。
+之所以取消那個差異，是因為**需要人工重套的差異就是會被漏掉的差異** —— 上一次
+payload 移動時正是如此，而且一次漏掉四個地方。
 
 [`bin/managed-core.txt`](./bin/managed-core.txt) 是「哪些檔案屬於 managed、
 哪些屬於 consumer」的唯一真實來源。一個兩邊都沒登記的 payload 檔會讓工具大聲

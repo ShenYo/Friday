@@ -7,10 +7,10 @@ name: Hooks drift
 
 on:
   pull_request:
-    paths: [".githooks/**", "hooks.json", ".github/workflows/hooks-drift.yml"]
+    paths: [".githooks/**", "hooks.json", "payload/.agents/githooks/**", ".github/workflows/hooks-drift.yml"]
   push:
     branches-ignore: [main]
-    paths: [".githooks/**", "hooks.json", ".github/workflows/hooks-drift.yml"]
+    paths: [".githooks/**", "hooks.json", "payload/.agents/githooks/**", ".github/workflows/hooks-drift.yml"]
   schedule:
     - cron: "0 7 * * *"
 
@@ -19,13 +19,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # The lock records each mirror's own sha256 in the layout `sha256sum -c`
-      # reads, so a local edit is caught here without a Friday checkout and
-      # without a cross-repository token.
+      # Two comparisons, because a mirror can be wrong in two directions.
       #
-      # It cannot see the other direction -- whether Friday's payload moved --
-      # because that needs Friday. `friday-lock check` from a machine that has
-      # both reports it, and ShenYo/Friday#7 covers the hosted version.
+      # Against hooks.json: a mirror edited by hand. The record holds each
+      # mirror's sha256 in the layout `sha256sum -c` reads.
+      #
+      # Against the payload: a payload hook edited and its copy forgotten. That
+      # leaves the mirror and the record agreeing with each other and both
+      # stale, so the first comparison passes. In Jarvis this direction needs a
+      # Friday checkout; here the payload is in the same checkout, so it is
+      # compared directly. An earlier revision carried Jarvis's comment saying
+      # it "needs Friday", and measured that way, a forgotten copy read OK on
+      # every line while `bin/friday-lock check .` reported it behind.
       - name: Mirrors match hooks.json
         run: |
           [ -f hooks.json ] || { echo "no hooks.json -- this repository mirrors hooks but records none"; exit 1; }
@@ -35,11 +40,39 @@ jobs:
           [ "$n" -gt 0 ] || { echo "the lock records no mirrors"; exit 1; }
           echo "checking $n mirrored hook(s) against the lock"
           sha256sum -c /tmp/mirrors.sums
+      - name: Mirrors match the payload
+        run: |
+          jq -r '.mirrors // {} | to_entries[] | "\(.key)\t\(.value.source)"' \
+            hooks.json > /tmp/mirrors.src
+          # Content alone is not enough: git silently skips a hook that is
+          # not executable ("hint: ... hook was ignored because it's not set
+          # as executable") and the commit goes through, while cmp and
+          # sha256sum both still match. So the mode git records is checked
+          # too, for the mirror and for the payload it is copied from -- cp
+          # carries a lost bit from one to the other.
+          fail=0
+          while IFS=$'\t' read -r mirror src; do
+            if cmp -s "payload/$src" "$mirror"; then
+              echo "ok       $mirror"
+            else
+              echo "DIFFERS  $mirror  (payload/$src)"
+              fail=1
+            fi
+            for f in "$mirror" "payload/$src"; do
+              mode=$(git ls-files -s -- "$f" | cut -d' ' -f1)
+              if [ "$mode" != 100755 ]; then
+                echo "MODE     $f is ${mode:-untracked}, not 100755 -- git would skip it"
+                fail=1
+              fi
+            done
+          done < /tmp/mirrors.src
+          exit "$fail"
       - name: Report what a failure above means
         if: failure()
         run: |
-          echo "A mirrored hook no longer matches what hooks.json recorded."
-          echo "Mirrors are byte-identical to Friday's payload. Either restore it:"
+          echo "A mirror no longer matches the payload or hooks.json, or a hook lost its"
+          echo "executable mode (restore with: git update-index --chmod=+x <file>)."
+          echo "Mirrors are byte-identical to payload/.agents/githooks/. In the same"
+          echo "commit as the payload change, copy it and refresh the record:"
           echo "    cp payload/.agents/githooks/<hook> .githooks/<hook>"
-          echo "or, if Friday's payload moved, carry the change properly:"
-          echo "    bash bin/friday-propagate ."
+          echo "    bin/friday-lock write ."

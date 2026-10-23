@@ -51,11 +51,15 @@ Each step ends on the condition that says it is done.
    - A feature branch, or uncommitted edits under `payload/`, go out as if
      merged, labelled with a commit that does not contain them.
 
-   Run it while no other agent is working in this checkout. Propagation reads
-   the commit once, at the start, but copies each consumer's files as they are
-   when it reaches that consumer, so an edit made in between ships under the
-   wrong label. On a machine where several agent runtimes share `~/.Friday`,
-   that is not hypothetical.
+   Run it while no other agent is working in this checkout **or in any of the
+   consumers**. A run reads mutable state at four separate moments: the payload
+   commit once at the start, and then, for each consumer in turn, whether its
+   tree is clean, the payload files to copy, and the commit again when its lock
+   is written. An edit in either repository between two of those moments ships
+   under the wrong label, gets recorded against a different commit, or is
+   overwritten in the consumer. On a machine where several agent runtimes share
+   these checkouts, that is not hypothetical. ShenYo/Friday#29 tracks making a
+   run read each thing once.
 
    So first run `git switch main && git pull --ff-only`. Then confirm that
    `git status --porcelain -- payload/` prints nothing and that

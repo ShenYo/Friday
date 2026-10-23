@@ -14,17 +14,30 @@ compatible rule.
 4. **Verify the outcome.** Choose checks that can demonstrate the requested
    behavior. State what ran, what passed, and any evidence that remains
    unavailable.
-5. **Safety and authority.** Committing and pushing a non-default branch are
-   your own call, on the condition that each commit carries one task's context
-   and no sensitive value. Never infer authorization for a deletion, a
-   discard, a history rewrite, or an operation reserved for human review, such
-   as merging a pull request or pushing to the default branch.
-   The full boundary is
-   [`git-guideline/safety-boundary.md`](git-guideline/safety-boundary.md) when
-   this repository ships it; a repository that borrows only the hooks has no
-   such tree, and the canonical text is then
-   [in Friday](https://github.com/ShenYo/Friday/blob/main/payload/.agents/docs/git-guideline/safety-boundary.md).
-   The rules above hold either way -- they are stated here, not delegated.
+5. **Safety and authority.** Read
+   [`git-guideline/safety-boundary.md`](git-guideline/safety-boundary.md)
+   before a Git or GitHub operation -- or
+   [the copy in Friday](https://github.com/ShenYo/Friday/blob/main/payload/.agents/docs/git-guideline/safety-boundary.md)
+   where this repository does not ship that tree. It is the authority and this
+   rule does not replace it. Three things in it must not be got wrong even by
+   an agent that has not opened it yet.
+   **Committing, pushing a non-default branch, and opening a pull request are
+   your own call**, on one condition: traceability. One task's context per
+   commit, the whole branch belonging to that one task, and the pull request
+   describing exactly the commits on it.
+   **Check for sensitive information before every commit and before every
+   push**, across every commit being pushed rather than only the last. If
+   anything is present, stop; report which file and which kind of value
+   without reproducing the value.
+   **Destructive and irreversible operations are prohibited outright, and an
+   explicit request does not authorize one** -- force push, `reset --hard` or
+   any history rewrite, discarding uncommitted work, deleting a ref, file or
+   remote. Identify the target and the command, then ask the user to run it.
+   Merging a pull request, enabling auto-merge, pushing to the default branch,
+   closing or reopening a pull request, and changing repository or
+   branch-protection settings are reserved for a person who names the
+   operation and its target in the current turn. Never approve a pull request
+   containing your own work.
 6. **Git state.** Before an edit batch and before a commit, inspect the
    current branch, `HEAD`, and working-tree status. Repeat that inspection
    after an external change, branch switch, or unexpected drift.

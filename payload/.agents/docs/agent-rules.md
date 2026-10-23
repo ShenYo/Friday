@@ -14,13 +14,17 @@ compatible rule.
 4. **Verify the outcome.** Choose checks that can demonstrate the requested
    behavior. State what ran, what passed, and any evidence that remains
    unavailable.
-5. **Safety and authority.** Follow
-   [`git-guideline/safety-boundary.md`](git-guideline/safety-boundary.md) for
-   Git and GitHub operations. Committing and pushing a non-default branch are
-   your own call there, on the condition that each commit carries one task's
-   context and no sensitive value. Never infer authorization for a deletion, a
-   discard, a history rewrite, or an operation that document reserves for human
-   review, such as merging a pull request or pushing to the default branch.
+5. **Safety and authority.** Committing and pushing a non-default branch are
+   your own call, on the condition that each commit carries one task's context
+   and no sensitive value. Never infer authorization for a deletion, a
+   discard, a history rewrite, or an operation reserved for human review, such
+   as merging a pull request or pushing to the default branch.
+   The full boundary is
+   [`git-guideline/safety-boundary.md`](git-guideline/safety-boundary.md) when
+   this repository ships it; a repository that borrows only the hooks has no
+   such tree, and the canonical text is then
+   [in Friday](https://github.com/ShenYo/Friday/blob/main/payload/.agents/docs/git-guideline/safety-boundary.md).
+   The rules above hold either way -- they are stated here, not delegated.
 6. **Git state.** Before an edit batch and before a commit, inspect the
    current branch, `HEAD`, and working-tree status. Repeat that inspection
    after an external change, branch switch, or unexpected drift.
@@ -30,4 +34,6 @@ compatible rule.
    without installing, copying, or implicitly requiring a Skill.
    For testing work, apply the scenario-driven contract in
    [`testing.md`](testing.md) when the requested outcome needs behavioral
-   evidence.
+   evidence -- or
+   [in Friday](https://github.com/ShenYo/Friday/blob/main/payload/.agents/docs/testing.md)
+   where this repository does not ship it.

@@ -19,9 +19,11 @@
 #   work on a dirty  a consumer with uncommitted changes is refused outright
 #   tree             rather than stashed around
 #
-# Why this runs here and not in CI: the four repositories are private and span
-# three accounts, so a CI-hosted bot needs a cross-repository PAT with write
-# access to all of them, sitting in a secret. This machine's `gh` already has
+# Why this runs here and not in CI: the four repositories span three accounts,
+# and two of them -- the consumers -- are private, so a CI-hosted bot needs a
+# cross-repository PAT with write access to all of them, sitting in a secret.
+# Write access is the point, not visibility: opening a pull request needs it
+# even on a public repository. This machine's `gh` already has
 # that access, scoped to a person rather than to an always-on workflow, and
 # the end result is identical -- pull requests a human still merges. See
 # issue #7.
@@ -246,5 +248,10 @@ This tool never merges. The human review checkpoint stands." 2>&1 | tail -1); th
 done
 
 echo ""
-echo "opened=$opened skipped=$skipped refused=$refused"
+# A dry run opens nothing, so it must not report that it did.
+if $dry_run; then
+  echo "would-open=$opened skipped=$skipped refused=$refused (dry run, nothing opened)"
+else
+  echo "opened=$opened skipped=$skipped refused=$refused"
+fi
 [ "$refused" -eq 0 ]

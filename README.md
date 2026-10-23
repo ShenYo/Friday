@@ -453,6 +453,18 @@ That paragraph records the original failure, not current pet-care behavior.
 
 `install.sh` writes `.friday-lock.json` into the target: the Friday commit it
 was installed from, and the sha256 of every managed-core file as installed.
+
+There are **two names**, because a repository is one of two things and a reader
+should not have to open the file to tell which:
+
+| file | the repository is | holds |
+| --- | --- | --- |
+| `.friday-lock.json` | a payload **consumer** | managed core, byte-exact |
+| `.friday-hooks.json` | a repository that **borrows hooks** — Jarvis, and this repository | three `.githooks` copies, no `.agents/` tree |
+
+A mirror record carries no `managed_core` key at all, so its shape matches its
+name. `friday-lock` picks the name from what the target actually has, and
+refuses a repository holding both.
 [`bin/friday-lock`](./bin/friday-lock) reads it back.
 
 ```sh

@@ -430,6 +430,17 @@ Jarvis settings。
 
 `install.sh` 會在目標寫入 `.friday-lock.json`：記錄安裝時的 Friday commit，
 以及每個 managed-core 檔案當時的 sha256。
+
+檔名有**兩種**，因為一個 repository 只會是兩者之一，而讀者不該為了分辨它是哪
+一種而必須打開檔案：
+
+| 檔案 | 該 repository 是 | 記錄什麼 |
+| --- | --- | --- |
+| `.friday-lock.json` | payload **consumer** | managed core，逐位元組精確 |
+| `.friday-hooks.json` | **借用 hook** 的 repository —— Jarvis，以及這個 repository | 三個 `.githooks` 副本，沒有 `.agents/` 樹 |
+
+mirror 的記錄完全不帶 `managed_core` 這個 key，所以檔案的形狀與它的名字一致。
+`friday-lock` 會依目標實際擁有的內容決定檔名，並拒絕同時持有兩者的 repository。
 [`bin/friday-lock`](./bin/friday-lock) 負責讀回來比對。
 
 ```sh

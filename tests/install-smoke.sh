@@ -186,7 +186,14 @@ git -C "$run/fresh" check-ignore -v docs/temp/probe/file.md > "$run/ignore.log"
 grep -q 'docs/temp/' "$run/ignore.log"
 actual=$(cd "$run/fresh" && { printf '%s\n' AGENTS.md .gitignore; find .agents .claude .codex \( -type f -o -type l \) -print; } | sort)
 expected_installed=$(printf '%s\n' $expected .claude/hooks/guard-collaborative-git.sh .codex/hooks/guard-collaborative-git.sh | sort)
-[ "$actual" = "$expected_installed" ]
+# Under set -e a bare comparison here exited 1 with no message at all, which
+# is what a new payload file missing from `expected` looked like.
+if [ "$actual" != "$expected_installed" ]; then
+  echo "FAIL: the installed tree differs from 'expected' at the top of $0" >&2
+  diff <(printf '%s\n' "$expected_installed") <(printf '%s\n' "$actual") >&2 || true
+  echo "A new payload file needs adding to that list (and to install.sh and bin/managed-core.txt)." >&2
+  exit 1
+fi
 printf 'local overlay\n' > "$run/fresh/local.txt"
 printf '# local hook\n' > "$run/fresh/.agents/hooks/local.sh"
 chmod 600 "$run/fresh/.agents/hooks/local.sh"

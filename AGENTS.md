@@ -1,9 +1,10 @@
 # Agent Instructions
 
 Friday is the shared baseline for projects. Everything under `payload/`
-**ships**: `install.sh` copies it into a new consumer, and
-`bin/friday-propagate` carries each later change to the existing ones as pull
-requests. A change in `payload/` is a change in every consumer.
+**ships**: `install.sh` copies all of it into a new consumer, and
+`bin/friday-propagate` carries later changes to the **managed core** of
+existing ones as pull requests. A managed-core change reaches every consumer.
+A consumer-owned file reaches new installs only; see below.
 
 Git and GitHub operations here follow
 [`payload/.agents/docs/git-guideline/`](payload/.agents/docs/git-guideline/):
@@ -13,11 +14,13 @@ the same rules this repository ships, and the authority on them.
 
 Each step ends on the condition that says it is done.
 
-1. **Classify a new file in both lists.** These are `install.sh`'s
-   `files=( … )` allowlist and
-   [`bin/managed-core.txt`](bin/managed-core.txt): either a managed entry or a
-   `!`-prefixed consumer-owned one. Both tools refuse a payload they cannot
-   account for. Done when, with the new file in place, neither of these
+1. **List a new file in all three places.** These are `install.sh`'s
+   `files=( … )` allowlist,
+   [`bin/managed-core.txt`](bin/managed-core.txt) (either a managed entry or
+   a `!`-prefixed consumer-owned one), and the `expected` inventory at the top
+   of `tests/install-smoke.sh`. The first two tools refuse a payload they
+   cannot account for. The smoke test fails in step 3 if its inventory is
+   missing the file. Done when, with the new file in place, neither of these
    appears:
 
    ```text
@@ -37,8 +40,13 @@ Each step ends on the condition that says it is done.
    `PASS:` lines print. This is the checker run that counts, because it
    self-checks inside a fresh install.
 
-4. **After merge, propagate.** Run `bin/friday-propagate --dry-run <consumer>…`,
-   read the file list, then run it without `--dry-run`. Done when every
+4. **After merge, propagate from the merged `main`.** Propagation compares
+   consumers with the payload *checked out here*. A checkout still on the
+   feature branch, or on a `main` that was not pulled, reports every consumer
+   `in sync` and opens nothing. So first run `git switch main && git pull
+   --ff-only`, and confirm that `git log -1 --format=%h -- payload/` names the
+   merge you expect. Then run `bin/friday-propagate --dry-run <consumer>…`,
+   read the file list, and run it again without `--dry-run`. Done when every
    consumer that was `behind` has a pull request. A person merges each one.
 
 ## What the files will not tell you

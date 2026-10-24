@@ -17,48 +17,15 @@
 # produces no `behind`, which is what keeps a scheduled check quiet enough to
 # be worth running daily.
 #
-# Mirrors (Jarvis and Friday keep .githooks copies of payload files, differing
-# only in the lines that point at documentation) record BOTH sides: the
-# payload's hash at sync time and the local copy's own hash. Drift in either
-# direction is caught without this tool needing to know what the allowed delta
-# is -- that stays a human-reviewed `diff`, which is the honest place for it.
+# Only a payload consumer has a record. Friday tracks no copy of its hooks
+# anywhere else: a repository that wants them either adopts the payload or
+# keeps its own.
 set -uo pipefail
 
 KIT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 PAYLOAD="$KIT_ROOT/payload"
 LIST="$KIT_ROOT/bin/managed-core.txt"
-# Two names for one record, because they describe two different things and a
-# reader should not have to open the file to tell them apart.
-#
-#   .friday-lock.json  a payload CONSUMER: managed core installed, byte-exact.
-#                      Keeps the prefix: the file exists because the repository
-#                      adopted this payload, and it is Friday that reads it
-#                      back and proposes the update.
-#   hooks.json         a repository that only BORROWS some hooks -- Jarvis, and
-#                      Friday itself. Neither carries the payload's managed
-#                      core, and neither is a target install.sh can run
-#                      against. (Jarvis has a .agents/ of its own, for personal
-#                      Skills; that is not the payload's tree.)
-#
-#                      No prefix, deliberately. Two earlier names carried one:
-#                      "mirror" read as though the repositories were bound
-#                      together, and ".friday-hooks" said the hooks were
-#                      Friday's rather than this repository's. Neither is true.
-#                      The repositories are maintained separately and serve
-#                      different audiences; Jarvis takes 3 of Friday's 19
-#                      payload files and nothing else, and Friday depends on
-#                      Jarvis for nothing. So the file is named for the only
-#                      thing it is: a record of the hooks this repository
-#                      keeps.
-#
-# A consumer file carrying an empty managed_core would have said "I am not a
-# consumer" only to someone who opened it. The name says it now.
-#
-# In this repository, hooks.json sits at the root and is a sha256 record. It is
-# not hook configuration -- that is payload/.codex/hooks.json, which ships to
-# consumers. Different directories, unrelated purposes.
 CONSUMER_LOCK=.friday-lock.json
-MIRROR_LOCK=hooks.json
 
 die() { echo "friday-lock: $*" >&2; exit 2; }
 
@@ -108,22 +75,6 @@ for m in "${managed[@]}"; do
   [ -f "$PAYLOAD/$m" ] || die "managed-core entry has no payload file: $m"
 done
 
-# --- mirrors -----------------------------------------------------------------
-# A repository that is not a payload consumer may still carry copies, wired
-# through core.hooksPath. Discovered, not hardcoded: whatever sits in
-# .githooks/ and has a payload counterpart of the same basename is a mirror.
-mirror_rels() {
-  local target=$1 f base
-  [ -d "$target/.githooks" ] || return 0
-  for f in "$target/.githooks"/*; do
-    [ -f "$f" ] || continue
-    base=$(basename "$f")
-    [ -f "$PAYLOAD/.agents/githooks/$base" ] || continue
-    printf '%s\n' ".githooks/$base"
-  done
-}
-mirror_source() { printf '%s\n' ".agents/githooks/$(basename "$1")"; }
-
 # The commit that last touched the payload, not Friday's HEAD. The lock
 # answers "which payload am I on", and a Friday commit that changes only a
 # README changes no payload byte -- recording HEAD there would point a
@@ -136,12 +87,12 @@ friday_commit() {
 
 # --- write -------------------------------------------------------------------
 write_lock() {
-  local target=$1 rel src json
+  local target=$1 rel json
   [ -d "$target" ] || die "no such target: $target"
   target=$(cd "$target" && pwd -P)
 
   json=$(jq -n --arg commit "$(friday_commit)" --arg date "$(date -u +%Y-%m-%d)" \
-    '{friday:{repo:"ShenYo/Friday",commit:$commit,synced:$date},managed_core:{},mirrors:{}}')
+    '{friday:{repo:"ShenYo/Friday",commit:$commit,synced:$date},managed_core:{}}')
 
   for rel in "${managed[@]}"; do
     [ -f "$target/$rel" ] || continue
@@ -149,52 +100,16 @@ write_lock() {
       '.managed_core[$k] = $v')
   done
 
-  while IFS= read -r rel; do
-    [ -n "$rel" ] || continue
-    src=$(mirror_source "$rel")
-    json=$(printf '%s' "$json" | jq \
-      --arg k "$rel" --arg s "$src" \
-      --arg ps "$(sha256 "$PAYLOAD/$src")" --arg ls "$(sha256 "$target/$rel")" \
-      '.mirrors[$k] = {source:$s, source_sha256:$ps, local_sha256:$ls}')
-  done < <(mirror_rels "$target")
-
-  local n_core n_mirror name other
-  n_core=$(printf '%s' "$json" | jq '.managed_core | length')
-  n_mirror=$(printf '%s' "$json" | jq '.mirrors | length')
-  if [ "$n_core" -gt 0 ]; then
-    name=$CONSUMER_LOCK
-    other=$MIRROR_LOCK
-  elif [ "$n_mirror" -gt 0 ]; then
-    # A mirror record carries no managed_core at all, so the file's shape
-    # matches its name.
-    json=$(printf '%s' "$json" | jq 'del(.managed_core)')
-    name=$MIRROR_LOCK
-    other=$CONSUMER_LOCK
-  else
-    die "$target has neither managed core nor mirrored hooks -- nothing to record."
-  fi
+  [ "$(printf '%s' "$json" | jq '.managed_core | length')" -gt 0 ] \
+    || die "$target has no managed-core file -- it is not a payload consumer, nothing to record."
 
   # Write through a temporary file in the same directory, so a reader either
   # sees the previous record or the new one and never a half-written file, and
   # an interrupted run never leaves the target with no record at all.
-  local tmp="$target/.${name}.tmp.$$"
+  local tmp="$target/.${CONSUMER_LOCK}.tmp.$$"
   printf '%s\n' "$json" > "$tmp" || die "could not write $tmp"
-  mv -f "$tmp" "$target/$name" || { rm -f "$tmp"; die "could not install $target/$name"; }
-  echo "wrote $target/$name"
-
-  # Only then retire the other name, and only when it really is one of ours.
-  # The name alone is not proof: "hooks.json" is generic enough that a target
-  # may use it for something else, and an earlier revision deleted exactly
-  # that -- an unrelated {"someToolConfig":...} vanished without a word.
-  if [ -f "$target/$other" ]; then
-    if is_friday_record "$target/$other"; then
-      rm -f "$target/$other"
-      echo "retired $target/$other"
-    else
-      echo "friday-lock: left $target/$other alone -- it is not a Friday record." >&2
-      echo "friday-lock: both names are now present; reconcile it before running check." >&2
-    fi
-  fi
+  mv -f "$tmp" "$target/$CONSUMER_LOCK" || { rm -f "$tmp"; die "could not install $target/$CONSUMER_LOCK"; }
+  echo "wrote $target/$CONSUMER_LOCK"
 }
 
 # A Friday record is identified by its contents, never by its filename.
@@ -205,19 +120,11 @@ is_friday_record() {
 
 # --- check -------------------------------------------------------------------
 check_lock() {
-  local target=${1:-.} lock rel want have psrc pwant
+  local target=${1:-.} lock rel want have pwant
   [ -d "$target" ] || die "no such target: $target"
   target=$(cd "$target" && pwd -P)
-  if [ -f "$target/$CONSUMER_LOCK" ] && [ -f "$target/$MIRROR_LOCK" ]; then
-    die "$target has both $CONSUMER_LOCK and $MIRROR_LOCK -- a repository is one or the other. Remove the wrong one."
-  fi
-  if [ -f "$target/$CONSUMER_LOCK" ]; then
-    lock="$target/$CONSUMER_LOCK"
-  elif [ -f "$target/$MIRROR_LOCK" ]; then
-    lock="$target/$MIRROR_LOCK"
-  else
-    die "no $CONSUMER_LOCK or $MIRROR_LOCK in $target -- run 'friday-lock write $target' first."
-  fi
+  lock="$target/$CONSUMER_LOCK"
+  [ -f "$lock" ] || die "no $CONSUMER_LOCK in $target -- run 'friday-lock write $target' first."
   jq -e . "$lock" >/dev/null 2>&1 || die "$(basename "$lock") is not valid JSON"
   # Valid JSON at the right path is not a record. An unrelated file -- or a
   # truncated one -- used to reach the end of this function and report
@@ -225,7 +132,7 @@ check_lock() {
   # light from a check that examined nothing.
   is_friday_record "$lock" \
     || die "$(basename "$lock") is not a Friday record (no .friday.repo/.friday.commit) -- run 'friday-lock write $target' or remove it."
-  [ "$(jq -r '(.managed_core // {} | length) + (.mirrors // {} | length)' "$lock")" -gt 0 ] \
+  [ "$(jq -r '.managed_core // {} | length' "$lock")" -gt 0 ] \
     || die "$(basename "$lock") records no files -- nothing to check. Run 'friday-lock write $target'."
 
   local -a drifted=() behind=()
@@ -244,32 +151,6 @@ check_lock() {
       [ "$pwant" = "$want" ] || behind+=("$rel")
     fi
   done < <(jq -r '.managed_core // {} | to_entries[] | "\(.key)\t\(.value)"' "$lock")
-
-  while IFS=$'\t' read -r rel psrc want have_recorded; do
-    [ -n "$rel" ] || continue
-    if [ ! -f "$target/$rel" ]; then
-      drifted+=("$rel (missing)")
-      continue
-    fi
-    have=$(sha256 "$target/$rel")
-    # Since ShenYo/Friday#18 a mirror must EQUAL its payload source. Comparing
-    # only against the recorded hash would call a mirror that was never in step
-    # "in sync", because the lock would have recorded the mismatch as the
-    # baseline. Anchor on equality, then use the recorded hash to say which
-    # side moved.
-    if [ -f "$PAYLOAD/$psrc" ]; then
-      pwant=$(sha256 "$PAYLOAD/$psrc")
-      if [ "$have" != "$pwant" ]; then
-        if [ "$have" = "$have_recorded" ]; then
-          behind+=("$rel (source $psrc)")
-        else
-          drifted+=("$rel")
-        fi
-      fi
-    else
-      [ "$have" = "$have_recorded" ] || drifted+=("$rel")
-    fi
-  done < <(jq -r '.mirrors // {} | to_entries[] | "\(.key)\t\(.value.source)\t\(.value.source_sha256)\t\(.value.local_sha256)"' "$lock")
 
   # Content alone says the two differ, never which is newer. The recorded
   # payload commit does: if Friday's current payload commit is an ancestor of
@@ -294,7 +175,7 @@ check_lock() {
   fi
 
   local recorded
-  recorded=$(jq -r '(.managed_core // {} | length) + (.mirrors // {} | length)' "$lock")
+  recorded=$(jq -r '.managed_core // {} | length' "$lock")
   echo "target:  $target"
   echo "friday:  $(jq -r '.friday.commit' "$lock") (synced $(jq -r '.friday.synced' "$lock"))"
   echo "checked: $recorded file(s)"

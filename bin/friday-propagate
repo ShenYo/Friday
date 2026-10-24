@@ -34,14 +34,6 @@ PAYLOAD="$KIT_ROOT/payload"
 LOCK="$KIT_ROOT/bin/friday-lock"
 BRANCH_PREFIX=chore/sync-managed-core
 CONSUMER_LOCK=.friday-lock.json
-MIRROR_LOCK=hooks.json
-
-# Whichever of the two a repository carries. friday-lock refuses both at once.
-lock_of() {
-  if [ -f "$1/$CONSUMER_LOCK" ]; then printf '%s\n' "$1/$CONSUMER_LOCK"
-  elif [ -f "$1/$MIRROR_LOCK" ]; then printf '%s\n' "$1/$MIRROR_LOCK"
-  fi
-}
 dry_run=false
 
 die() { echo "friday-propagate: $*" >&2; exit 2; }
@@ -110,41 +102,16 @@ for target in "$@"; do
   fi
 
   # Which files actually moved. Only these are copied -- a consumer's own
-  # files are never in this list, because only managed core is.
-  # A repository that records no managed core is not a payload consumer -- it
-  # only mirrors some hooks, the way Jarvis does. Treating "file absent" as
-  # "behind" there would install the whole managed core into a repository that
-  # deliberately carries none of it, which is what an earlier revision did to
-  # a fixture. A .agents/ directory is not the signal: Jarvis has one of its
-  # own, for personal Skills, and is still not a consumer.
-  target_lock=$(lock_of "$target")
-  is_consumer=no
-  if [ -n "$target_lock" ] \
-     && [ "$(jq -r '.managed_core // {} | length' "$target_lock")" -gt 0 ]; then
-    is_consumer=yes
-  fi
-
+  # files are never in this list, because only managed core is. A repository
+  # with no .friday-lock.json, or one that records no managed core, never
+  # reaches here: friday-lock refuses to give it a status. A .agents/
+  # directory alone is not a consumer; a repository may keep one for
+  # something else.
   moved=()
-  if [ "$is_consumer" = yes ]; then
-    for rel in "${managed[@]}"; do
-      [ -f "$target/$rel" ] || { moved+=("$rel"); continue; }
-      cmp -s "$PAYLOAD/$rel" "$target/$rel" || moved+=("$rel")
-    done
-  fi
-  # Mirrors: the .githooks copies a non-consumer keeps, wired through
-  # core.hooksPath. They are byte-identical to their payload source, so there
-  # is nothing to re-apply -- the pointer deltas that used to make this a
-  # hand-written step were removed in #18 precisely because a hand-written
-  # step gets skipped. The source for each is recorded in the lock.
-  mirror_src=()
-  if [ -n "$target_lock" ]; then
-    while IFS=$'\t' read -r rel src; do
-      [ -n "$rel" ] || continue
-      if [ ! -f "$target/$rel" ] || ! cmp -s "$PAYLOAD/$src" "$target/$rel"; then
-        moved+=("$rel"); mirror_src+=("$rel=$src")
-      fi
-    done < <(jq -r '.mirrors // {} | to_entries[] | "\(.key)\t\(.value.source)"' "$target_lock")
-  fi
+  for rel in "${managed[@]}"; do
+    [ -f "$target/$rel" ] || { moved+=("$rel"); continue; }
+    cmp -s "$PAYLOAD/$rel" "$target/$rel" || moved+=("$rel")
+  done
   [ ${#moved[@]} -gt 0 ] || { note "behind, but no managed-core file differs — nothing to do"; skipped=$((skipped + 1)); continue; }
 
   note "behind on ${#moved[@]} file(s):"
@@ -179,31 +146,13 @@ for target in "$@"; do
   }
 
   for rel in "${moved[@]}"; do
-    src=$rel
-    for pair in ${mirror_src+"${mirror_src[@]}"}; do
-      [ "${pair%%=*}" = "$rel" ] && src=${pair#*=} && break
-    done
     mkdir -p "$target/$(dirname "$rel")"
-    cp "$PAYLOAD/$src" "$target/$rel"
-    case "$rel" in .agents/hooks/*.sh|.agents/githooks/*|.githooks/*) chmod +x "$target/$rel" ;; esac
+    cp "$PAYLOAD/$rel" "$target/$rel"
+    case "$rel" in .agents/hooks/*.sh|.agents/githooks/*) chmod +x "$target/$rel" ;; esac
     git -C "$target" add "$rel"
   done
   "$LOCK" write "$target" >/dev/null
-  # Stage every lock name the target has or had. `write` may have retired the
-  # other one, and `git add` on the new path alone leaves that deletion
-  # unstaged -- the commit then carries both records, and `check` refuses a
-  # fresh clone of it. A name is passed only when it exists or is tracked,
-  # because a pathspec matching neither is an error. Scoped to these two
-  # paths, so this is not a blanket add across a mixed tree.
-  lock_paths=()
-  for lock_name in "$CONSUMER_LOCK" "$MIRROR_LOCK"; do
-    if [ -e "$target/$lock_name" ] \
-      || git -C "$target" ls-files --error-unmatch "$lock_name" >/dev/null 2>&1; then
-      lock_paths+=("$lock_name")
-    fi
-  done
-  [ ${#lock_paths[@]} -gt 0 ] || die "$target has no lock to stage after write"
-  git -C "$target" add -A -- "${lock_paths[@]}"
+  git -C "$target" add -- "$CONSUMER_LOCK"
 
   list=$(printf '  %s\n' "${moved[@]}")
   git -C "$target" commit -q -F - <<MSG

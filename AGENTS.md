@@ -24,17 +24,18 @@ Each step ends on the condition that says it is done.
    with the change in place, neither of these appears:
 
    ```text
-   bin/friday-lock check .                  → classified neither managed nor consumer-owned
+   bin/friday-lock check <any consumer>     → classified neither managed nor consumer-owned
    bash install.sh --check <empty git repo> → undeclared payload file
    ```
 
-2. **Keep the mirrors byte-identical.** `.githooks/` holds copies of
-   `payload/.agents/githooks/`, and this repository runs them. Copy the changed
-   hook over and run `bin/friday-lock write .` in the **same commit**. Done when
-   `bin/friday-lock check .` reports `in sync`. A forgotten copy shows up there
-   as `behind`. `hooks-drift.yml` makes the same comparison on every pull
-   request that touches a hook, and also fails a hook that is no longer
-   executable, because git skips such a hook without stopping the commit.
+2. **A changed hook runs here first.** This repository's `core.hooksPath` is
+   `payload/.agents/githooks`, so the hook you edit is the one your next
+   commit and push run. There is no copy to keep in step. A broken hook stops
+   Friday's own commits before it can reach a consumer. Done when a commit on
+   your branch has run the changed hook, and the hook is still mode 100755:
+   `hooks-drift.yml` fails a payload hook that is not executable, because git
+   skips such a hook without stopping the commit. A clone that has not set
+   `core.hooksPath` runs no hook at all. The README says how to set it.
 
 3. **Prove it in a real install.** Run
    `bash tests/install-smoke.sh docs/temp/<purpose>/<date>`. Done when both
@@ -79,9 +80,6 @@ Each step ends on the condition that says it is done.
   core and skips every `!` entry, because a consumer reconciles its seeds by
   hand. To change one of those files (the `!` entries in
   `bin/managed-core.txt`) in existing consumers, open a pull request in each.
-- **Root `hooks.json` is a sha256 record** of the three mirrors. Hook
-  *configuration* is `payload/.codex/hooks.json`. The two names look alike and
-  are unrelated.
 - **Run the checker inside an installed target.**
   `check-collaborative-git.sh` run from `payload/` reports
   `Claude guard link missing`, on `main` as well, because `payload/` is not an

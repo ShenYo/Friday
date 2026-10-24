@@ -42,7 +42,7 @@ first_managed() { grep -v -e '^#' -e '^!' -e '^[[:space:]]*$' "$kit/bin/managed-
 expect() { # status, name
   local want=$1 name=$2 out got
   total=$((total + 1))
-  out=$(bash "$kit/bin/friday-lock" check "$consumer" 2>&1)
+  out=$(${PIN:+env FRIDAY_TREE="$(git -C "$kit" rev-parse HEAD)"} bash "$kit/bin/friday-lock" check "$consumer" 2>&1)
   got=$(printf '%s\n' "$out" | sed -n 's/^status: //p')
   if [ "$got" = "$want" ]; then
     echo "ok   $want: $name"
@@ -114,6 +114,19 @@ mv "$kit/bin/managed-core.txt.new" "$kit/bin/managed-core.txt"
 mv "$kit/payload/$gone" "$root/$n/retired-file"
 commit_kit "payload: retire a file the consumer edited"
 expect retired "a retired file the consumer had edited"
+
+# A path outside ASCII reads the same pinned to a commit as from the working
+# tree. git quotes such paths unless told not to, and a quoted path matches no
+# managed-core entry.
+setup
+mkdir -p "$kit/payload/.agents/docs"
+printf 'caf\n' > "$kit/payload/.agents/docs/café.md"
+printf '.agents/docs/café.md\n' >> "$kit/bin/managed-core.txt"
+commit_kit "payload: a non-ASCII managed file"
+mkdir -p "$consumer/.agents/docs"; cp "$kit/payload/.agents/docs/café.md" "$consumer/.agents/docs/"
+bash "$kit/bin/friday-lock" write "$consumer" >/dev/null
+expect "in sync" "a non-ASCII path, read from the working tree"
+PIN=1 expect "in sync" "a non-ASCII path, read from a pinned commit"
 
 echo
 if [ "$fails" -gt 0 ]; then echo "$fails of $total failed"; exit 1; fi

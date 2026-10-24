@@ -482,7 +482,7 @@ The states, and the distinction is the point:
 | `in sync` | every recorded file matches and the payload has not moved | nothing |
 | `drifted` | a file in the consumer no longer matches what the lock recorded | somebody edited a managed-core file locally; reconcile it |
 | `behind` | Friday's payload moved since the lock was written, or a file joined the managed core (listed as `new in the payload`) | take the change in a reviewed commit, then `friday-lock write` |
-| `retired` | the lock records a file Friday no longer manages | delete it or keep it as the consumer's own, deliberately, then `friday-lock write`; `friday-propagate` names it and touches nothing |
+| `retired` | the lock records a file Friday no longer manages | delete it or keep it as the consumer's own, deliberately, then `friday-lock write`. On a consumer with nothing else to carry, `friday-propagate` names it and touches nothing. When it does carry a change, its pull request names the file, and merging that pull request records it as the consumer's own unless it is deleted on that branch first |
 | `ahead` | the consumer holds a payload Friday has not merged yet | do **not** copy the payload over it |
 | `diverged` | two payload lines exist, neither containing the other | check out the Friday branch you mean to carry |
 
@@ -525,6 +525,8 @@ It refuses rather than guesses:
 | `drifted` | **refused** — somebody edited a managed-core file there; copying over it would destroy the edit and the reason for it |
 | working tree not clean | **refused**, not stashed around |
 | a consumer file changes after that check, before it is written | **refused**, the change left in place |
+| pulling the consumer's `main` brings drift, or changes what has to be carried | **refused**, back on `main`, nothing written |
+| HEAD leaves the sync branch before the write or the commit | **refused**, and it says where HEAD is |
 | `retired` only | **refused**, the retired files named; deleting them is the owner's call |
 | Friday not on `main` | **refused**, before any consumer is read |
 | the branch already exists | **refused** |

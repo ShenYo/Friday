@@ -23,6 +23,12 @@ fail() { total=$((total + 1)); echo "FAIL $1"; fails=$((fails + 1)); }
 check() { local name=$1; shift; if "$@"; then ok "$name"; else fail "$name"; fi; }
 gq() { git -c user.name=t -c user.email=t@example.invalid "$@"; }
 
+# Hermetic: no global or system Git config, and a fixed identity, so the
+# suite behaves the same on a CI runner with no user.name as on a laptop.
+export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@example.invalid
+export GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@example.invalid
+
 # The shim gh: logs the PR it was asked to open, prints a URL, and runs
 # $GH_SHIM_ONCE the first time only.
 shim="$root/shim"
@@ -117,7 +123,7 @@ esac
 EOF
 chmod +x "$case_dir/c1/.git/hooks/post-checkout"
 run "$case_dir/c1"
-check "concurrent edit: the run refuses the consumer" grep -q 'REFUSED — changed in the consumer after it was checked' "$case_dir/run.log"
+check "concurrent edit: the run refuses the consumer" grep -q 'REFUSED' "$case_dir/run.log"
 check "concurrent edit: the edit is still there" grep -q 'CONCURRENT EDIT' "$case_dir/c1/$a"
 check "concurrent edit: no pull request was opened" bash -c "[ ! -e '$GH_SHIM_LOG/1.args' ]"
 
@@ -127,6 +133,107 @@ bump "$(m1 1)" v2
 git -C "$kit" switch -q -c feature
 run "$case_dir/c1"; rc=$?
 check "not on main: refused" bash -c "[ $rc != 0 ] && grep -q \"run from Friday's main\" '$case_dir/run.log'"
+
+if command -v sha256sum >/dev/null; then sha() { sha256sum | cut -d' ' -f1; }; else sha() { shasum -a 256 | cut -d' ' -f1; }; fi
+
+# 5. Detection reads the pinned tree too: a change only in Friday's working
+#    tree is not a reason to call a consumer behind.
+new_case; new_consumer c1
+printf '\n# UNCOMMITTED\n' >> "$kit/payload/$(m1 1)"
+run --dry-run "$case_dir/c1"
+check "detection: an uncommitted Friday edit reads in sync" grep -q 'in sync — nothing to carry' "$case_dir/run.log"
+
+# 6. A hook is carried with its executable mode.
+new_case; new_consumer c1
+bump .agents/githooks/pre-push v2; v2=$(git -C "$kit" rev-parse HEAD)
+run "$case_dir/c1"
+check "mode: a carried hook is 100755 on the sync branch" \
+  bash -c "[ \"\$(git -C '$case_dir/c1' ls-tree 'chore/sync-managed-core-${v2:0:7}' -- .agents/githooks/pre-push | cut -d' ' -f1)\" = 100755 ]"
+
+# 7. HEAD moved back to main after the branch was made -- by another run, or
+#    here a post-checkout hook -- stops the run before anything is written.
+new_case; new_consumer c1
+bump "$(m1 1)" v2
+cat > "$case_dir/c1/.git/hooks/post-checkout" <<EOF
+#!/bin/sh
+case "\$(git symbolic-ref --short -q HEAD)" in chore/sync-managed-core-*)
+  [ -e "$case_dir/moved" ] || { touch "$case_dir/moved"; git checkout -q main; } ;;
+esac
+EOF
+chmod +x "$case_dir/c1/.git/hooks/post-checkout"
+main_before=$(git -C "$case_dir/c1" rev-parse main)
+run "$case_dir/c1"
+check "HEAD moved: refused" grep -q "REFUSED — HEAD is 'main'" "$case_dir/run.log"
+check "HEAD moved: main gained no commit" bash -c "[ \"\$(git -C '$case_dir/c1' rev-parse main)\" = '$main_before' ]"
+check "HEAD moved: nothing was written to main's tree" bash -c "[ -z \"\$(git -C '$case_dir/c1' status --porcelain)\" ]"
+
+# 8. An edit to a managed file that is not being carried, landing after the
+#    checks (here from post-index-change, fired by propagate's own `git add`),
+#    is not written into the lock: the lock records what the commit holds.
+new_case; new_consumer c1
+a=$(m1 1); other=$(m1 3)
+bump "$a" v2; v2=$(git -C "$kit" rev-parse HEAD)
+# The hook fires on every index write, the first at `checkout -b`. It edits
+# only once propagate has staged the carried file -- past every check, before
+# the lock is written.
+cat > "$case_dir/c1/.git/hooks/post-index-change" <<EOF
+#!/bin/sh
+[ -e "$case_dir/edited" ] && exit 0
+git diff --cached --quiet -- "$a" && exit 0
+touch "$case_dir/edited"; printf '\n# UNSTAGED EDIT\n' >> "$other"
+EOF
+chmod +x "$case_dir/c1/.git/hooks/post-index-change"
+run "$case_dir/c1"
+br="chore/sync-managed-core-${v2:0:7}"
+check "unstaged edit: the sync branch was opened" git -C "$case_dir/c1" rev-parse -q --verify --quiet "$br"
+check "unstaged edit: the edit really happened" grep -q 'UNSTAGED EDIT' "$case_dir/c1/$other"
+lock_hash=$(git -C "$case_dir/c1" show "$br:.friday-lock.json" | jq -r --arg k "$other" '.managed_core[$k]')
+committed_hash=$(git -C "$case_dir/c1" show "$br:$other" | sha)
+check "unstaged edit: the lock records the committed content, not the edit" test "$lock_hash" = "$committed_hash"
+
+# 9. main on the remote gained a commit that edits a managed file. The first
+#    check saw the local main; the run pulls, and must notice the drift rather
+#    than carry its change on top and launder the edit into the lock.
+new_case; new_consumer c1
+bump "$(m1 1)" v2
+git clone -q "$case_dir/c1.git" "$case_dir/elsewhere"
+printf '\n# EDITED ON THE REMOTE\n' >> "$case_dir/elsewhere/$(m1 3)"
+gq -C "$case_dir/elsewhere" commit -qam "docs: edit a managed file" && gq -C "$case_dir/elsewhere" push -q origin main
+run "$case_dir/c1"
+check "remote drift: refused after the pull" grep -q "after pulling main the consumer reads 'drifted'" "$case_dir/run.log"
+check "remote drift: no pull request was opened" bash -c "[ ! -e '$GH_SHIM_LOG/1.args' ]"
+check "remote drift: the consumer is back on main" bash -c "[ \"\$(git -C '$case_dir/c1' branch --show-current)\" = main ]"
+
+# 10. A file that joined the managed core: refused when the consumer has its
+#     own version of it, and carried as a lock-only change when it matches.
+reclassify() { sed -i.orig 's|^!\.agents/AGENTS\.md$|.agents/AGENTS.md|' "$kit/bin/managed-core.txt"; gq -C "$kit" commit -qam "payload: make .agents/AGENTS.md managed"; }
+new_case; new_consumer c1
+cp "$kit/payload/.agents/AGENTS.md" "$case_dir/c1/.agents/AGENTS.md"
+printf '# Our own routing table\n' > "$case_dir/c1/.agents/AGENTS.md"
+gq -C "$case_dir/c1" commit -qam "docs: our own routing" && gq -C "$case_dir/c1" push -q origin main
+reclassify
+run "$case_dir/c1"
+check "joined, own version: refused" grep -q 'REFUSED — joined the managed core, and this repository has its own version: .agents/AGENTS.md' "$case_dir/run.log"
+check "joined, own version: kept" grep -q 'Our own routing table' "$case_dir/c1/.agents/AGENTS.md"
+new_case; new_consumer c1
+cp "$kit/payload/.agents/AGENTS.md" "$case_dir/c1/.agents/AGENTS.md"
+gq -C "$case_dir/c1" add -A && gq -C "$case_dir/c1" commit -qm "docs: take the seed as is" && gq -C "$case_dir/c1" push -q origin main
+reclassify; v2=$(git -C "$kit" log -1 --format=%H -- payload/)
+run "$case_dir/c1"
+check "joined, matching: a lock-only sync is opened" bash -c "[ -e '$GH_SHIM_LOG/1.args' ]"
+check "joined, matching: the lock now records it" \
+  bash -c "git -C '$case_dir/c1' show 'chore/sync-managed-core-${v2:0:7}:.friday-lock.json' | jq -e '.managed_core | has(\".agents/AGENTS.md\")' >/dev/null"
+
+# 11. friday-lock itself comes from the pin: a commit that changes it mid-run
+#     does not change what a later consumer's lock records.
+new_case; new_consumer c1; new_consumer c2
+bump "$(m1 1)" v2; v2=$(git -C "$kit" rev-parse HEAD)
+export GH_SHIM_ONCE="sed -i.orig 's/^friday_commit() {\$/friday_commit() { echo 0000000000000000000000000000000000000000; return; /' '$kit/bin/friday-lock' && git -C '$kit' -c user.name=t -c user.email=t@example.invalid commit -qam 'tooling: change friday-lock'"
+run "$case_dir/c1" "$case_dir/c2"
+unset GH_SHIM_ONCE
+check "pinned lock: the kit's friday-lock really changed mid-run" grep -q '0000000000000000000000000000000000000000' "$kit/bin/friday-lock"
+check "pinned lock: the second consumer's lock still records the pin" \
+  bash -c "[ \"\$(git -C '$case_dir/c2' show 'chore/sync-managed-core-${v2:0:7}:.friday-lock.json' | jq -r .friday.commit)\" = '$v2' ]"
 
 echo
 if [ "$fails" -gt 0 ]; then echo "$fails of $total failed"; exit 1; fi

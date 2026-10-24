@@ -460,7 +460,7 @@ bin/friday-lock write <target>     # 經審查的調和完成後刷新
 | `in sync` | 每個記錄的檔案都相符，payload 也沒動 | 不用做事 |
 | `drifted` | consumer 裡的檔案與 lock 記錄的不符 | 有人在本機改了 managed-core 檔，去調和它 |
 | `behind` | lock 寫下之後，Friday 的 payload 前進了，或有檔案新加入 managed core（標為 `new in the payload`） | 以一次經審查的 commit 接收變更，然後 `friday-lock write` |
-| `retired` | lock 記錄了一個 Friday 已不再管理的檔案 | 刻意決定刪除它或保留為 consumer 自己的檔案，然後 `friday-lock write`；`friday-propagate` 只會列出它，不會動它 |
+| `retired` | lock 記錄了一個 Friday 已不再管理的檔案 | 刻意決定刪除它或保留為 consumer 自己的檔案，然後 `friday-lock write`。consumer 沒有其他東西要帶時，`friday-propagate` 只會列出它，不會動它。有變更要帶時，它的 pull request 會列出這個檔案，merge 之後即記錄為 consumer 自己的檔案，除非先在那個 branch 上刪掉它 |
 | `ahead` | 這個 consumer 持有 Friday 尚未合併的 payload | **不要**把 payload 蓋上去 |
 | `diverged` | 兩條 payload 線並存，互不包含 | 先 checkout 你真正要帶的那條 Friday 分支 |
 
@@ -500,6 +500,8 @@ managed-core 檔案、刷新 lock、commit、push、開 PR。
 | `drifted` | **拒絕** —— 那裡有人改過 managed-core 檔，覆蓋過去會同時銷毀那個修改與它的理由 |
 | 工作樹不乾淨 | **拒絕**，不會用 stash 繞過 |
 | consumer 的檔案在那次檢查之後、寫入之前被改動 | **拒絕**，保留那個改動 |
+| pull consumer 的 `main` 之後出現 drift，或要帶的內容變了 | **拒絕**，回到 `main`，什麼都不寫 |
+| 寫入或 commit 之前，HEAD 離開了 sync branch | **拒絕**，並說明 HEAD 在哪裡 |
 | 只有 `retired` | **拒絕**，並列出退役的檔案；刪不刪是 owner 的決定 |
 | Friday 不在 `main` 上 | **拒絕**，在讀取任何 consumer 之前 |
 | 分支已存在 | **拒絕** |

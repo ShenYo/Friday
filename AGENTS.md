@@ -49,11 +49,18 @@ Each step ends on the condition that says it is done.
    uncommitted edit under `payload/`, or a Friday commit made while the run is
    going, cannot reach a consumer, and the sync branch, the lock and the pull
    request body always name one commit. It refuses to run from any branch but
-   `main`. It looks at each consumer file again just before writing it and
-   refuses rather than overwrite a concurrent edit. It leaves every consumer
-   back on `main`. `tests/friday-propagate.sh` proves each of these.
+   `main`. After pulling a consumer's `main` it checks it again, and refuses
+   if that pull brought drift or changed what has to be carried. It looks at
+   each consumer file again just before writing it, and refuses rather than
+   overwrite a concurrent edit. It writes the lock from the index, so the lock
+   records what the commit holds. It returns each consumer to `main`, except
+   when HEAD left the sync branch or a commit did not land; then it stops and
+   says where things are. `tests/friday-propagate.sh` proves each of these.
 
-   What is still instruction-only is **freshness**. A checkout behind
+   Two things are still instruction-only. One is **one run at a time**: two
+   overlapping runs on one consumer can still move each other's HEAD between
+   the checks and the commit. The run detects that and stops, but it cannot
+   prevent it. The other is **freshness**. A checkout behind
    `origin/main` lacks the change, so it cannot carry it: consumers read
    `in sync`, or `ahead`, which is refused, and nothing is opened. So first
    run `git switch main && git pull --ff-only`, and confirm that

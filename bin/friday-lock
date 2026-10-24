@@ -26,7 +26,9 @@
 # keeps its own.
 set -uo pipefail
 
-KIT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+# FRIDAY_KIT_ROOT lets friday-propagate run a copy of this script taken from
+# its pinned commit, while still reading this checkout's repository.
+KIT_ROOT=${FRIDAY_KIT_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
 PAYLOAD="$KIT_ROOT/payload"
 LIST="$KIT_ROOT/bin/managed-core.txt"
 CONSUMER_LOCK=.friday-lock.json
@@ -59,13 +61,16 @@ if [ -n "$TREE" ]; then
     || die "FRIDAY_TREE is not a commit in $KIT_ROOT: $TREE"
   list_text=$(git -C "$KIT_ROOT" show "$TREE:bin/managed-core.txt" 2>/dev/null) \
     || die "no bin/managed-core.txt at $TREE"
-  payload_files() { git -C "$KIT_ROOT" ls-tree -r --name-only "$TREE" -- payload/ | sed 's#^payload/##'; }
+  payload_files() {
+    git -C "$KIT_ROOT" -c core.quotePath=false ls-tree -r --name-only "$TREE" -- payload/ |
+      while IFS= read -r f; do printf '%s\n' "${f#payload/}"; done
+  }
   payload_has() { git -C "$KIT_ROOT" cat-file -e "$TREE:payload/$1" 2>/dev/null; }
   payload_sha() { git -C "$KIT_ROOT" show "$TREE:payload/$1" | sha256_in; }
 else
   [ -f "$LIST" ] || die "missing $LIST"
   list_text=$(cat "$LIST")
-  payload_files() { find "$PAYLOAD" -type f -print | sed "s#^$PAYLOAD/##"; }
+  payload_files() { find "$PAYLOAD" -type f -print | while IFS= read -r f; do printf '%s\n' "${f#"$PAYLOAD"/}"; done; }
   payload_has() { [ -f "$PAYLOAD/$1" ]; }
   payload_sha() { sha256 "$PAYLOAD/$1"; }
 fi
@@ -127,10 +132,19 @@ write_lock() {
   json=$(jq -n --arg commit "$(friday_commit)" --arg date "$(date -u +%Y-%m-%d)" \
     '{friday:{repo:"ShenYo/Friday",commit:$commit,synced:$date},managed_core:{}}')
 
+  # FRIDAY_LOCK_FROM_INDEX=1 records what the target's index holds -- the
+  # content its next commit will carry -- instead of the working tree, so an
+  # unstaged edit cannot be written into the record of a commit without it.
+  local h
   for rel in "${managed[@]}"; do
-    [ -f "$target/$rel" ] || continue
-    json=$(printf '%s' "$json" | jq --arg k "$rel" --arg v "$(sha256 "$target/$rel")" \
-      '.managed_core[$k] = $v')
+    if [ -n "${FRIDAY_LOCK_FROM_INDEX:-}" ]; then
+      git -C "$target" cat-file -e ":$rel" 2>/dev/null || continue
+      h=$(git -C "$target" show ":$rel" | sha256_in)
+    else
+      [ -f "$target/$rel" ] || continue
+      h=$(sha256 "$target/$rel")
+    fi
+    json=$(printf '%s' "$json" | jq --arg k "$rel" --arg v "$h" '.managed_core[$k] = $v')
   done
 
   [ "$(printf '%s' "$json" | jq '.managed_core | length')" -gt 0 ] \

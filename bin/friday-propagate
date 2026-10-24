@@ -57,6 +57,12 @@ payload_commit=$(git -C "$KIT_ROOT" log -1 --format=%H "$tree" -- payload/ 2>/de
 [ -n "$payload_commit" ] || die "cannot read Friday's payload history"
 short=${payload_commit:0:7}
 export FRIDAY_TREE=$tree
+# friday-lock itself comes from the pin as well: a commit that changes it
+# mid-run must not change the rules a later consumer is judged and recorded by.
+LOCK=$(mktemp "${TMPDIR:-/tmp}/friday-lock.XXXXXX") || die "cannot create a temporary file"
+trap 'rm -f "$LOCK"' EXIT
+git -C "$KIT_ROOT" show "$tree:bin/friday-lock" > "$LOCK" || die "no bin/friday-lock at $tree"
+export FRIDAY_KIT_ROOT=$KIT_ROOT
 if [ -n "$(git -C "$KIT_ROOT" status --porcelain -- payload/ bin/managed-core.txt)" ]; then
   echo "friday-propagate: note: uncommitted payload changes here are not carried; only $short is." >&2
 fi
@@ -82,7 +88,7 @@ for target in "$@"; do
   name=$(basename "$target")
   echo "$name"
 
-  status=$("$LOCK" check "$target" 2>&1)
+  status=$(bash "$LOCK" check "$target" 2>&1)
   state=$(printf '%s' "$status" | grep '^status:' | sed 's/status: //')
 
   case "$state" in
@@ -134,10 +140,34 @@ for target in "$@"; do
     [ -f "$target/$rel" ] || { moved+=("$rel"); continue; }
     blob "$rel" | cmp -s - "$target/$rel" || moved+=("$rel")
   done
-  [ ${#moved[@]} -gt 0 ] || { note "behind, but no managed-core file differs — nothing to do"; skipped=$((skipped + 1)); continue; }
 
-  note "behind on ${#moved[@]} file(s):"
-  printf '    %s\n' "${moved[@]}"
+  # A file that joined the managed core may already exist here as this
+  # repository's own -- a seed that became managed, say. Copying over it
+  # would replace work nobody reviewed losing, so that is the owner's call.
+  # One that already matches needs no copy, only a lock entry.
+  added=()
+  while IFS= read -r rel; do [ -n "$rel" ] && added+=("$rel"); done < <(
+    printf '%s\n' "$status" | sed -n 's/^  \(.*\) (new in the payload)$/\1/p')
+  own=""
+  for rel in ${added+"${added[@]}"}; do
+    if [ -f "$target/$rel" ] && ! blob "$rel" | cmp -s - "$target/$rel"; then own="$own $rel"; fi
+  done
+  if [ -n "$own" ]; then
+    note "REFUSED — joined the managed core, and this repository has its own version:$own"
+    note "Reconcile each by hand, then run 'friday-lock write'. Nothing was touched."
+    refused=$((refused + 1)); continue
+  fi
+  if [ ${#moved[@]} -eq 0 ] && [ ${#added[@]} -eq 0 ]; then
+    note "behind, but no managed-core file differs — nothing to do"; skipped=$((skipped + 1)); continue
+  fi
+
+  if [ ${#moved[@]} -gt 0 ]; then
+    note "behind on ${#moved[@]} file(s):"
+    printf '    %s\n' "${moved[@]}"
+  else
+    note "behind only in the lock: these joined the managed core and already match:"
+    printf '    %s\n' "${added[@]}"
+  fi
 
   if [ -n "$(git -C "$target" status --porcelain 2>/dev/null)" ]; then
     note "REFUSED — the working tree is not clean. Commit or stash first."
@@ -167,29 +197,63 @@ for target in "$@"; do
     refused=$((refused + 1)); continue
   }
 
+  # What the branch now starts from is what was just pulled, not what was
+  # read before. Ask again, against the same pinned tree: main may have gained
+  # a commit that edited a managed file (drift the first check never saw), or
+  # one that changes what has to be carried. Either way the earlier decision
+  # no longer holds, and copying now would launder that edit into the lock.
+  again=$(bash "$LOCK" check "$target" 2>&1)
+  again_state=$(printf '%s' "$again" | sed -n 's/^status: //p')
+  moved_again=()
+  for rel in "${managed[@]}"; do
+    [ -f "$target/$rel" ] || { moved_again+=("$rel"); continue; }
+    blob "$rel" | cmp -s - "$target/$rel" || moved_again+=("$rel")
+  done
+  if [ "$again_state" != behind ] || [ "${moved_again[*]:-}" != "${moved[*]:-}" ]; then
+    note "REFUSED — after pulling main the consumer reads '${again_state:-unknown}', not what was checked:"
+    printf '%s\n' "$again" | sed -n -E '/^(DRIFTED|BEHIND|RETIRED)/,/^$/p' | sed 's/^/    /'
+    git -C "$target" checkout -q main
+    note "Nothing was written; the consumer is back on main. Run it again."
+    refused=$((refused + 1)); continue
+  fi
+
+  # Another run, or a hook, may have moved HEAD since the branch was made.
+  # Everything below writes into whatever is checked out, so it must be the
+  # sync branch.
+  if [ "$(git -C "$target" symbolic-ref --short -q HEAD)" != "$branch" ]; then
+    note "REFUSED — HEAD is '$(git -C "$target" symbolic-ref --short -q HEAD || echo detached)', not '$branch'. Nothing was written."
+    refused=$((refused + 1)); continue
+  fi
+
   # The tree was clean when it was checked, but that was before the pull and
   # the branch. Look again at every file about to be written, all of them
   # before the first write, so a concurrent edit is refused, not overwritten.
   changed_since=""
-  for rel in "${moved[@]}"; do
+  for rel in ${moved+"${moved[@]}"}; do
     [ -z "$(git -C "$target" status --porcelain -- "$rel")" ] || changed_since="$changed_since $rel"
   done
   if [ -n "$changed_since" ]; then
     note "REFUSED — changed in the consumer after it was checked:$changed_since"
-    note "Nothing was written. The consumer is left on '$branch' with the change in place."
+    git -C "$target" checkout -q main
+    note "Nothing was written; the consumer is back on main with the change in place."
     refused=$((refused + 1)); continue
   fi
 
-  for rel in "${moved[@]}"; do
+  for rel in ${moved+"${moved[@]}"}; do
     mkdir -p "$target/$(dirname "$rel")"
     blob "$rel" > "$target/$rel.friday-sync.$$" && mv -f "$target/$rel.friday-sync.$$" "$target/$rel"
     if [ "$(blob_mode "$rel")" = 100755 ]; then chmod +x "$target/$rel"; else chmod -x "$target/$rel"; fi
     git -C "$target" add "$rel"
   done
-  "$LOCK" write "$target" >/dev/null
+  # Recorded from the index -- exactly what this commit will hold -- not from
+  # the working tree, where an edit nobody staged would be written into the
+  # lock and read back as drift by everyone who checks out the branch.
+  FRIDAY_LOCK_FROM_INDEX=1 bash "$LOCK" write "$target" >/dev/null
   git -C "$target" add -- "$CONSUMER_LOCK"
 
-  list=$(printf '  %s\n' "${moved[@]}")
+  list=$(printf '  %s\n' ${moved+"${moved[@]}"})
+  [ ${#moved[@]} -gt 0 ] || list="  (none: the lock alone moves; these joined the managed core and already
+  match: ${added[*]})"
   # Files Friday stopped managing are left exactly where they are: deleting
   # them is the owner's call, so the pull request names them instead.
   retired_list=$(printf '%s' "$status" | sed -n '/^RETIRED/,/^$/p' | sed '1d;/^$/d;s/^ *//')
@@ -203,6 +267,11 @@ it as this repository's own, deliberately:
 $retired_list
 \`\`\`
 "
+  fi
+  main_before=$(git -C "$target" rev-parse main)
+  if [ "$(git -C "$target" symbolic-ref --short -q HEAD)" != "$branch" ]; then
+    note "REFUSED — HEAD left '$branch' before the commit; the copied files are staged on '$(git -C "$target" symbolic-ref --short -q HEAD || echo detached)', nothing was committed or pushed"
+    refused=$((refused + 1)); continue
   fi
   git -C "$target" commit -q -F - <<MSG
 chore(agents): sync the managed core to Friday $short
@@ -221,10 +290,14 @@ $FRIDAY_PROPAGATE_TRAILERS}
 MSG
   # A refused commit -- the target's own commit hooks run here -- must not be
   # followed by a push of a branch that carries nothing.
+  if [ "$(git -C "$target" rev-parse main)" != "$main_before" ]; then
+    note "STOPPED — main moved to $(git -C "$target" rev-parse --short main) during the commit; the sync commit may be on main. Nothing was pushed; inspect main before anything else."
+    refused=$((refused + 1)); continue
+  fi
   if ! git -C "$target" rev-parse --verify --quiet "$branch" >/dev/null \
-     || [ "$(git -C "$target" rev-parse "$branch")" = "$(git -C "$target" rev-parse main)" ] \
+     || [ "$(git -C "$target" rev-parse "$branch")" = "$main_before" ] \
      || [ "$(git -C "$target" symbolic-ref --short -q HEAD)" != "$branch" ]; then
-    note "REFUSED — the commit did not land on '$branch'; the copied files are staged, nothing was pushed"
+    note "REFUSED — the commit did not land on '$branch' (a commit hook may have refused it); the copied files are staged, nothing was pushed"
     refused=$((refused + 1)); continue
   fi
   # The consumer goes back to main either way from here: the sync commit is
@@ -242,7 +315,7 @@ MSG
 Managed-core files whose content moved:
 
 \`\`\`
-${moved[*]}
+${moved[*]:-(none — the lock alone moves; ${added[*]} joined the managed core and already match)}
 \`\`\`
 
 \`friday-lock\` reported this repository as \`behind\` and named each path

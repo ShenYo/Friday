@@ -14,11 +14,9 @@
 set -uo pipefail
 
 # Where the guideline lives depends on who is running this file. An installed
-# consumer has it at .agents/docs/; the producer ships it under payload/; a
-# repository that only mirrors these hooks has neither. Resolving it here
-# rather than naming one path is what lets this file be byte-identical
-# everywhere it runs -- see ShenYo/Friday#18. A mirror kept in step by hand
-# was missed entirely the last time the payload moved.
+# consumer has it at .agents/docs/; the repository that ships the payload has
+# it under payload/. Resolving it here rather than naming one path is what lets
+# one file be correct in both.
 #
 # The last case used to print "the git guideline for this repository", which
 # in a repository with neither path names nothing that exists -- a refusal

@@ -2,7 +2,7 @@
 
 [English](./README.md) · **繁體中文**
 
-> **摘要**：Friday 是可受版本控管的共享專案基線（shared project baseline）；Jarvis 則是個人層。
+> **摘要**：Friday 是可受版本控管的共享專案基線（shared project baseline）；個人層不在這裡。
 > 先以 `--check` 預覽，再安裝封閉式的 allowlist。衝突絕不覆寫，現有專案需經
 > 人工審查後調和。
 
@@ -12,8 +12,8 @@ repository，而不依賴開發者個人的 home 目錄、個人 Skills 或 vend
 
 它同時處理三個限制：封閉式 allowlist 讓 bootstrap 維持衝突安全（conflict-safe）；
 以複製方式交付內容讓 baseline 保持可攜且可審查；既有消費端的變更則停留在經審查的
-調和（reconciliation）邊界之後，而不會變成自動更新。Jarvis 僅是個人層；請勿將
-Jarvis 的 Skills、settings 或其他依賴個人 home 目錄的內容，放進 Friday 的專案契約中。
+調和（reconciliation）邊界之後，而不會變成自動更新。開發者的個人層不屬於這裡：
+請勿將個人的 Skills、settings 或其他依賴個人 home 目錄的內容，放進 Friday 的專案契約中。
 
 ## 何時該使用 Friday
 
@@ -21,7 +21,7 @@ Jarvis 的 Skills、settings 或其他依賴個人 home 目錄的內容，放進
 | --- | --- | --- |
 | 全新的 Git repository | Bootstrap 經審查的 baseline | 先 Preview，再安裝，然後再 Preview 一次。 |
 | 既有消費端 | 安全地揭露差異 | Pin 住 Friday 版本、執行 `--check`，並在一次經審查的消費端變更中調和每一個衝突。 |
-| 個人 Skills 或偏好 | 讓個人範圍維持個人 | 使用 Jarvis；不要把它推進 Friday。 |
+| 個人 Skills 或偏好 | 讓個人範圍維持個人 | 留在你的個人層；不要把它推進 Friday。 |
 | 專案特有的政策或檢查 | 保留消費端的所有權 | 在審查過共享 baseline 之後，再新增消費端 overlay。 |
 
 ## 架構
@@ -90,7 +90,7 @@ replay，以及 external-runtime 的收尾，都仍待完成。
   的 replay。真正的新機器 replay、以第三個 genuine consumer 進行驗證，以及
   cross-runtime 的收尾，都仍是 **PENDING** 的後續工作。
 
-Vendor Skills（包含 Matt Pocock Skills）仍歸 Jarvis 所有，並維持 vendor-pristine
+Vendor Skills（包含 Matt Pocock Skills）留在安裝它們的個人層，並維持 vendor-pristine
 狀態。Friday 只管理可攜的、專案本地輸出內容契約，內容記錄在
 [`scratch-files.md`](./payload/.agents/docs/scratch-files.md)；它既不安裝也
 不複製 vendor Skills，也不宣稱擁有 runtime 的 invocation 或 precedence 強制力。
@@ -422,7 +422,7 @@ routing、runtime 設定，以及專案 overlay，都需要分別審查。特別
 目前尚未被納入 payload；要推廣一條依賴它的 core 規則之前，必須先做出
 相依性方面的決定。請先在一個 disposable 的專案裡測試過這份審查過的套件，
 才能進入採用階段；這並不代表可以藉此去刷新一個既有消費端，或變更個人的
-Jarvis settings。
+settings。
 
 **Payload 本身不帶有任何專案引用。** 範例一律使用 `#123` 這類佔位符，
 而不是真實的 issue 編號，也不會有任何檔案指向另一個 repository 的文件。

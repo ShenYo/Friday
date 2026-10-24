@@ -308,6 +308,17 @@ mkdir -p "$run/type-conflict/AGENTS.md"
 reject "$run/type-conflict"
 [ ! -e "$run/type-conflict/.agents" ]
 
+target linked-worktree-main
+git -C "$run/linked-worktree-main" -c user.name=t -c user.email=t@example.com commit -q --allow-empty -m init
+git -C "$run/linked-worktree-main" worktree add -q "$run/linked-worktree" -b wt
+reject --check "$run/linked-worktree"
+grep -q 'is a linked worktree' "$run/rejection.log"
+reject "$run/linked-worktree"
+grep -q 'is a linked worktree' "$run/rejection.log"
+[ ! -e "$run/linked-worktree/AGENTS.md" ]
+[ ! -e "$run/linked-worktree/.agents" ]
+[ -z "$(git -C "$run/linked-worktree-main" config core.hooksPath || true)" ]
+
 reject --unknown
 reject "$run/fresh" extra
 reject "$kit"

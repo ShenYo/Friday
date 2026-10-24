@@ -148,8 +148,9 @@ dirty（有未提交變更）的 Friday checkout 當作範例來源：下面的�
 複製的是它自己封閉的 payload 到目標專案；它不會複製整個 Friday repository，
 也不會把目標專案連結（link）回 Friday。
 
-需要 `jq`，且目標必須是空白或相容的專案，並具有 `.git/` 目錄（不支援 linked
-worktree）。目標是 repository 的根目錄，而不是某個 `.agents/` 子目錄。
+需要 `jq`，且目標必須是空白或相容的專案，並具有 `.git/` 目錄（linked
+worktree 會被拒絕，因為 `core.hooksPath` 由同一個 repository 的所有 worktree
+共用，從其中一個接線會讓其他 worktree 不再執行任何 hook）。目標是 repository 的根目錄，而不是某個 `.agents/` 子目錄。
 `--check` 會回報 `NEW`、`IDENTICAL` 或 `CONFLICT`，遇到衝突時以非零碼結束，
 且不會複製檔案、改變檔案權限、建立連結，也不會執行 self-check。兩種模式都會
 在對目標進行任何寫入之前，先驗證所有先備條件、每一個目的地，以及目標現有的

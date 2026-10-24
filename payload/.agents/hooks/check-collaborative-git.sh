@@ -843,12 +843,16 @@ printf 'Merge pull request #1 from x/y\n' > "$githook_lab/msg"
 run_githook commit-msg 0 "" msg
 # Case is style, not traceability: none of these may be refused. The old rule
 # (`^[a-z]`) refused all three -- a capitalised word, a proper noun, and any
-# summary not in English.
+# summary not in English. A capital alongside a real violation is refused for
+# that violation alone; an earlier revision printed "the commit goes ahead"
+# just before the imperative rule refused it.
 printf 'feat: Add the parity check\n' > "$githook_lab/msg"
 run_githook commit-msg 0 "" msg
 printf 'docs: GitHub ruleset is active\n' > "$githook_lab/msg"
 run_githook commit-msg 0 "" msg
 printf 'docs: 補上中文摘要\n' > "$githook_lab/msg"
 run_githook commit-msg 0 "" msg
+printf 'feat: Added validation\n' > "$githook_lab/msg"
+run_githook commit-msg 1 "use the imperative" msg
 
 echo "Agent workflow guardrails passed."

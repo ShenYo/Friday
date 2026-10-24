@@ -30,8 +30,10 @@ rule, and the sensitive-information check that runs before staging.
 ## Write and commit
 
 1. Build the message solely from the staged diff.
-2. Use `type(scope): summary`: imperative, lowercase after the prefix, no
-   final period, target 50 characters or fewer.
+2. Use `type(scope): summary`: imperative, no final period, target 50
+   characters or fewer. Prefer lowercase after the prefix; a proper noun, a
+   `code` name, a number or a non-English summary starts however it naturally
+   does.
 3. Add a body only when it clarifies why. Use real newlines and Markdown `-`
    bullets; wrap prose at 72 characters. Add `Co-Authored-By` only when an
    agent materially co-authored the change.

@@ -79,15 +79,12 @@ case "$subject" in
 esac
 
 summary=${subject#*: }
-# Case is style, not traceability, so it is a note rather than a refusal. The
-# refusal used to be `^[a-z]`, which rejected far more than capitals: a proper
-# noun (README, GitHub), a `code` name, a number, and any summary not written in
-# English. Only an ordinary capitalised word -- "Add", not "GitHub" -- gets the
-# note now, and the commit goes ahead either way.
-if printf '%s' "$summary" | grep -Eq '^[A-Z][a-z]+([[:space:]]|$)'; then
-  echo "note: the summary usually starts lowercase after the prefix (Got: $summary)." >&2
-  echo "      Not refused: case is style, and the commit goes ahead." >&2
-fi
+# No case rule. A refusal on `^[a-z]` rejected far more than capitals -- a
+# proper noun (README, GitHub), a `code` name, a number, any summary not in
+# English. A note in its place could not tell "Add" from "English" or
+# "Python" either, and it printed "the commit goes ahead" just before another
+# rule refused the same message. Case is style; git-commit.md keeps it as a
+# preference, and this hook enforces only what traceability needs.
 printf '%s' "$summary" | grep -Eqi '^(added|adds|fixed|fixes|updated|updates|changed|changes|removed|removes|refactored|created|creates)[[:space:]]' \
   && refuse "use the imperative: 'add', not 'added'/'adds'. Got: $summary"
 

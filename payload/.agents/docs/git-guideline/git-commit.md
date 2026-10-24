@@ -31,11 +31,10 @@ Use `type(scope): summary` (Conventional Commits). Allowed types for this repo:
 - No trailing period (Beams).
 - Prefer lowercase after `type(scope): `. The Conventional Commits spec's
   examples use lowercase summaries, though the spec itself sets no rule, and
-  Beams' "capitalize" rule applies to prefix-less messages. This is style, so
-  `commit-msg` only prints a note for an ordinary capitalised word and lets the
-  commit through. A summary that starts with a proper noun (`README`,
-  `GitHub`), a `code` name, a number, or a language other than English starts
-  however it naturally does.
+  Beams' "capitalize" rule applies to prefix-less messages. This is style, and
+  `commit-msg` does not check it. A summary that starts with a proper noun
+  (`README`, `GitHub`), a `code` name, a number, or a language other than
+  English starts however it naturally does.
 
 ## 3. Body rules
 

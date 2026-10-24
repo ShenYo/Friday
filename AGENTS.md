@@ -90,6 +90,13 @@ Each step ends on the condition that says it is done.
 - **Everything Friday needs lives in this repository.** Jarvis, the owner's
   personal layer, copies three hooks from here and gives nothing back. Keep the
   dependency one-way.
+- **A merged pull request can be missing its last commit.** GitHub can report
+  a PR's head a while after a push has already moved the branch. A merge taken
+  in that window uses the stale head and drops the newer commit. This happened
+  to #24, which was merged at `77b2dc2` without `f9868c3`. Before calling a PR
+  ready to merge, check that
+  `gh api repos/ShenYo/Friday/pulls/<n> --jq .head.sha` equals the branch tip.
+  After a merge, `git cherry origin/main <branch>` lists anything left behind.
 - **Adopting into a project that already has files** follows
   [`ADOPTING.md`](ADOPTING.md). `install.sh` only previews there. It never
   merges, and it refuses on conflict.

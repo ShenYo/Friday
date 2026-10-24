@@ -364,32 +364,31 @@ Windows behavior is unverified.
 That last one is the case worth having. A guard that has been neutered looks
 exactly like a guard that is working, right up until it matters.
 
-## Friday's own branch protection
+## Friday's own branch protection and hooks
 
-This repository is private on a plan where GitHub branch protection and
-rulesets are unavailable, so the protection it would otherwise configure --
-no direct push to the default branch, no force push, no ref deletion --
-cannot be set server-side. [`.githooks/pre-push`](./.githooks/pre-push) is the
-local substitute, wired with:
+Friday is public, and a GitHub ruleset on the default branch refuses its
+deletion, force pushes, and changes that do not arrive through a pull request.
+The review requirement on those pull requests is set server-side by the owner.
+
+Locally, this repository runs the payload's hooks themselves, not copies:
 
 ```sh
-git config core.hooksPath .githooks
+git config core.hooksPath payload/.agents/githooks
 ```
 
-It is the same hook Friday ships to consumers at
-[`payload/.agents/githooks/pre-push`](./payload/.agents/githooks/pre-push),
-differing only in the document its messages point at. It decides from the refs
-Git is about to send rather than from the command text, so a deletion, a
-history rewrite and a push to the default branch are refused however the
-command was spelled -- `--force`, `-f`, a leading `+` on the refspec,
-`--mirror`, `--delete` and `:ref` all reduce to the same two tests.
+So the `pre-commit` secret scan, the `commit-msg` format check, and the
+`pre-push` ref checks that consumers get also run on Friday's own commits and
+pushes. A hook changed in the payload takes effect on the next commit here,
+before it ships. `pre-push` decides from the refs Git is about to send, not
+from the command text, so a deletion, a history rewrite, and a push to the
+default branch are refused however the command was spelled: `--force`, `-f`,
+a leading `+` on the refspec, `--mirror`, `--delete` and `:ref` all reduce to
+the same two tests.
 
-Three limits are worth stating plainly. It protects this clone only: a fresh
-clone carries no `core.hooksPath` and is unprotected until someone sets it. It
-cannot require a review approval, which is inherently server-side. And it is a
-guard against mistakes, not a control surface -- the installer does not apply
-Friday's payload to Friday itself, so this repository's commits are not covered
-by the commit-time hooks that consumers get.
+Two limits remain. `core.hooksPath` is per-clone configuration that is never
+cloned, so a fresh clone runs no hook until someone sets it. And the hooks are
+a guard against mistakes, not a control surface: the server-side ruleset is the
+part that holds when they are skipped.
 
 ## Non-goals and recovery
 
@@ -455,32 +454,9 @@ That paragraph records the original failure, not current pet-care behavior.
 `install.sh` writes `.friday-lock.json` into the target: the Friday commit it
 was installed from, and the sha256 of every managed-core file as installed.
 
-There are **two names**, because a repository is one of two things and a reader
-should not have to open the file to tell which:
-
-| file | the repository is | holds |
-| --- | --- | --- |
-| `.friday-lock.json` | a payload **consumer** | managed core, byte-exact |
-| `hooks.json` | a repository that **borrows hooks** — Jarvis, and this repository | three `.githooks` copies, none of the payload's managed core |
-
-`hooks.json` carries no prefix on purpose. Two earlier names carried one:
-`mirror-` read as though the repositories were bound together, and
-`.friday-hooks` said the hooks were Friday's rather than the holding
-repository's. Neither is true — the repositories are maintained separately and
-serve different audiences, Jarvis takes three of these nineteen payload files
-and nothing else, and Friday depends on Jarvis for nothing. `.friday-lock.json`
-keeps its prefix because a consumer's file genuinely is about Friday: the
-repository adopted this payload, and it is Friday that reads the file back and
-proposes the update.
-
-A hooks record carries no `managed_core` key at all, so its shape matches its
-name. `friday-lock` picks the name from what the target actually has, and
-refuses a repository holding both.
-
-In this repository, root `hooks.json` is that sha256 record. It is not hook
-configuration: that is [`payload/.codex/hooks.json`](./payload/.codex/hooks.json),
-which ships to consumers.
-[`bin/friday-lock`](./bin/friday-lock) reads it back.
+[`bin/friday-lock`](./bin/friday-lock) reads it back. Only a payload consumer
+has one. A repository that wants one of the payload's hooks without adopting
+the payload keeps its own copy, and Friday does not track it.
 
 ```sh
 bin/friday-lock check <target>     # or run it from inside the consumer
@@ -500,18 +476,6 @@ Three states, and the distinction is the point:
 **`behind` is decided by content, never by comparing commits.** A Friday commit
 that only touches a README moves no payload hash and so raises nothing. That is
 what makes a daily scheduled check quiet enough to be worth running.
-
-Jarvis and Friday are not payload consumers, but they carry `.githooks` copies
-of three payload files. Those copies are **byte-identical** to their payload
-source, so `friday-lock` anchors on equality: a mirror that differs is reported
-whichever side moved, and the recorded hashes say which.
-
-They used to differ in six lines naming a documentation path, because the right
-path depends on who is running the file. The hooks now resolve it themselves,
-so one file is correct in a consumer, in Friday and in a repository that only
-mirrors it. The delta was removed because a delta re-applied by hand is a delta
-that gets missed — which is exactly what happened the last time the payload
-moved, in four places at once.
 
 [`bin/managed-core.txt`](./bin/managed-core.txt) is the single source of truth
 for which files are managed and which are consumer-owned. A payload file listed

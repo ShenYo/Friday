@@ -346,29 +346,28 @@ payload，只要有禁止的 payload 沒被擋下，就會判定失敗。Codex �
 最後這一點，正是值得特別留意的地方。一個被動過手腳、形同虛設的 guard，
 看起來會和一個正常運作的 guard 一模一樣——直到真正出事的那一刻才會顯現。
 
-## Friday 自身的 branch protection
+## Friday 自身的 branch protection 與 hooks
 
-這個 repository 是 private,而所屬方案無法使用 GitHub branch protection 與
-rulesets,因此原本該設定的保護 —— 禁止直接推送 default branch、禁止 force
-push、禁止刪除 ref —— 無法在 server 端設定。
-[`.githooks/pre-push`](./.githooks/pre-push) 是本機的替代方案,接法:
+Friday 是 public repository，default branch 上的 GitHub ruleset 會拒絕刪除、
+force push，以及不經 pull request 進來的變更。這些 pull request 的 review 要求，
+由 owner 在 server 端設定。
+
+在本機，這個 repository 直接執行 payload 的 hooks，而不是副本：
 
 ```sh
-git config core.hooksPath .githooks
+git config core.hooksPath payload/.agents/githooks
 ```
 
-它與 Friday 出貨給 consumer 的
-[`payload/.agents/githooks/pre-push`](./payload/.agents/githooks/pre-push)
-是同一個 hook,只有訊息指向的文件不同。它依 Git 即將送出的 refs 判斷,而非
-依指令文字,因此刪除 ref、改寫歷史與推送 default branch,無論指令怎麼拼寫都會
-被拒絕 —— `--force`、`-f`、refspec 前綴 `+`、`--mirror`、`--delete` 與 `:ref`
-最終都歸結到同樣的兩項測試。
+因此 consumer 拿到的 `pre-commit` secret scan、`commit-msg` 格式檢查，以及
+`pre-push` 的 ref 檢查，也會在 Friday 自己的 commit 與 push 上執行。payload
+裡改動的 hook，在出貨之前，就會先在這裡的下一個 commit 生效。`pre-push` 依
+Git 即將送出的 refs 判斷，而非依指令文字，因此刪除 ref、改寫歷史與推送 default
+branch，無論指令怎麼拼寫都會被拒絕 —— `--force`、`-f`、refspec 前綴 `+`、
+`--mirror`、`--delete` 與 `:ref` 最終都歸結到同樣的兩項測試。
 
-有三個限制必須講清楚。它只保護這個 clone:新 clone 不帶 `core.hooksPath`,在
-有人設定之前都沒有保護。它無法要求 review approval,那本質上屬於 server 端。
-而它是防止失誤的護欄,不是控制面 —— installer 不會把 Friday 的 payload 安裝到
-Friday 自己,所以這個 repository 的 commit 並不受 consumer 所擁有的 commit-time
-hooks 覆蓋。
+仍有兩個限制。`core.hooksPath` 是 per-clone 設定，永遠不會被 clone 帶走，所以
+新 clone 在有人設定之前不會執行任何 hook。而這些 hooks 是防止失誤的護欄，不是
+控制面：hooks 被略過時，真正擋得住的是 server 端的 ruleset。
 
 ## 非目標與復原
 
@@ -433,28 +432,9 @@ Jarvis settings。
 `install.sh` 會在目標寫入 `.friday-lock.json`：記錄安裝時的 Friday commit，
 以及每個 managed-core 檔案當時的 sha256。
 
-檔名有**兩種**，因為一個 repository 只會是兩者之一，而讀者不該為了分辨它是哪
-一種而必須打開檔案：
-
-| 檔案 | 該 repository 是 | 記錄什麼 |
-| --- | --- | --- |
-| `.friday-lock.json` | payload **consumer** | managed core，逐位元組精確 |
-| `hooks.json` | **借用 hook** 的 repository —— Jarvis，以及這個 repository | 三個 `.githooks` 副本，不含 payload 的任何 managed core |
-
-`hooks.json` 刻意不帶任何前綴。先前兩個名字都帶了：`mirror-` 讀起來像兩個
-repository 被綁在一起，而 `.friday-hooks` 則說成那些 hook 是 Friday 的、而不是
-持有它的 repository 自己的。兩者都不成立 —— 這些 repository 各自維護、服務不同
-對象，Jarvis 只取這十九個 payload 檔案中的三個，而 Friday 完全不依賴 Jarvis。
-`.friday-lock.json` 保留前綴，因為 consumer 的那份檔案確實與 Friday 有關：該
-repository 採用了這份 payload，而讀回它並提出更新的正是 Friday。
-
-hooks 的記錄完全不帶 `managed_core` 這個 key，所以檔案的形狀與它的名字一致。
-`friday-lock` 會依目標實際擁有的內容決定檔名，並拒絕同時持有兩者的 repository。
-
-在這個 repository 裡，根目錄的 `hooks.json` 就是那份 sha256 記錄，它不是 hook
-設定 —— 後者是會發送給 consumer 的
-[`payload/.codex/hooks.json`](./payload/.codex/hooks.json)。
-[`bin/friday-lock`](./bin/friday-lock) 負責讀回來比對。
+[`bin/friday-lock`](./bin/friday-lock) 負責讀回來比對。只有 payload consumer
+才有這份記錄。想用 payload 裡某個 hook、但不採用整份 payload 的 repository，
+自己保有一份副本，Friday 不追蹤它。
 
 ```sh
 bin/friday-lock check <target>     # 也可以直接在 consumer 內部執行
@@ -474,16 +454,6 @@ bin/friday-lock write <target>     # 經審查的調和完成後刷新
 **`behind` 是依內容判斷，不是比對 commit。** 一個只改 README 的 Friday commit
 不會移動任何 payload 雜湊，因此不會觸發任何東西 —— 這正是讓每日排程檢查安靜到
 值得一直跑的原因。
-
-Jarvis 與 Friday 不是 payload consumer，但它們各自保有三個 payload 檔的
-`.githooks` 副本。那些副本與 payload 來源**逐位元組相同**，所以 `friday-lock`
-以「相等」為基準：只要 mirror 有差異就會被回報，而記錄下的兩個雜湊負責指出是哪
-一邊動了。
-
-它們過去在六行文件路徑上不同，因為正確的路徑取決於誰在執行這個檔案。現在 hook
-自己解析，所以同一份檔案在 consumer、在 Friday、在只做 mirror 的 repo 裡都正確。
-之所以取消那個差異，是因為**需要人工重套的差異就是會被漏掉的差異** —— 上一次
-payload 移動時正是如此，而且一次漏掉四個地方。
 
 [`bin/managed-core.txt`](./bin/managed-core.txt) 是「哪些檔案屬於 managed、
 哪些屬於 consumer」的唯一真實來源。一個兩邊都沒登記的 payload 檔會讓工具大聲

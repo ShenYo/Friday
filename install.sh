@@ -8,7 +8,7 @@
 #
 # The payload is an explicit, closed baseline. Consumer repositories may add
 # overlays after installation; future payload files are not installed until
-# they are deliberately added to the allowlist below.
+# they are deliberately added to bin/managed-core.txt.
 set -euo pipefail
 
 KIT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -37,30 +37,21 @@ fi
 
 # Check prerequisites before copying, not after a partially completed install.
 command -v jq >/dev/null || { echo "error: 'jq' is required." >&2; exit 1; }
-# This intentionally does not discover payload files. Friday's MVP installs a
-# reviewed, closed baseline; adding a payload file without reconciling this
-# list fails before the target is touched.
-files=(
-  AGENTS.md
-  .agents/AGENTS.md
-  .agents/docs/agent-rules.md
-  .agents/docs/testing.md
-  .agents/docs/scratch-files.md
-  .agents/docs/git-guideline/git-commit.md
-  .agents/docs/git-guideline/pr-evidence.md
-  .agents/docs/git-guideline/safety-boundary.md
-  .agents/hooks/check-collaborative-git.sh
-  .agents/hooks/guard-collaborative-git.sh
-  .agents/githooks/pre-commit
-  .agents/githooks/commit-msg
-  .agents/githooks/pre-push
-  .agents/skills/git/commit/SKILL.md
-  .agents/skills/git/create-pr/SKILL.md
-  .agents/skills/git/push/SKILL.md
-  .gitignore
-  .claude/settings.json
-  .codex/hooks.json
-)
+# The allowlist is bin/managed-core.txt: every entry, managed and
+# consumer-owned (`!`) alike. It used to be written out here as well, a second
+# copy of one list that could disagree with the first. It is still closed --
+# nothing is discovered from payload/ -- and the inventory check below refuses
+# a payload file the list does not name, before the target is touched.
+LIST="$KIT_ROOT/bin/managed-core.txt"
+[ -f "$LIST" ] || { echo "error: $LIST missing — is this the Friday repo?" >&2; exit 1; }
+files=()
+while IFS= read -r line; do
+  line=${line%%#*}
+  line=$(printf '%s' "$line" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+  [ -n "$line" ] || continue
+  files+=("${line#!}")
+done < "$LIST"
+[ ${#files[@]} -gt 0 ] || { echo "error: $LIST names no files" >&2; exit 1; }
 
 contains_file() {
   local candidate=$1 rel

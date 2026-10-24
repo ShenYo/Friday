@@ -1,6 +1,7 @@
 # The managed core: files a consumer must keep byte-identical to the payload.
-# This is the single source of truth for that list -- bin/friday-lock reads it
-# and verifies, against install.sh's own allowlist, that every payload file is
+# This is the single source of truth for that list, and for the payload as a
+# whole: install.sh installs exactly the entries in this file, managed and
+# consumer-owned alike, and bin/friday-lock verifies that every payload file is
 # classified here or below. A payload file that is neither fails loudly rather
 # than being silently unchecked.
 .agents/docs/agent-rules.md

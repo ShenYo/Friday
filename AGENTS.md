@@ -14,12 +14,12 @@ the same rules this repository ships, and the authority on them.
 
 Each step ends on the condition that says it is done.
 
-1. **Add or remove a file in all three places.** These are `install.sh`'s
-   `files=( … )` allowlist,
+1. **Add or remove a file in both places.** These are
    [`bin/managed-core.txt`](bin/managed-core.txt) (either a managed entry or
-   a `!`-prefixed consumer-owned one), and the `expected` inventory at the top
-   of `tests/install-smoke.sh`. The first two tools refuse a payload they
-   cannot account for. The smoke test fails in step 3 when its inventory and
+   a `!`-prefixed consumer-owned one), which `install.sh` and `friday-lock`
+   both read, and the `expected` inventory at the top of
+   `tests/install-smoke.sh`, kept by hand on purpose as the independent check.
+   Both tools refuse a payload they cannot account for. The smoke test fails in step 3 when its inventory and
    the payload disagree, and it names the path and the direction. Done when,
    with the change in place, neither of these appears:
 

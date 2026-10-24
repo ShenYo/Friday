@@ -358,6 +358,18 @@ force push，以及不經 pull request 進來的變更。這些 pull request 的
 git config core.hooksPath payload/.agents/githooks
 ```
 
+這是 producer 的路徑。安裝好的 consumer 在 `.agents/githooks` 有同樣的 hooks，
+由 `install.sh` 接上。
+
+**在這個配置之前 clone 的 repository，仍然指向 `.githooks`**，而那個目錄已經不
+存在。git 這時找不到任何 hook，也就一個都不執行，而且不會告訴你。pull 之後請檢查
+並修正：
+
+```sh
+git config --get core.hooksPath   # 預期：payload/.agents/githooks
+git config core.hooksPath payload/.agents/githooks
+```
+
 因此 consumer 拿到的 `pre-commit` secret scan、`commit-msg` 格式檢查，以及
 `pre-push` 的 ref 檢查，也會在 Friday 自己的 commit 與 push 上執行。payload
 裡改動的 hook，在出貨之前，就會先在這裡的下一個 commit 生效。`pre-push` 依

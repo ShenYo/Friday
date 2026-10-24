@@ -376,6 +376,18 @@ Locally, this repository runs the payload's hooks themselves, not copies:
 git config core.hooksPath payload/.agents/githooks
 ```
 
+That path is the producer's. An installed consumer has the same hooks at
+`.agents/githooks`, and `install.sh` wires that one.
+
+**A clone from before this layout still points at `.githooks`**, which no longer
+exists. git then finds no hook and runs none, without saying so. Check and fix
+it after pulling:
+
+```sh
+git config --get core.hooksPath   # expect: payload/.agents/githooks
+git config core.hooksPath payload/.agents/githooks
+```
+
 So the `pre-commit` secret scan, the `commit-msg` format check, and the
 `pre-push` ref checks that consumers get also run on Friday's own commits and
 pushes. A hook changed in the payload takes effect on the next commit here,

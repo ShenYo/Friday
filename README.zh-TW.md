@@ -478,10 +478,10 @@ bin/friday-lock write <target>     # 經審查的調和完成後刷新
 managed core 的變更必須到達每一個 consumer，而憑記憶做這件事，正是那五處
 過期數字的由來。
 
-執行前，先滿足 [`AGENTS.md`](./AGENTS.md#changing-the-payload) 第 4 步的前提：一個
-乾淨、且與 `origin/main` 一致的 `main`，並且一次只跑一個 propagation，從那些檢查
-開始直到正式執行結束，這個 checkout 與每個 consumer 都保持閒置。那些條件只寫在
-那裡一次，這裡不重複。
+請從一個與 `origin/main` 一致的 `main` 執行；怎麼確認，寫在
+[`AGENTS.md`](./AGENTS.md#changing-the-payload) 第 4 步。一次執行會 pin 住這裡
+checkout 的 commit，只帶那個 commit 的 tree，因此未 commit 的 payload 修改，或執行
+期間才出現的 Friday commit，都不會到達 consumer。
 
 ```sh
 bin/friday-propagate --dry-run ~/Github_Folks/pet_care ~/Desktop/Finance_App_Project
@@ -499,6 +499,11 @@ managed-core 檔案、刷新 lock、commit、push、開 PR。
 | `in sync` | 安靜地什麼都不做 |
 | `drifted` | **拒絕** —— 那裡有人改過 managed-core 檔，覆蓋過去會同時銷毀那個修改與它的理由 |
 | 工作樹不乾淨 | **拒絕**，不會用 stash 繞過 |
+| consumer 的檔案在那次檢查之後、寫入之前被改動 | **拒絕**，保留那個改動 |
+| pull consumer 的 `main` 之後出現 drift，或要帶的內容變了 | **拒絕**，回到 `main`，什麼都不寫 |
+| 寫入或 commit 之前，HEAD 離開了 sync branch | **拒絕**，並說明 HEAD 在哪裡 |
+| 只有 `retired` | **拒絕**，並列出退役的檔案；刪不刪是 owner 的決定 |
+| Friday 不在 `main` 上 | **拒絕**，在讀取任何 consumer 之前 |
 | 分支已存在 | **拒絕** |
 | push 之後 `gh` 失敗 | 回報為失敗並附上手動完成的指令，絕不算成已開啟 |
 

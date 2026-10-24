@@ -460,7 +460,7 @@ should not have to open the file to tell which:
 | file | the repository is | holds |
 | --- | --- | --- |
 | `.friday-lock.json` | a payload **consumer** | managed core, byte-exact |
-| `hooks.json` | a repository that **borrows hooks** — Jarvis, and this repository | three `.githooks` copies, no `.agents/` tree |
+| `hooks.json` | a repository that **borrows hooks** — Jarvis, and this repository | three `.githooks` copies, none of the payload's managed core |
 
 `hooks.json` carries no prefix on purpose. Two earlier names carried one:
 `mirror-` read as though the repositories were bound together, and

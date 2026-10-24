@@ -437,7 +437,7 @@ Jarvis settings。
 | 檔案 | 該 repository 是 | 記錄什麼 |
 | --- | --- | --- |
 | `.friday-lock.json` | payload **consumer** | managed core，逐位元組精確 |
-| `hooks.json` | **借用 hook** 的 repository —— Jarvis，以及這個 repository | 三個 `.githooks` 副本，沒有 `.agents/` 樹 |
+| `hooks.json` | **借用 hook** 的 repository —— Jarvis，以及這個 repository | 三個 `.githooks` 副本，不含 payload 的任何 managed core |
 
 `hooks.json` 刻意不帶任何前綴。先前兩個名字都帶了：`mirror-` 讀起來像兩個
 repository 被綁在一起，而 `.friday-hooks` 則說成那些 hook 是 Friday 的、而不是

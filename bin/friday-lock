@@ -35,16 +35,39 @@ die() { echo "friday-lock: $*" >&2; exit 2; }
 
 command -v jq >/dev/null || die "'jq' is required."
 [ -d "$PAYLOAD" ] || die "payload missing at $PAYLOAD -- is this the Friday repo?"
-[ -f "$LIST" ] || die "missing $LIST"
 
 # sha256 under either coreutils or BSD; the project has been bitten before by
 # assuming one layout, so neither is assumed here.
 if command -v sha256sum >/dev/null; then
-  sha256() { sha256sum "$1" | cut -d' ' -f1; }
+  sha256_in() { sha256sum | cut -d' ' -f1; }
 elif command -v shasum >/dev/null; then
-  sha256() { shasum -a 256 "$1" | cut -d' ' -f1; }
+  sha256_in() { shasum -a 256 | cut -d' ' -f1; }
 else
   die "need sha256sum or shasum"
+fi
+sha256() { sha256_in < "$1"; }
+
+# Where the payload is read from. By default, this checkout's working tree,
+# which is what install.sh has just copied and what a person checking by hand
+# expects. With FRIDAY_TREE=<commit>, everything -- the managed-core list, each
+# payload file, and the commit the lock records -- comes from that commit
+# instead, so a caller that pins one commit sees one payload however the
+# working tree changes meanwhile. friday-propagate does that (#29).
+TREE=${FRIDAY_TREE:-}
+if [ -n "$TREE" ]; then
+  git -C "$KIT_ROOT" cat-file -e "${TREE}^{commit}" 2>/dev/null \
+    || die "FRIDAY_TREE is not a commit in $KIT_ROOT: $TREE"
+  list_text=$(git -C "$KIT_ROOT" show "$TREE:bin/managed-core.txt" 2>/dev/null) \
+    || die "no bin/managed-core.txt at $TREE"
+  payload_files() { git -C "$KIT_ROOT" ls-tree -r --name-only "$TREE" -- payload/ | sed 's#^payload/##'; }
+  payload_has() { git -C "$KIT_ROOT" cat-file -e "$TREE:payload/$1" 2>/dev/null; }
+  payload_sha() { git -C "$KIT_ROOT" show "$TREE:payload/$1" | sha256_in; }
+else
+  [ -f "$LIST" ] || die "missing $LIST"
+  list_text=$(cat "$LIST")
+  payload_files() { find "$PAYLOAD" -type f -print | sed "s#^$PAYLOAD/##"; }
+  payload_has() { [ -f "$PAYLOAD/$1" ]; }
+  payload_sha() { sha256 "$PAYLOAD/$1"; }
 fi
 
 managed=()
@@ -57,26 +80,26 @@ while IFS= read -r line; do
     '!'*) owned+=("${line#!}") ;;
     *)    managed+=("$line") ;;
   esac
-done < "$LIST"
+done <<< "$list_text"
 [ ${#managed[@]} -gt 0 ] || die "no managed-core entries in $LIST"
 
 # Every payload file must be classified. An unclassified one would be shipped
 # to consumers and never compared -- exactly the gap that let three githooks
 # sit outside the byte-exact set while the docs still said eleven.
 unclassified=0
-while IFS= read -r src; do
-  rel=${src#"$PAYLOAD"/}
+while IFS= read -r rel; do
+  [ -n "$rel" ] || continue
   found=0
   for m in "${managed[@]}"; do [ "$m" = "$rel" ] && found=1 && break; done
   if [ "$found" -eq 0 ]; then
     for o in "${owned[@]}"; do [ "$o" = "$rel" ] && found=1 && break; done
   fi
   [ "$found" -eq 1 ] || { echo "friday-lock: payload file is classified neither managed nor consumer-owned: $rel" >&2; unclassified=1; }
-done < <(find "$PAYLOAD" -type f -print)
+done < <(payload_files)
 [ "$unclassified" -eq 0 ] || die "classify it in $LIST before this tool can be trusted."
 
 for m in "${managed[@]}"; do
-  [ -f "$PAYLOAD/$m" ] || die "managed-core entry has no payload file: $m"
+  payload_has "$m" || die "managed-core entry has no payload file: $m"
 done
 
 is_managed() {
@@ -92,7 +115,7 @@ is_managed() {
 # the lock is written from a feature branch, at a commit not yet on main.
 # This is the same reasoning that makes `behind` a content comparison.
 friday_commit() {
-  git -C "$KIT_ROOT" log -1 --format=%H -- payload/ 2>/dev/null || printf 'unknown\n'
+  git -C "$KIT_ROOT" log -1 --format=%H ${TREE:+"$TREE"} -- payload/ 2>/dev/null || printf 'unknown\n'
 }
 
 # --- write -------------------------------------------------------------------
@@ -164,8 +187,8 @@ check_lock() {
     have=$(sha256 "$target/$rel")
     [ "$have" = "$want" ] || drifted+=("$rel")
     # The payload moving is a separate axis from the target being edited.
-    if [ -f "$PAYLOAD/$rel" ]; then
-      pwant=$(sha256 "$PAYLOAD/$rel")
+    if payload_has "$rel"; then
+      pwant=$(payload_sha "$rel")
       [ "$pwant" = "$want" ] || behind+=("$rel")
     fi
   done < <(jq -r '.managed_core // {} | to_entries[] | "\(.key)\t\(.value)"' "$lock")
@@ -184,7 +207,7 @@ check_lock() {
   # revert work. `friday-propagate` relies on this distinction.
   local direction=behind lock_commit cur_commit
   lock_commit=$(jq -r '.friday.commit // "unknown"' "$lock")
-  cur_commit=$(git -C "$KIT_ROOT" log -1 --format=%H -- payload/ 2>/dev/null || echo unknown)
+  cur_commit=$(friday_commit)
   if [ "$lock_commit" != unknown ] && [ "$cur_commit" != unknown ] \
      && [ "$lock_commit" != "$cur_commit" ] \
      && git -C "$KIT_ROOT" cat-file -e "${lock_commit}^{commit}" 2>/dev/null; then

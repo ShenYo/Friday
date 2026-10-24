@@ -501,11 +501,11 @@ said eleven.
 A managed-core change has to reach every consumer, and doing that from memory
 is how the five stale counts happened.
 
-Before running it, meet the preconditions in step 4 of
-[`AGENTS.md`](./AGENTS.md#changing-the-payload): a clean `main` that matches
-`origin/main`, and one run at a time, with this checkout and every consumer
-left idle from those checks until the real run finishes. They are written
-there once, so they are not repeated here.
+Run it from a `main` that matches `origin/main`; step 4 of
+[`AGENTS.md`](./AGENTS.md#changing-the-payload) says how to confirm that. The
+run pins the commit checked out here and carries only that commit's tree, so
+an uncommitted payload edit, or a Friday commit made while it runs, cannot
+reach a consumer.
 
 ```sh
 bin/friday-propagate --dry-run ~/Github_Folks/pet_care ~/Desktop/Finance_App_Project
@@ -524,6 +524,9 @@ It refuses rather than guesses:
 | `in sync` | nothing, quietly |
 | `drifted` | **refused** — somebody edited a managed-core file there; copying over it would destroy the edit and the reason for it |
 | working tree not clean | **refused**, not stashed around |
+| a consumer file changes after that check, before it is written | **refused**, the change left in place |
+| `retired` only | **refused**, the retired files named; deleting them is the owner's call |
+| Friday not on `main` | **refused**, before any consumer is read |
 | the branch already exists | **refused** |
 | `gh` fails after the push | reported as a failure with the command to finish by hand, never counted as opened |
 

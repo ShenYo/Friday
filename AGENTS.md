@@ -42,37 +42,30 @@ Each step ends on the condition that says it is done.
    `PASS:` lines print. This is the checker run that counts, because it
    self-checks inside a fresh install.
 
-4. **After merge, propagate from a clean, current `main`.** Propagation
-   copies the payload *as checked out here* and labels it with the last commit
-   that touched `payload/`. That goes wrong in two directions:
+4. **After merge, propagate from a current `main`.** A run pins the commit
+   checked out here at its start and takes everything from that commit's tree:
+   which files are managed, their content and mode, what `friday-lock`
+   compares against, and the commit each consumer's lock records. An
+   uncommitted edit under `payload/`, or a Friday commit made while the run is
+   going, cannot reach a consumer, and the sync branch, the lock and the pull
+   request body always name one commit. It refuses to run from any branch but
+   `main`. It looks at each consumer file again just before writing it and
+   refuses rather than overwrite a concurrent edit. It leaves every consumer
+   back on `main`. `tests/friday-propagate.sh` proves each of these.
 
-   - A checkout behind `origin/main` lacks the change, so it cannot carry it.
-     Consumers read `in sync`, or `ahead`, which is refused, and nothing is
-     opened.
-   - A feature branch, or uncommitted edits under `payload/`, go out as if
-     merged, labelled with a commit that does not contain them.
-
-   Run **one propagation at a time**, and keep this checkout and every
-   consumer idle from the checks below until the real run finishes, not only
-   while each invocation runs. That includes a second invocation by the same
-   agent. A run reads mutable state many times: the payload commit at the
-   start, and again per consumer inside `friday-lock check` and
-   `friday-lock write`; each consumer's clean state; and the payload files when
-   it copies them. A change in either repository between those reads ships
-   under the wrong label, gets recorded against a different commit, or is
-   overwritten -- and two overlapping runs can switch each other's worktree so
-   a sync commit lands on the consumer's `main`. ShenYo/Friday#29 tracks
-   making a run read each thing once.
-
-   So first run `git switch main && git pull --ff-only`. Then confirm that
-   `git status --porcelain -- payload/` prints nothing and that
-   `git rev-parse HEAD` equals `git rev-parse origin/main`. After that,
+   What is still instruction-only is **freshness**. A checkout behind
+   `origin/main` lacks the change, so it cannot carry it: consumers read
+   `in sync`, or `ahead`, which is refused, and nothing is opened. So first
+   run `git switch main && git pull --ff-only`, and confirm that
+   `git rev-parse HEAD` equals `git rev-parse origin/main`. Then
    `git log -1 --format=%h -- payload/` names the commit the sync branch and
-   the lock will carry. For a merged pull request this is the PR's own commit,
-   not the merge commit, because git skips a merge whose `payload/` matches
-   its parent's. Then run `bin/friday-propagate --dry-run <consumer>…`, read
-   the file list, and run it again without `--dry-run`. Done when every
-   consumer that was `behind` has a pull request. A person merges each one.
+   the lock will carry. For a merged pull request, that is the PR's own
+   commit, not the merge commit, because git skips a merge whose `payload/`
+   matches its parent's. Run `bin/friday-propagate --dry-run <consumer>…`,
+   read the file list, and run it again without `--dry-run`. Set
+   `FRIDAY_PROPAGATE_TRAILERS` to any attribution lines the sync commits
+   should carry. Done when every consumer that was `behind` has a pull
+   request. A person merges each one.
 
 ## What the files will not tell you
 

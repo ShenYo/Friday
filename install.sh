@@ -23,22 +23,15 @@ TARGET=$(cd "${1:-.}" && pwd)
 
 [ -d "$PAYLOAD" ] || { echo "error: $PAYLOAD missing — is this the Friday repo?" >&2; exit 1; }
 
-# A linked worktree has a .git file, not a directory. core.hooksPath is shared
-# by every worktree of a repository, so wiring it from one would leave the
-# others running no hooks. Refuse before anything is written.
+# A linked worktree has a .git file, not a directory, and a git dir that is not
+# the repository's common dir (a submodule has the file too, but not that).
+# core.hooksPath is shared by every worktree of a repository, so wiring it from
+# one would leave the others running no hooks. Refuse before anything is written.
 linked_worktree=false
 if [ -f "$TARGET/.git" ]; then
-  linked_worktree=true
-elif [ -e "$TARGET/.git" ]; then
-  git_dir=$(git -C "$TARGET" rev-parse --absolute-git-dir 2>/dev/null) || git_dir=
-  common_dir=$(git -C "$TARGET" rev-parse --git-common-dir 2>/dev/null) || common_dir=
-  case "$common_dir" in
-    "") ;;
-    /*) ;;
-    *) common_dir="$TARGET/$common_dir" ;;
-  esac
-  if [ -n "$git_dir" ] && [ -n "$common_dir" ] \
-     && [ "$(cd "$git_dir" && pwd -P)" != "$(cd "$common_dir" && pwd -P)" ]; then
+  git_dir=$(cd "$TARGET" && cd "$(git rev-parse --git-dir)" && pwd -P) || git_dir=
+  common_dir=$(cd "$TARGET" && cd "$(git rev-parse --git-common-dir)" && pwd -P) || common_dir=
+  if [ -n "$git_dir" ] && [ -n "$common_dir" ] && [ "$git_dir" != "$common_dir" ]; then
     linked_worktree=true
   fi
 fi

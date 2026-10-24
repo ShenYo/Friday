@@ -525,9 +525,9 @@ is how the five stale counts happened.
 
 Before running it, meet the preconditions in step 4 of
 [`AGENTS.md`](./AGENTS.md#changing-the-payload): a clean `main` that matches
-`origin/main`, and one run at a time, with nothing else working in this
-checkout or in any consumer. They are written there once, so they are not
-repeated here.
+`origin/main`, and one run at a time, with this checkout and every consumer
+left idle from those checks until the real run finishes. They are written
+there once, so they are not repeated here.
 
 ```sh
 bin/friday-propagate --dry-run ~/Github_Folks/pet_care ~/Desktop/Finance_App_Project

@@ -859,10 +859,14 @@ run_githook commit-msg 1 "use the imperative" msg
 # prints nothing before its own reason, and that the length cap counts
 # characters under a C locale. Under one, ${#subject} counts bytes, and a
 # 37-character Chinese subject was refused as 99 characters.
-commit_msg_output() { (cd "$githook_lab" && env "$@" "$repo_root/.agents/githooks/commit-msg" msg 2>&1); }
+# A command substitution strips trailing newlines, so output that is only blank
+# lines would read as empty. Each capture ends in a sentinel "x", which keeps
+# them, and the hook's exit status is passed through; callers strip the "x".
+commit_msg_output() { (cd "$githook_lab" && env "$@" "$repo_root/.agents/githooks/commit-msg" msg 2>&1; rc=$?; printf x; exit "$rc"); }
 for accepted in 'feat: Add the parity check' 'docs: GitHub ruleset is active' 'docs: 補上中文摘要'; do
   printf '%s\n' "$accepted" > "$githook_lab/msg"
   quiet_output=$(commit_msg_output) || fail "commit-msg refused an accepted summary: $accepted"
+  quiet_output=${quiet_output%x}
   [ -z "$quiet_output" ] || fail "commit-msg printed output for an accepted summary ($accepted): $quiet_output"
 done
 printf 'feat: Added validation\n' > "$githook_lab/msg"

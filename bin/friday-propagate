@@ -114,8 +114,9 @@ for target in "$@"; do
   # A repository that records no managed core is not a payload consumer -- it
   # only mirrors some hooks, the way Jarvis does. Treating "file absent" as
   # "behind" there would install the whole managed core into a repository that
-  # deliberately has no .agents/ tree, which is what an earlier revision did
-  # to a fixture.
+  # deliberately carries none of it, which is what an earlier revision did to
+  # a fixture. A .agents/ directory is not the signal: Jarvis has one of its
+  # own, for personal Skills, and is still not a consumer.
   target_lock=$(lock_of "$target")
   is_consumer=no
   if [ -n "$target_lock" ] \

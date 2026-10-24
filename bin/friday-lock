@@ -35,8 +35,10 @@ LIST="$KIT_ROOT/bin/managed-core.txt"
 #                      adopted this payload, and it is Friday that reads it
 #                      back and proposes the update.
 #   hooks.json         a repository that only BORROWS some hooks -- Jarvis, and
-#                      Friday itself. Neither has an .agents/ tree and neither
-#                      is a target install.sh can run against.
+#                      Friday itself. Neither carries the payload's managed
+#                      core, and neither is a target install.sh can run
+#                      against. (Jarvis has a .agents/ of its own, for personal
+#                      Skills; that is not the payload's tree.)
 #
 #                      No prefix, deliberately. Two earlier names carried one:
 #                      "mirror" read as though the repositories were bound

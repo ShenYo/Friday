@@ -253,6 +253,27 @@ reject "$run/codex-config-conflict"
 [ ! -e "$run/codex-config-conflict/.codex/hooks/guard-collaborative-git.sh" ]
 [ "$(cat "$run/codex-config-conflict/.codex/config.toml")" = '[[hooks.PreToolUse]]' ]
 
+# A hook manager already in place is a conflict like any other: --check must
+# report it, and a real install must refuse before it writes a single file.
+# The installer used to find these only after copying the payload, while
+# still printing "nothing was changed".
+target hooks-path-conflict
+git -C "$run/hooks-path-conflict" config core.hooksPath .husky/_
+reject --check "$run/hooks-path-conflict"
+grep -q '^CONFLICT core.hooksPath ' "$run/rejection.log"
+reject "$run/hooks-path-conflict"
+[ ! -e "$run/hooks-path-conflict/AGENTS.md" ] && [ ! -e "$run/hooks-path-conflict/.agents" ]
+[ ! -e "$run/hooks-path-conflict/.friday-lock.json" ]
+[ "$(git -C "$run/hooks-path-conflict" config core.hooksPath)" = .husky/_ ]
+
+target git-hooks-conflict
+printf '%s\n' '#!/bin/sh' 'exit 0' > "$run/git-hooks-conflict/.git/hooks/pre-commit"
+reject --check "$run/git-hooks-conflict"
+grep -q '^CONFLICT .git/hooks ' "$run/rejection.log"
+reject "$run/git-hooks-conflict"
+[ ! -e "$run/git-hooks-conflict/AGENTS.md" ] && [ ! -e "$run/git-hooks-conflict/.agents" ]
+[ -z "$(git -C "$run/git-hooks-conflict" config core.hooksPath || true)" ]
+
 target gitignore-conflict
 printf 'local ignore rule\n' > "$run/gitignore-conflict/.gitignore"
 reject --check "$run/gitignore-conflict"

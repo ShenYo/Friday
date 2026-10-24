@@ -163,8 +163,9 @@ Requires `jq` and a blank or compatible target with a `.git/` directory
 (linked worktrees are not supported). The target is the repository root, not
 an `.agents/` subdirectory. `--check` reports `NEW`, `IDENTICAL`, or
 `CONFLICT`, exits nonzero on conflicts, and does not copy, chmod, create links,
-or run the self-check. Both modes validate prerequisites and every destination
-before any target write. Unexpected destination symlinks, including ancestor
+or run the self-check. Both modes validate prerequisites, every destination,
+and the target's existing hook setup (a `core.hooksPath` already set elsewhere,
+or hooks in `.git/hooks` that wiring would bypass) before any target write. Unexpected destination symlinks, including ancestor
 symlinks, conflict; only the two exact expected Claude and Codex hook links
 are accepted.
 

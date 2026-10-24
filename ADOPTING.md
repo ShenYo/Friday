@@ -61,6 +61,8 @@ Look only at the path on each CONFLICT line.
 | `.gitignore` | yours | **expected** — append Friday's entries |
 | `.claude/settings.json` | your runtime wiring | **expected** — add Friday's handler to your `hooks` array, do not replace the file |
 | `.codex/hooks.json` | your Codex wiring | **expected** — same |
+| `core.hooksPath` | another hook manager, such as husky, is already wired | **decide first** — wiring Friday's hooks replaces it, so fold its checks into a reviewed change, then unset it |
+| `.git/hooks` | hooks that `core.hooksPath` would stop running | **decide first** — move what they do into the reviewed hooks, or drop them deliberately |
 | **anything else** | **the managed core** | **a real conflict** — see below |
 
 Those five are the only files Friday seeds and then leaves to you. Everything

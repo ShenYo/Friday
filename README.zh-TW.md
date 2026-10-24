@@ -152,7 +152,9 @@ dirty（有未提交變更）的 Friday checkout 當作範例來源：下面的�
 worktree）。目標是 repository 的根目錄，而不是某個 `.agents/` 子目錄。
 `--check` 會回報 `NEW`、`IDENTICAL` 或 `CONFLICT`，遇到衝突時以非零碼結束，
 且不會複製檔案、改變檔案權限、建立連結，也不會執行 self-check。兩種模式都會
-在對目標進行任何寫入之前，先驗證所有先備條件與每一個目的地。任何非預期的
+在對目標進行任何寫入之前，先驗證所有先備條件、每一個目的地，以及目標現有的
+hook 設定（已指向別處的 `core.hooksPath`，或接線後會被略過的 `.git/hooks`
+裡的 hook）。任何非預期的
 目的地 symlink（包含祖先路徑上的 symlink）都視為衝突；只有那兩個精確指定的
 Claude 與 Codex hook 連結會被接受。
 

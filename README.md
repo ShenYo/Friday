@@ -475,13 +475,14 @@ bin/friday-lock check <target>     # or run it from inside the consumer
 bin/friday-lock write <target>     # refresh after a reviewed reconciliation
 ```
 
-Three states, and the distinction is the point:
+The states, and the distinction is the point:
 
 | state | means | what to do |
 | --- | --- | --- |
 | `in sync` | every recorded file matches and the payload has not moved | nothing |
 | `drifted` | a file in the consumer no longer matches what the lock recorded | somebody edited a managed-core file locally; reconcile it |
-| `behind` | Friday's payload moved since the lock was written | take the change in a reviewed commit, then `friday-lock write` |
+| `behind` | Friday's payload moved since the lock was written, or a file joined the managed core (listed as `new in the payload`) | take the change in a reviewed commit, then `friday-lock write` |
+| `retired` | the lock records a file Friday no longer manages | delete it or keep it as the consumer's own, deliberately, then `friday-lock write`; `friday-propagate` names it and touches nothing |
 | `ahead` | the consumer holds a payload Friday has not merged yet | do **not** copy the payload over it |
 | `diverged` | two payload lines exist, neither containing the other | check out the Friday branch you mean to carry |
 

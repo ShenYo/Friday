@@ -85,6 +85,12 @@ for target in "$@"; do
       note "DIVERGED — this consumer and Friday hold different payload lines."
       note "Check out the Friday branch you mean to carry. Nothing was touched."
       refused=$((refused + 1)); continue ;;
+    retired)
+      note "RETIRED — the lock records files Friday no longer manages:"
+      printf '%s' "$status" | sed -n '/^RETIRED/,/^$/p' | sed '1d;/^$/d;s/^/  /'
+      note "Deleting each one or keeping it as this repository's own is the owner's call."
+      note "Nothing was touched."
+      refused=$((refused + 1)); continue ;;
     behind) ;;
     *)
       note "could not read a status from friday-lock:"; printf '%s\n' "$status" | sed 's/^/    /'
@@ -155,6 +161,20 @@ for target in "$@"; do
   git -C "$target" add -- "$CONSUMER_LOCK"
 
   list=$(printf '  %s\n' "${moved[@]}")
+  # Files Friday stopped managing are left exactly where they are: deleting
+  # them is the owner's call, so the pull request names them instead.
+  retired_list=$(printf '%s' "$status" | sed -n '/^RETIRED/,/^$/p' | sed '1d;/^$/d;s/^ *//')
+  retired_note=""
+  if [ -n "$retired_list" ]; then
+    retired_note="
+No longer managed by Friday, and left in place. Delete each one or keep
+it as this repository's own, deliberately:
+
+\`\`\`
+$retired_list
+\`\`\`
+"
+  fi
   git -C "$target" commit -q -F - <<MSG
 chore(agents): sync the managed core to Friday $short
 
@@ -192,6 +212,7 @@ ${moved[*]}
 \`friday-lock\` reported this repository as \`behind\` and named each path
 before anything was copied. This repository's own seeds and overlays are
 untouched — only managed core is ever carried.
+$retired_note
 
 Verify before merging:
 

@@ -48,7 +48,7 @@ inventory_check() {
     echo "  listed but not present -- a removed payload file? remove it from 'expected':" >&2
     printf '    %s\n' $missing >&2
   fi
-  echo "  install.sh and bin/managed-core.txt must change the same way." >&2
+  echo "  bin/managed-core.txt and this list must change the same way." >&2
   exit 1
 }
 target() { git init -q "$run/$1"; }

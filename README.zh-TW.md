@@ -264,8 +264,9 @@ payload 變更被 commit 之後，才記錄對應的 Friday 採用 SHA。
 managed core 的 checker 會執行它，並把失敗結果往外傳遞。Friday 本身不會
 附帶這個擴充功能。
 
-這是在 [`install.sh`](./install.sh) 裡，一份明確的靜態 allowlist，而不是
-自動的 payload 探索機制。新的 payload 檔案在被審查並加進這份清單之前，
+這是一份明確的靜態 allowlist，也就是
+[`install.sh`](./install.sh) 讀取的 [`bin/managed-core.txt`](./bin/managed-core.txt)，
+而不是自動的 payload 探索機制。新的 payload 檔案在被審查並加進這份清單之前，
 都會在清查（inventory）驗證階段失敗。這個 MVP 裡沒有 manifest，也沒有
 update engine。
 

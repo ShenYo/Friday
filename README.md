@@ -280,9 +280,11 @@ regular-file `.agents/hooks/check-project-agent-integration.sh`; when present,
 the managed core checker runs it and propagates failures. Friday does not ship
 that extension.
 
-This is an explicit static allowlist in [`install.sh`](./install.sh), not
-automatic payload discovery. A new payload file fails inventory validation until it is reviewed
-and added to that list. There is no manifest or update engine in this MVP.
+This is an explicit static allowlist,
+[`bin/managed-core.txt`](./bin/managed-core.txt), which
+[`install.sh`](./install.sh) reads; it is not automatic payload discovery. A new
+payload file fails inventory validation until it is reviewed and added to that
+list. There is no manifest or update engine in this MVP.
 
 ## Updating an existing consumer
 

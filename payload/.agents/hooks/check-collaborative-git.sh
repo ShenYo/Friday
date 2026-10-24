@@ -841,5 +841,52 @@ printf 'fix(agents): sync shared guard fixes\n' > "$githook_lab/msg"
 run_githook commit-msg 0 "" msg
 printf 'Merge pull request #1 from x/y\n' > "$githook_lab/msg"
 run_githook commit-msg 0 "" msg
+# Case is style, not traceability: none of these may be refused. The old rule
+# (`^[a-z]`) refused all three -- a capitalised word, a proper noun, and any
+# summary not in English. A capital alongside a real violation is refused for
+# that violation alone; an earlier revision printed "the commit goes ahead"
+# just before the imperative rule refused it.
+printf 'feat: Add the parity check\n' > "$githook_lab/msg"
+run_githook commit-msg 0 "" msg
+printf 'docs: GitHub ruleset is active\n' > "$githook_lab/msg"
+run_githook commit-msg 0 "" msg
+printf 'docs: 補上中文摘要\n' > "$githook_lab/msg"
+run_githook commit-msg 0 "" msg
+printf 'feat: Added validation\n' > "$githook_lab/msg"
+run_githook commit-msg 1 "use the imperative" msg
+# run_githook checks the exit code and, when given, a substring of the output.
+# These check that an accepted summary prints nothing at all, that a refusal
+# prints nothing before its own reason, and that the length cap counts
+# characters under a C locale. Under one, ${#subject} counts bytes, and a
+# 37-character Chinese subject was refused as 99 characters.
+# A command substitution strips trailing newlines, so output that is only blank
+# lines would read as empty. Each capture ends in a sentinel "x", which keeps
+# them, and the hook's exit status is passed through; callers strip the "x".
+commit_msg_output() { (cd "$githook_lab" && env "$@" "$repo_root/.agents/githooks/commit-msg" msg 2>&1; rc=$?; printf x; exit "$rc"); }
+for accepted in 'feat: Add the parity check' 'docs: GitHub ruleset is active' 'docs: 補上中文摘要'; do
+  printf '%s\n' "$accepted" > "$githook_lab/msg"
+  quiet_output=$(commit_msg_output) || fail "commit-msg refused an accepted summary: $accepted"
+  quiet_output=${quiet_output%x}
+  [ -z "$quiet_output" ] || fail "commit-msg printed output for an accepted summary ($accepted): $quiet_output"
+done
+printf 'feat: Added validation\n' > "$githook_lab/msg"
+if quiet_output=$(commit_msg_output); then fail "commit-msg accepted a non-imperative summary"; fi
+case "$quiet_output" in
+  "COMMIT REFUSED: use the imperative"*) ;;
+  *) fail "commit-msg printed something before its refusal: $quiet_output" ;;
+esac
+printf 'docs: 補上雙語文件的中文摘要並修正語系規則的說明以及相關的連結與範例\n' > "$githook_lab/msg"
+quiet_output=$(commit_msg_output LC_ALL=C LANG=C) \
+  || fail "commit-msg counted bytes, not characters, under a C locale: $quiet_output"
+# The other side of the cap, or a hook with no length check at all would pass
+# the line above: 73 characters must still be refused, by the length rule.
+printf 'docs: 補上雙語文件的中文摘要並修正語系規則的說明以及相關的連結與範例再加上更多的文字讓它真的超過七十二個字元的上限才對所以繼續寫下去直到夠長\n' > "$githook_lab/msg"
+if quiet_output=$(commit_msg_output LC_ALL=C LANG=C); then
+  fail "commit-msg accepted a 73-character subject under a C locale"
+fi
+case "$quiet_output" in
+  *"the subject is 73 characters"*) ;;
+  *) fail "commit-msg refused a 73-character subject, but not for its length: $quiet_output" ;;
+esac
 
 echo "Agent workflow guardrails passed."

@@ -2,7 +2,7 @@
 
 **English** · [繁體中文](./README.zh-TW.md)
 
-> **中文摘要**：Friday 是可版控的 shared project baseline；Jarvis 是個人層。
+> **中文摘要**：Friday 是可版控的 shared project baseline；個人層不在這裡。
 > 先以 `--check` 預覽，再安裝封閉的 allowlist。衝突絕不覆寫，現有專案需經
 > 人工審查後調和。
 
@@ -14,9 +14,9 @@ developer's personal home directory, personal skills, or vendor workflow.
 It addresses three constraints at once: a closed allowlist makes bootstrap
 conflict-safe, copied content keeps the baseline portable and reviewable, and
 existing-consumer changes stay behind a reviewed reconciliation boundary rather
-than becoming an automatic update. Jarvis is a personal layer only; do not
-place Jarvis skills, settings, or other personal-home dependencies in Friday's
-project contract.
+than becoming an automatic update. A developer's personal layer stays out of
+it: do not place personal skills, settings, or other personal-home
+dependencies in Friday's project contract.
 
 ## When to use Friday
 
@@ -24,7 +24,7 @@ project contract.
 | --- | --- | --- |
 | Blank Git repository | Bootstrap the reviewed baseline | Preview, install, then preview again. |
 | Existing consumer | Reveal differences safely | Pin Friday, run `--check`, and reconcile every conflict in a reviewed consumer change. |
-| Personal skills or preferences | Keep personal scope personal | Use Jarvis; do not promote it into Friday. |
+| Personal skills or preferences | Keep personal scope personal | Keep them in your personal layer; do not promote them into Friday. |
 | Project-specific policy or checks | Preserve consumer ownership | Add a consumer overlay after reviewing the shared baseline. |
 
 ## Architecture
@@ -100,8 +100,8 @@ This section is normative for Friday's MVP lifecycle.
   adoption. A real new-machine replay, validation with a third genuine
   consumer, and cross-runtime closure remain **PENDING** follow-up work.
 
-Vendor Skills, including Matt Pocock Skills, remain Jarvis-owned and
-vendor-pristine. Friday manages only the portable project-local output contract
+Vendor Skills, including Matt Pocock Skills, stay in the personal layer that
+installs them, vendor-pristine. Friday manages only the portable project-local output contract
 in [`scratch-files.md`](./payload/.agents/docs/scratch-files.md); it neither
 installs nor copies vendor Skills and does not claim runtime invocation or
 precedence enforcement.
@@ -432,7 +432,7 @@ domain paths, routing, runtime settings, and project overlays need separate
 review. In particular, dispatch is not currently shipped; promoting a core
 rule that depends on it needs a dependency decision first. Test the reviewed
 kit in a disposable project before adoption; this is not permission to refresh
-an existing consumer or change personal Jarvis settings.
+an existing consumer or change personal settings.
 
 **The payload owns no project references.** Worked examples use `#123` rather
 than real issue numbers, and no file names another repository's documents. This

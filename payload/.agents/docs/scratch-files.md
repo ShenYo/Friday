@@ -55,7 +55,7 @@ project-required dependency.
    that destination does not already exist before writing, and never overwrite
    a prior tracker run.
 4. Do not use a CWD-relative `.scratch/` path and do not write tracker output
-   into `~/.Jarvis`, `~/.agents`, or a vendor Skill directory.
+   into a personal Skill home such as `~/.agents`, or a vendor Skill directory.
 
 If the personal or vendor Skill is unavailable, report the optional capability
 as unavailable and stop that optional workflow. Do not install, copy, emulate,

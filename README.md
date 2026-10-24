@@ -482,7 +482,7 @@ The states, and the distinction is the point:
 | `in sync` | every recorded file matches and the payload has not moved | nothing |
 | `drifted` | a file in the consumer no longer matches what the lock recorded | somebody edited a managed-core file locally; reconcile it |
 | `behind` | Friday's payload moved since the lock was written, or a file joined the managed core (listed as `new in the payload`) | take the change in a reviewed commit, then `friday-lock write` |
-| `retired` | the lock records a file Friday no longer manages | delete it or keep it as the consumer's own, deliberately, then `friday-lock write`; `friday-propagate` names it and touches nothing |
+| `retired` | the lock records a file Friday no longer manages | delete it or keep it as the consumer's own, deliberately, then `friday-lock write`. On a consumer with nothing else to carry, `friday-propagate` names it and touches nothing. When it does carry a change, its pull request names the file, and merging that pull request records it as the consumer's own unless it is deleted on that branch first |
 | `ahead` | the consumer holds a payload Friday has not merged yet | do **not** copy the payload over it |
 | `diverged` | two payload lines exist, neither containing the other | check out the Friday branch you mean to carry |
 

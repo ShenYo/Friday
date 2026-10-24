@@ -118,10 +118,34 @@ for target in "$@"; do
     [ -f "$target/$rel" ] || { moved+=("$rel"); continue; }
     cmp -s "$PAYLOAD/$rel" "$target/$rel" || moved+=("$rel")
   done
-  [ ${#moved[@]} -gt 0 ] || { note "behind, but no managed-core file differs — nothing to do"; skipped=$((skipped + 1)); continue; }
 
-  note "behind on ${#moved[@]} file(s):"
-  printf '    %s\n' "${moved[@]}"
+  # A file that joined the managed core may already exist here as this
+  # repository's own -- a seed that became managed, say. Copying over it
+  # would replace work nobody reviewed losing, so that is the owner's call.
+  # One that already matches needs no copy, only a lock entry.
+  added=()
+  while IFS= read -r rel; do [ -n "$rel" ] && added+=("$rel"); done < <(
+    printf '%s\n' "$status" | sed -n 's/^  \(.*\) (new in the payload)$/\1/p')
+  own=""
+  for rel in ${added+"${added[@]}"}; do
+    if [ -f "$target/$rel" ] && ! cmp -s "$PAYLOAD/$rel" "$target/$rel"; then own="$own $rel"; fi
+  done
+  if [ -n "$own" ]; then
+    note "REFUSED — joined the managed core, and this repository has its own version:$own"
+    note "Reconcile each by hand, then run 'friday-lock write'. Nothing was touched."
+    refused=$((refused + 1)); continue
+  fi
+  if [ ${#moved[@]} -eq 0 ] && [ ${#added[@]} -eq 0 ]; then
+    note "behind, but no managed-core file differs — nothing to do"; skipped=$((skipped + 1)); continue
+  fi
+
+  if [ ${#moved[@]} -gt 0 ]; then
+    note "behind on ${#moved[@]} file(s):"
+    printf '    %s\n' "${moved[@]}"
+  else
+    note "behind only in the lock: these joined the managed core and already match:"
+    printf '    %s\n' "${added[@]}"
+  fi
 
   if [ -n "$(git -C "$target" status --porcelain 2>/dev/null)" ]; then
     note "REFUSED — the working tree is not clean. Commit or stash first."
@@ -151,7 +175,7 @@ for target in "$@"; do
     refused=$((refused + 1)); continue
   }
 
-  for rel in "${moved[@]}"; do
+  for rel in ${moved+"${moved[@]}"}; do
     mkdir -p "$target/$(dirname "$rel")"
     cp "$PAYLOAD/$rel" "$target/$rel"
     case "$rel" in .agents/hooks/*.sh|.agents/githooks/*) chmod +x "$target/$rel" ;; esac
@@ -160,7 +184,9 @@ for target in "$@"; do
   "$LOCK" write "$target" >/dev/null
   git -C "$target" add -- "$CONSUMER_LOCK"
 
-  list=$(printf '  %s\n' "${moved[@]}")
+  list=$(printf '  %s\n' ${moved+"${moved[@]}"})
+  [ ${#moved[@]} -gt 0 ] || list="  (none: the lock alone moves; these joined the managed core and already
+  match: ${added[*]})"
   # Files Friday stopped managing are left exactly where they are: deleting
   # them is the owner's call, so the pull request names them instead.
   retired_list=$(printf '%s' "$status" | sed -n '/^RETIRED/,/^$/p' | sed '1d;/^$/d;s/^ *//')
@@ -206,7 +232,7 @@ MSG
 Managed-core files whose content moved:
 
 \`\`\`
-${moved[*]}
+${moved[*]:-(none — the lock alone moves; ${added[*]} joined the managed core and already match)}
 \`\`\`
 
 \`friday-lock\` reported this repository as \`behind\` and named each path

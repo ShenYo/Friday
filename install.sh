@@ -45,7 +45,7 @@ command -v jq >/dev/null || { echo "error: 'jq' is required." >&2; exit 1; }
 LIST="$KIT_ROOT/bin/managed-core.txt"
 [ -f "$LIST" ] || { echo "error: $LIST missing — is this the Friday repo?" >&2; exit 1; }
 files=()
-while IFS= read -r line; do
+while IFS= read -r line || [ -n "$line" ]; do
   line=${line%%#*}
   line=$(printf '%s' "$line" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
   [ -n "$line" ] || continue

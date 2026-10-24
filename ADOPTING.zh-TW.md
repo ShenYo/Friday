@@ -26,6 +26,35 @@ bash "$FRIDAY/bin/friday-lock" check "$TARGET"   # 預期：status: in sync
 git -C "$TARGET" status --short
 ```
 
+### 由 agent 執行安裝時
+
+這一節適用於空 repository。既有專案會有預期中的衝突，改走下一節的手動流程。
+預覽和安裝是兩個分開的決定，agent 只能自行做第一個。
+
+1. **檢查輸入。** `TARGET` 是帶有 `.git` 目錄的 repository 根目錄。`FRIDAY`
+   是另一個目錄，裡面有 `install.sh` 與 `payload/`，而且是使用者指定為 `PIN`
+   的那個經審查 commit 的乾淨 checkout：`git -C "$FRIDAY" rev-parse HEAD` 與它
+   完全相同。有未提交修改的 checkout，或停在其他 commit 的 checkout，都不是
+   那個 pin。停下來讓使用者選擇。在這項成立之前，不執行 `FRIDAY` 裡的任何
+   東西，因為預覽會執行它的 `install.sh`。兩個路徑和 SHA 都寫下來且相符，才算
+   完成。
+2. **預覽。** 只以完整路徑執行 `bash "$FRIDAY/install.sh" --check "$TARGET"`，
+   回報 SHA 和完整的 `NEW`／`IDENTICAL` 結果。只要出現任何 `CONFLICT` 或非零的
+   結束碼，流程就在這裡停止。不要為了讓預覽通過而修改任何一個 repository。
+3. **請求安裝。** 預覽不代表授權寫入，一開始交辦這件事的那則訊息也不算。只有在
+   使用者以新的訊息點名這個 `TARGET` 和這個 SHA 之後，才能安裝。
+4. **安裝並驗證。** 先再次確認 `FRIDAY` 是乾淨的，且停在被授權的 SHA；如果它
+   動過，就停止。接著執行 `bash "$FRIDAY/install.sh" "$TARGET"`、第二次預覽、
+   lock check、`(cd "$TARGET" && bash .agents/hooks/check-collaborative-git.sh)`
+   與 `git -C "$TARGET" status --short`，每一項都照實回報。每一項都成功才算
+   完成：安裝以 0 結束、第二次預覽每一行都是 `IDENTICAL`、lock check 回報
+   `in sync`，且 self-check 通過。任何一步失敗，或安裝中途停止，就回報並停下。
+   要怎麼復原目標，由使用者依它的 Git 歷史決定。
+
+唯一會寫入的是 `install.sh`。agent 不會為了完成安裝而修改 Friday、它的
+payload 或 lock。pin 住的 SHA 記錄在目標專案自己的 adoption commit 裡，依照該
+專案的慣例。
+
 ## 既有專案：怎麼讀 CONFLICT
 
 `--check` 不寫入任何東西，而且只要有任何衝突就拒絕整個安裝。這個拒絕是刻意的設計

@@ -27,6 +27,43 @@ bash "$FRIDAY/bin/friday-lock" check "$TARGET"   # expect: status: in sync
 git -C "$TARGET" status --short
 ```
 
+### When an agent runs the install
+
+This is for a blank repository. An existing project has expected conflicts and
+follows the manual path in the next section instead. The preview and the
+install are two separate decisions, and an agent takes only the first on its
+own.
+
+1. **Check the inputs.** `TARGET` is a repository root with a `.git`
+   directory. `FRIDAY` is a different directory, holds `install.sh` and
+   `payload/`, and is a clean checkout of the reviewed commit the person named
+   as `PIN`: `git -C "$FRIDAY" rev-parse HEAD` equals it in full. A dirty
+   checkout, or one at any other commit, is not that pin. Stop and let the
+   person choose. Nothing in `FRIDAY` runs before this holds, because the
+   preview executes its `install.sh`. Done when both paths and the SHA are
+   written down and match.
+2. **Preview.** Run only `bash "$FRIDAY/install.sh" --check "$TARGET"`, by its
+   full path, and report the SHA and the complete `NEW`/`IDENTICAL` result.
+   Any `CONFLICT` or nonzero exit ends the workflow here. Do not edit either
+   repository to make the preview pass.
+3. **Ask for the install.** The preview does not authorize the write, and
+   neither does the request that started the work. Install only after a new
+   message from the person that names this `TARGET` and this SHA.
+4. **Install and verify.** First confirm again that `FRIDAY` is clean and at
+   the authorized SHA; if it moved, stop. Then run
+   `bash "$FRIDAY/install.sh" "$TARGET"`, the second preview, the lock check,
+   `(cd "$TARGET" && bash .agents/hooks/check-collaborative-git.sh)` and
+   `git -C "$TARGET" status --short`. Report each result as observed. Done
+   when every one of them succeeded: the install exited 0, the second preview
+   reads `IDENTICAL` on every line, the lock check reports `in sync`, and the
+   self-check passed. If any step fails or the install stops partway, report
+   it and stop. Recovering the target is the person's decision, made from its
+   Git history.
+
+`install.sh` is the only thing that writes. The agent does not edit Friday,
+its payload or the lock to get there. The pinned SHA is recorded in the
+target's own adoption commit, in that project's convention.
+
 ## An existing project: reading CONFLICT
 
 `--check` writes nothing and refuses the whole install if anything conflicts.

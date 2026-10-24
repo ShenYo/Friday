@@ -854,5 +854,25 @@ printf 'docs: 補上中文摘要\n' > "$githook_lab/msg"
 run_githook commit-msg 0 "" msg
 printf 'feat: Added validation\n' > "$githook_lab/msg"
 run_githook commit-msg 1 "use the imperative" msg
+# run_githook checks the exit code and, when given, a substring of the output.
+# These check that an accepted summary prints nothing at all, that a refusal
+# prints nothing before its own reason, and that the length cap counts
+# characters under a C locale. Under one, ${#subject} counts bytes, and a
+# 37-character Chinese subject was refused as 99 characters.
+commit_msg_output() { (cd "$githook_lab" && env "$@" "$repo_root/.agents/githooks/commit-msg" msg 2>&1); }
+for accepted in 'feat: Add the parity check' 'docs: GitHub ruleset is active' 'docs: 補上中文摘要'; do
+  printf '%s\n' "$accepted" > "$githook_lab/msg"
+  quiet_output=$(commit_msg_output) || fail "commit-msg refused an accepted summary: $accepted"
+  [ -z "$quiet_output" ] || fail "commit-msg printed output for an accepted summary ($accepted): $quiet_output"
+done
+printf 'feat: Added validation\n' > "$githook_lab/msg"
+if quiet_output=$(commit_msg_output); then fail "commit-msg accepted a non-imperative summary"; fi
+case "$quiet_output" in
+  "COMMIT REFUSED: use the imperative"*) ;;
+  *) fail "commit-msg printed something before its refusal: $quiet_output" ;;
+esac
+printf 'docs: 補上雙語文件的中文摘要並修正語系規則的說明以及相關的連結與範例\n' > "$githook_lab/msg"
+quiet_output=$(commit_msg_output LC_ALL=C LANG=C) \
+  || fail "commit-msg counted bytes, not characters, under a C locale: $quiet_output"
 
 echo "Agent workflow guardrails passed."

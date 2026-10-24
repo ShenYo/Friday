@@ -69,7 +69,11 @@ printf '%s' "$subject" \
   || refuse "the subject is not Conventional Commits. Use 'type(scope): summary' with a type from feat, fix, docs, refactor, test, chore, build, ci, perf, style. Got: $subject"
 
 # 2. Subject length. 50 is the target, 72 the hard cap.
-subject_len=${#subject}
+# Characters, not bytes, and whatever the locale. Under a C/POSIX locale -- a
+# GUI client, cron, some CI and IDEs -- ${#subject} counts bytes, so a 37-
+# character Chinese subject (99 bytes) was refused as "99 characters". Count
+# every byte that does not continue a UTF-8 sequence: one per character.
+subject_len=$(printf '%s' "$subject" | LC_ALL=C tr -d '\200-\277' | wc -c | tr -d ' ')
 [ "$subject_len" -le 72 ] \
   || refuse "the subject is $subject_len characters; the hard cap is 72 (target 50)"
 

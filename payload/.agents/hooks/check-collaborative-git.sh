@@ -874,5 +874,15 @@ esac
 printf 'docs: 補上雙語文件的中文摘要並修正語系規則的說明以及相關的連結與範例\n' > "$githook_lab/msg"
 quiet_output=$(commit_msg_output LC_ALL=C LANG=C) \
   || fail "commit-msg counted bytes, not characters, under a C locale: $quiet_output"
+# The other side of the cap, or a hook with no length check at all would pass
+# the line above: 73 characters must still be refused, by the length rule.
+printf 'docs: 補上雙語文件的中文摘要並修正語系規則的說明以及相關的連結與範例再加上更多的文字讓它真的超過七十二個字元的上限才對所以繼續寫下去直到夠長\n' > "$githook_lab/msg"
+if quiet_output=$(commit_msg_output LC_ALL=C LANG=C); then
+  fail "commit-msg accepted a 73-character subject under a C locale"
+fi
+case "$quiet_output" in
+  *"the subject is 73 characters"*) ;;
+  *) fail "commit-msg refused a 73-character subject, but not for its length: $quiet_output" ;;
+esac
 
 echo "Agent workflow guardrails passed."

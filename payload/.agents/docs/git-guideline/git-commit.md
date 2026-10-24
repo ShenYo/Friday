@@ -26,7 +26,11 @@ Use `type(scope): summary` (Conventional Commits). Allowed types for this repo:
 ## 2. Summary line rules
 
 - Imperative mood: it must complete "If applied, this commit will ___" (Beams).
-  Write `Add validation`, not `Added validation` or `Adds validation`.
+  Write `Add validation`, not `Added validation` or `Adds validation`. This
+  holds in any language. `commit-msg` checks it only for a short list of
+  English past-tense and third-person forms (`added`, `fixes`, `updated`, …),
+  so for everything else, other English forms and every other language
+  included, the imperative is the writer's job.
 - Target ≤50 characters; hard cap 72 (Beams).
 - No trailing period (Beams).
 - Prefer lowercase after `type(scope): `. The Conventional Commits spec's

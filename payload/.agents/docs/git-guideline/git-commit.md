@@ -29,9 +29,13 @@ Use `type(scope): summary` (Conventional Commits). Allowed types for this repo:
   Write `Add validation`, not `Added validation` or `Adds validation`.
 - Target ≤50 characters; hard cap 72 (Beams).
 - No trailing period (Beams).
-- Lowercase after `type(scope): ` — the Conventional Commits spec examples
-  use lowercase summaries; Beams' "capitalize" rule applies to prefix-less
-  messages and the prefix convention wins here.
+- Prefer lowercase after `type(scope): `. The Conventional Commits spec's
+  examples use lowercase summaries, though the spec itself sets no rule, and
+  Beams' "capitalize" rule applies to prefix-less messages. This is style, so
+  `commit-msg` only prints a note for an ordinary capitalised word and lets the
+  commit through. A summary that starts with a proper noun (`README`,
+  `GitHub`), a `code` name, a number, or a language other than English starts
+  however it naturally does.
 
 ## 3. Body rules
 
@@ -126,7 +130,7 @@ leaves debug output (`console.log`) committed (rule 4).
 2. Diff contains exactly one logical change; no commented-out code or debug
    output remains staged.
 3. Summary line: `type(scope): summary`, imperative, ≤50 chars (72 hard cap),
-   lowercase after the prefix, no trailing period.
+   lowercase after the prefix where it reads naturally, no trailing period.
 4. Body (if any) wraps at 72 chars, explains what/why, references the
    issue if one exists.
 5. If an agent materially co-authored the change, the message names the actual

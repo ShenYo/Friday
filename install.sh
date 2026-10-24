@@ -138,6 +138,20 @@ if [ -f "$TARGET/.codex/config.toml" ] \
   echo "CONFLICT .codex/config.toml (inline hooks duplicate hooks.json)"
   conflicts=1
 fi
+# Wiring core.hooksPath replaces .git/hooks wholesale, so a target already
+# using husky or another manager needs a deliberate decision rather than a
+# silent override. Checked here with every other conflict, before anything is
+# written, so --check reports it and a refusal leaves the target untouched.
+existing_hooks_path=$(git -C "$TARGET" config --local core.hooksPath 2>/dev/null || true)
+if [ -n "$existing_hooks_path" ] && [ "$existing_hooks_path" != .agents/githooks ]; then
+  echo "CONFLICT core.hooksPath (already set to '$existing_hooks_path'; reconcile it with .agents/githooks)"
+  conflicts=1
+fi
+if [ -d "$TARGET/.git/hooks" ] \
+  && [ -n "$(find "$TARGET/.git/hooks" -type f ! -name '*.sample' -print -quit 2>/dev/null)" ]; then
+  echo "CONFLICT .git/hooks (holds hooks that core.hooksPath would bypass; move or remove them deliberately)"
+  conflicts=1
+fi
 if [ "$conflicts" -ne 0 ]; then
   echo "error: resolve conflicts in a reviewed change; nothing was written." >&2
   exit 1
@@ -169,22 +183,8 @@ done
 # core.hooksPath is per-clone config, not tracked, so it has to be set here.
 # These hooks are where the secret scan and the message checks actually run: a
 # runtime tool hook cannot see a staged diff, and `git commit -F -` hides the
-# message from it entirely. Setting this replaces .git/hooks wholesale, so a
-# target already using husky or another manager needs a deliberate decision
-# rather than a silent override.
-existing_hooks_path=$(git -C "$TARGET" config --local core.hooksPath 2>/dev/null || true)
-if [ -n "$existing_hooks_path" ] && [ "$existing_hooks_path" != .agents/githooks ]; then
-  echo "error: $TARGET already sets core.hooksPath to '$existing_hooks_path'." >&2
-  echo "       Reconcile that with .agents/githooks in a reviewed change;" >&2
-  echo "       nothing was changed." >&2
-  exit 1
-fi
-if [ -d "$TARGET/.git/hooks" ] \
-  && [ -n "$(find "$TARGET/.git/hooks" -type f ! -name '*.sample' -print -quit 2>/dev/null)" ]; then
-  echo "error: $TARGET has hooks in .git/hooks that core.hooksPath would bypass." >&2
-  echo "       Move or remove them deliberately; nothing was changed." >&2
-  exit 1
-fi
+# message from it entirely. The preflight above has already refused a target
+# where this would override another hook manager.
 git -C "$TARGET" config core.hooksPath .agents/githooks
 echo "  wired  core.hooksPath -> .agents/githooks"
 

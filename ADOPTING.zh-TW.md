@@ -59,6 +59,8 @@ error: resolve conflicts in a reviewed change; nothing was written.
 | `.gitignore` | 你的 | **預期** —— 把 Friday 的條目附加上去 |
 | `.claude/settings.json` | 你的 runtime 接線 | **預期** —— 把 Friday 的 handler 加進你的 `hooks` 陣列，不要替換整個檔案 |
 | `.codex/hooks.json` | 你的 Codex 接線 | **預期** —— 同上 |
+| `core.hooksPath` | 已經接上另一套 hook 管理工具（例如 husky） | **先決定** —— 接上 Friday 的 hook 會取代它，所以先把它的檢查併進一個經過審查的變更，再取消這項設定 |
+| `.git/hooks` | `core.hooksPath` 生效後就不會再執行的 hook | **先決定** —— 把它們做的事移進經過審查的 hook，或刻意捨棄 |
 | **其他任何檔案** | **managed core** | **真衝突** —— 見下 |
 
 這五個是 Friday 只負責 seed、之後就交給你的全部檔案。它發出的其他東西都是

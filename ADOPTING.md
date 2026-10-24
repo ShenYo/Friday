@@ -27,6 +27,33 @@ bash "$FRIDAY/bin/friday-lock" check "$TARGET"   # expect: status: in sync
 git -C "$TARGET" status --short
 ```
 
+### When an agent runs the install
+
+The preview and the install are two separate decisions, and an agent takes
+only the first on its own.
+
+1. **Check the inputs.** `TARGET` is a repository root with a `.git`
+   directory. `FRIDAY` is a different directory, holds `install.sh` and
+   `payload/`, and is a clean checkout. A dirty checkout is not a pin, so stop
+   and let the person choose. Record `git -C "$FRIDAY" rev-parse HEAD` in
+   full. Done when both paths and the SHA are written down.
+2. **Preview.** Run only `install.sh --check "$TARGET"`, and report the SHA and
+   the complete `NEW`/`IDENTICAL` result. Any `CONFLICT` or nonzero exit ends
+   the workflow here: reconcile the target in a reviewed change (see below),
+   then preview again. Do not edit either repository to make the preview pass.
+3. **Ask for the install.** The preview does not authorize the write, and
+   neither does the request that started the work. Install only after a new
+   message from the person that names this `TARGET` and this Friday SHA.
+4. **Install and verify.** Run the install, the second preview, the lock check,
+   `(cd "$TARGET" && bash .agents/hooks/check-collaborative-git.sh)`,
+   `git -C "$TARGET" status --short` and `git -C "$TARGET" diff --check`.
+   Report each result as observed. Done when the second preview reads
+   `IDENTICAL` on every line and the lock check reports `in sync`.
+
+`install.sh` is the only thing that writes. The agent does not edit Friday,
+its payload or the lock to get there. The pinned SHA is recorded in the
+target's own adoption commit, in that project's convention.
+
 ## An existing project: reading CONFLICT
 
 `--check` writes nothing and refuses the whole install if anything conflicts.

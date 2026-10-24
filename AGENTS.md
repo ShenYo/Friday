@@ -86,10 +86,11 @@ Each step ends on the condition that says it is done.
   installation. Step 3 is the place to run it.
 - **Edit `README.md` and `README.zh-TW.md` in the same commit.** Nothing here
   checks their parity, so the second edit is yours to remember.
-- **Everything Friday needs lives in this repository, and nothing outside it
-  depends on Friday's files.** A repository that wants a payload file either
-  adopts the payload or keeps its own copy, which Friday does not track. Do not
-  add a reference to another repository, or a record of one.
+- **Everything Friday needs lives in this repository, and Friday depends on
+  no other repository, the personal layer included.** Consumers receive copies
+  through `install.sh` and `friday-propagate`, and Friday tracks them only
+  through their `.friday-lock.json`. Do not add a reference to, or a record of,
+  any repository that is not a consumer.
 - **A merged pull request can be missing its last commit.** GitHub can keep
   reporting a PR's old head for a while after a push has moved the branch, and
   a merge taken then uses the old head. #24's merge commit `582a286` was built

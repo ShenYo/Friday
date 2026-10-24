@@ -4,13 +4,17 @@
 #   bin/friday-lock write <target>    write or refresh <target>/.friday-lock.json
 #   bin/friday-lock check [<target>]  verify it  (default target: the cwd)
 #
-# Three states, and the distinction matters:
+# The states, and the distinction matters:
 #
 #   in sync   every recorded file matches, and the payload has not moved
 #   drifted   a file in the target no longer matches what the lock recorded
 #             -- somebody edited a managed-core file in the consumer
-#   behind    the payload's content moved since the lock was written
-#             -- Friday shipped a change the consumer has not taken
+#   behind    the payload's content moved since the lock was written, or a
+#             file joined the managed core -- Friday shipped a change the
+#             consumer has not taken
+#   retired   the lock records a file Friday no longer manages -- deleting it
+#             or keeping it as the consumer's own is a person's call
+#   ahead / diverged   see the commit comparison below
 #
 # `behind` is decided by comparing CONTENT, never by comparing commits. A
 # Friday commit that only touches a README moves no payload hash and so
@@ -75,6 +79,12 @@ for m in "${managed[@]}"; do
   [ -f "$PAYLOAD/$m" ] || die "managed-core entry has no payload file: $m"
 done
 
+is_managed() {
+  local m
+  for m in "${managed[@]}"; do [ "$m" = "$1" ] && return 0; done
+  return 1
+}
+
 # The commit that last touched the payload, not Friday's HEAD. The lock
 # answers "which payload am I on", and a Friday commit that changes only a
 # README changes no payload byte -- recording HEAD there would point a
@@ -135,10 +145,18 @@ check_lock() {
   [ "$(jq -r '.managed_core // {} | length' "$lock")" -gt 0 ] \
     || die "$(basename "$lock") records no files -- nothing to check. Run 'friday-lock write $target'."
 
-  local -a drifted=() behind=()
+  local -a drifted=() behind=() retired=() recorded_rels=()
 
+  # The lock is read against the managed core, in both directions. Iterating
+  # only the lock's own entries saw neither a file that joined the managed core
+  # after the lock was written nor one that left it: both read "in sync".
   while IFS=$'\t' read -r rel want; do
     [ -n "$rel" ] || continue
+    recorded_rels+=("$rel")
+    if ! is_managed "$rel"; then
+      retired+=("$rel")
+      continue
+    fi
     if [ ! -f "$target/$rel" ]; then
       drifted+=("$rel (missing)")
       continue
@@ -151,6 +169,13 @@ check_lock() {
       [ "$pwant" = "$want" ] || behind+=("$rel")
     fi
   done < <(jq -r '.managed_core // {} | to_entries[] | "\(.key)\t\(.value)"' "$lock")
+
+  local m r seen
+  for m in "${managed[@]}"; do
+    seen=0
+    for r in ${recorded_rels+"${recorded_rels[@]}"}; do [ "$r" = "$m" ] && seen=1 && break; done
+    [ "$seen" -eq 1 ] || behind+=("$m (new in the payload)")
+  done
 
   # Content alone says the two differ, never which is newer. The recorded
   # payload commit does: if Friday's current payload commit is an ancestor of
@@ -194,6 +219,11 @@ check_lock() {
     esac
     printf '  %s\n' "${behind[@]}"
   fi
+  if [ ${#retired[@]} -gt 0 ]; then
+    echo ""
+    echo "RETIRED -- the lock records these, and Friday no longer manages them:"
+    printf '  %s\n' "${retired[@]}"
+  fi
 
   if [ ${#drifted[@]} -gt 0 ]; then
     echo ""
@@ -207,6 +237,18 @@ check_lock() {
       ahead)    echo "Friday has not merged this yet. Do not copy the payload over it." ;;
       diverged) echo "Reconcile the two payload lines before syncing either way; check out the Friday branch you mean to carry." ;;
       *)        echo "Take the change in a reviewed consumer commit, then re-run 'friday-lock write'." ;;
+    esac
+    return 1
+  fi
+  if [ ${#retired[@]} -gt 0 ]; then
+    echo ""
+    case "$direction" in
+      ahead|diverged)
+        echo "status: $direction"
+        echo "Friday's checkout may simply not have these yet. Check out the Friday branch you mean to carry." ;;
+      *)
+        echo "status: retired"
+        echo "Delete each file or keep it as this repository's own -- a person's call -- then re-run 'friday-lock write'." ;;
     esac
     return 1
   fi

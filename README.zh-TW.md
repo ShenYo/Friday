@@ -493,6 +493,11 @@ payload 移動時正是如此，而且一次漏掉四個地方。
 managed core 的變更必須到達每一個 consumer，而憑記憶做這件事，正是那五處
 過期數字的由來。
 
+執行前，先滿足 [`AGENTS.md`](./AGENTS.md#changing-the-payload) 第 4 步的前提：一個
+乾淨、且與 `origin/main` 一致的 `main`，並且一次只跑一個 propagation，從那些檢查
+開始直到正式執行結束，這個 checkout 與每個 consumer 都保持閒置。那些條件只寫在
+那裡一次，這裡不重複。
+
 ```sh
 bin/friday-propagate --dry-run ~/Github_Folks/pet_care ~/Desktop/Finance_App_Project
 bin/friday-propagate           ~/Github_Folks/pet_care ~/Desktop/Finance_App_Project

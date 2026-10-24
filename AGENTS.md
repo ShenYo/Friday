@@ -51,6 +51,18 @@ Each step ends on the condition that says it is done.
    - A feature branch, or uncommitted edits under `payload/`, go out as if
      merged, labelled with a commit that does not contain them.
 
+   Run **one propagation at a time**, and keep this checkout and every
+   consumer idle from the checks below until the real run finishes, not only
+   while each invocation runs. That includes a second invocation by the same
+   agent. A run reads mutable state many times: the payload commit at the
+   start, and again per consumer inside `friday-lock check` and
+   `friday-lock write`; each consumer's clean state; and the payload files when
+   it copies them. A change in either repository between those reads ships
+   under the wrong label, gets recorded against a different commit, or is
+   overwritten -- and two overlapping runs can switch each other's worktree so
+   a sync commit lands on the consumer's `main`. ShenYo/Friday#29 tracks
+   making a run read each thing once.
+
    So first run `git switch main && git pull --ff-only`. Then confirm that
    `git status --porcelain -- payload/` prints nothing and that
    `git rev-parse HEAD` equals `git rev-parse origin/main`. After that,
@@ -79,6 +91,21 @@ Each step ends on the condition that says it is done.
 - **Everything Friday needs lives in this repository.** Jarvis, the owner's
   personal layer, copies three hooks from here and gives nothing back. Keep the
   dependency one-way.
+- **A merged pull request can be missing its last commit.** GitHub can keep
+  reporting a PR's old head for a while after a push has moved the branch, and
+  a merge taken then uses the old head. #24's merge commit `582a286` was built
+  from head `77b2dc2`, so `f9868c3` was left out. Merge with the head you mean
+  to merge, read from the **remote** branch:
+
+  ```sh
+  gh pr merge <n> --match-head-commit "$(git ls-remote origin refs/heads/<branch> | cut -f1)"
+  ```
+
+  It refuses when the PR's head differs from that SHA. A push after the merge
+  still escapes, so afterwards run `git fetch origin` and then
+  `git cherry origin/main <branch>`: it lists commits left behind. It cannot
+  judge a squash merge, where every commit shows as left behind. This
+  repository uses merge commits.
 - **Adopting into a project that already has files** follows
   [`ADOPTING.md`](ADOPTING.md). `install.sh` only previews there. It never
   merges, and it refuses on conflict.

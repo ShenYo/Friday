@@ -23,6 +23,33 @@ TARGET=$(cd "${1:-.}" && pwd)
 
 [ -d "$PAYLOAD" ] || { echo "error: $PAYLOAD missing — is this the Friday repo?" >&2; exit 1; }
 
+# A linked worktree has a .git file, not a directory. core.hooksPath is shared
+# by every worktree of a repository, so wiring it from one would leave the
+# others running no hooks. Refuse before anything is written.
+linked_worktree=false
+if [ -f "$TARGET/.git" ]; then
+  linked_worktree=true
+elif [ -e "$TARGET/.git" ]; then
+  git_dir=$(git -C "$TARGET" rev-parse --absolute-git-dir 2>/dev/null) || git_dir=
+  common_dir=$(git -C "$TARGET" rev-parse --git-common-dir 2>/dev/null) || common_dir=
+  case "$common_dir" in
+    "") ;;
+    /*) ;;
+    *) common_dir="$TARGET/$common_dir" ;;
+  esac
+  if [ -n "$git_dir" ] && [ -n "$common_dir" ] \
+     && [ "$(cd "$git_dir" && pwd -P)" != "$(cd "$common_dir" && pwd -P)" ]; then
+    linked_worktree=true
+  fi
+fi
+if [ "$linked_worktree" = true ]; then
+  echo "error: $TARGET is a linked worktree." >&2
+  echo "       core.hooksPath is shared by every worktree of a repository, so wiring" >&2
+  echo "       it here would leave the others running no hooks. Install into the main" >&2
+  echo "       worktree, then check this one out from it." >&2
+  exit 1
+fi
+
 if [ ! -d "$TARGET/.git" ]; then
   echo "error: $TARGET is not a git repository." >&2
   echo "       The safety boundary guards Git operations, so it has nothing to" >&2

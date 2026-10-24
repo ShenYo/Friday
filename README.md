@@ -160,7 +160,9 @@ repository's own rules. Friday copies its closed payload into the target; it
 does not copy the whole Friday repository or link the target back to Friday.
 
 Requires `jq` and a blank or compatible target with a `.git/` directory
-(linked worktrees are not supported). The target is the repository root, not
+(a linked worktree is refused, because `core.hooksPath` is shared by every
+worktree of a repository and wiring it from one would leave the others running
+no hooks). The target is the repository root, not
 an `.agents/` subdirectory. `--check` reports `NEW`, `IDENTICAL`, or
 `CONFLICT`, exits nonzero on conflicts, and does not copy, chmod, create links,
 or run the self-check. Both modes validate prerequisites, every destination,

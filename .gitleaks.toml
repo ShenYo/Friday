@@ -1,0 +1,11 @@
+# gitleaks configuration for CI. The default rules apply everywhere, with one
+# exception: the secret scanner's own test fixtures, which carry deliberately
+# fake credentials so the pre-commit hook can be shown refusing them.
+title = "Friday"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "pre-commit's test fixtures: deliberately fake credentials"
+paths = ['''(^|/)\.agents/hooks/check-collaborative-git\.sh$''']

@@ -1,0 +1,70 @@
+name: CI
+
+# Runs on every pull request, with no path filter, so it can be a required
+# check: a filtered workflow that does not run leaves a required check
+# waiting forever. Nothing here needs a secret.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Identify the test commits
+        run: |
+          git config --global user.name "Friday CI"
+          git config --global user.email "ci@example.invalid"
+      - name: Every test suite passes
+        run: |
+          fail=0
+          for t in tests/*.sh; do
+            echo "::group::$t"
+            if bash "$t" "$RUNNER_TEMP/$(basename "$t" .sh)"; then
+              echo "::endgroup::"
+            else
+              echo "::endgroup::"
+              echo "::error::$t failed"
+              fail=1
+            fi
+          done
+          exit "$fail"
+
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: No shellcheck errors in the scripts
+        run: |
+          shellcheck --version | head -2
+          shellcheck --severity=error \
+            install.sh bin/friday-lock bin/friday-propagate tests/*.sh \
+            payload/.agents/hooks/*.sh payload/.agents/githooks/*
+
+  gitleaks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install gitleaks 8.30.1, checksum verified
+        run: |
+          v=8.30.1
+          f="gitleaks_${v}_linux_x64.tar.gz"
+          curl -fsSL -o "$RUNNER_TEMP/$f" "https://github.com/gitleaks/gitleaks/releases/download/v${v}/$f"
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  $RUNNER_TEMP/$f" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/$f" -C "$RUNNER_TEMP" gitleaks
+      - name: No secret anywhere in the history
+        run: |
+          "$RUNNER_TEMP/gitleaks" git . --no-banner --redact --config .gitleaks.toml --exit-code 1

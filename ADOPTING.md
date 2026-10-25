@@ -8,7 +8,7 @@ written down.
 
 ```sh
 FRIDAY=~/.Friday
-PIN=<a reviewed Friday commit>
+PIN=<the commit of a reviewed Friday release>   # after cloning: git -C "$FRIDAY" rev-parse 'vX.Y.Z^{commit}'
 TARGET=<your new repo>
 
 git clone https://github.com/ShenYo/Friday.git "$FRIDAY"
@@ -36,7 +36,7 @@ own.
 
 1. **Check the inputs.** `TARGET` is a repository root with a `.git`
    directory. `FRIDAY` is a different directory, holds `install.sh` and
-   `payload/`, and is a clean checkout of the reviewed commit the person named
+   `payload/`, and is a clean checkout of the commit of the reviewed release the person named
    as `PIN`: `git -C "$FRIDAY" rev-parse HEAD` equals it in full. A dirty
    checkout, or one at any other commit, is not that pin. Stop and let the
    person choose. Nothing in `FRIDAY` runs before this holds, because the

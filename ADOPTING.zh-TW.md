@@ -7,7 +7,7 @@
 
 ```sh
 FRIDAY=~/.Friday
-PIN=<一個經審查的 Friday commit>
+PIN=<一個經審查的 Friday release 的 commit>   # clone 之後：git -C "$FRIDAY" rev-parse 'vX.Y.Z^{commit}'
 TARGET=<你的新 repo>
 
 git clone https://github.com/ShenYo/Friday.git "$FRIDAY"
@@ -33,7 +33,7 @@ git -C "$TARGET" status --short
 
 1. **檢查輸入。** `TARGET` 是帶有 `.git` 目錄的 repository 根目錄。`FRIDAY`
    是另一個目錄，裡面有 `install.sh` 與 `payload/`，而且是使用者指定為 `PIN`
-   的那個經審查 commit 的乾淨 checkout：`git -C "$FRIDAY" rev-parse HEAD` 與它
+   的那個經審查 release 的 commit 的乾淨 checkout：`git -C "$FRIDAY" rev-parse HEAD` 與它
    完全相同。有未提交修改的 checkout，或停在其他 commit 的 checkout，都不是
    那個 pin。停下來讓使用者選擇。在這項成立之前，不執行 `FRIDAY` 裡的任何
    東西，因為預覽會執行它的 `install.sh`。兩個路徑和 SHA 都寫下來且相符，才算

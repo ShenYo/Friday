@@ -97,6 +97,7 @@ The user must name the operation and its exact target in the current turn.
 | Pushing directly to the default branch | A direct push bypasses the PR checkpoint above, so leaving it open would make that checkpoint optional in practice. Enforced by `pre-push`. |
 | Closing or reopening a pull request | It changes the state of a shared review artifact that others may be acting on. |
 | Changing branch protection, required checks, or repository settings | These define the checkpoints themselves. |
+| Pushing a tag | No agent may delete a tag, so a pushed tag is one the agent cannot take back, and a release tag is also the name consumers take a release by. An agent pushes a tag, including through `--tags`, `--follow-tags` or `push.followTags`, only when the user names the tag and the commit in the current turn; it never pushes one on its own judgement. Friday's guard and `pre-push` do not check this row: it is enforced by instruction. |
 
 **An agent must not approve a pull request containing its own work.** Approval
 is the review act; an author approving their own change satisfies the

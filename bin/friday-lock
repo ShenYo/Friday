@@ -12,6 +12,9 @@
 #   behind    the payload's content moved since the lock was written, or a
 #             file joined the managed core -- Friday shipped a change the
 #             consumer has not taken
+#   tag-moved the lock records a release tag, and Friday's tag of that name no
+#             longer points at the payload the lock recorded (moved, or gone) --
+#             the name cannot be trusted; the commit in the lock is the record
 #   retired   the lock records a file Friday no longer manages -- deleting it
 #             or keeping it as the consumer's own is a person's call
 #   ahead / diverged   see the commit comparison below
@@ -20,6 +23,11 @@
 # Friday commit that only touches a README moves no payload hash and so
 # produces no `behind`, which is what keeps a scheduled check quiet enough to
 # be worth running daily.
+#
+# The release tag is a label on top of the commit, never a replacement for it:
+# a tag can be moved, a commit cannot. `write` records the newest `v*` tag whose
+# commit carries the same payload content, `check` reports it, and re-verifies
+# it against the commit -- a tag that moved is reported, not believed.
 #
 # Only a payload consumer has a record. Friday tracks no copy of its hooks
 # anywhere else: a repository that wants them either adopts the payload or
@@ -123,14 +131,86 @@ friday_commit() {
   git -C "$KIT_ROOT" log -1 --format=%H ${TREE:+"$TREE"} -- payload/ 2>/dev/null || printf 'unknown\n'
 }
 
+# A release tag is exactly vMAJOR.MINOR.PATCH. A pre-release (`v1.1.0-rc1`) or
+# a malformed name (`v1x`) is never a release, however it sorts.
+RELEASE_RE='^v[0-9]+\.[0-9]+\.[0-9]+$'
+release_tags() { git -C "$KIT_ROOT" tag -l 'v[0-9]*' --sort=-v:refname 2>/dev/null | grep -E "$RELEASE_RE"; }
+
+# The release of a payload: the newest release tag whose commit carries the
+# same payload tree and the same managed-core list as <commit> (default: the
+# pin, else HEAD). Object ids are compared, never commits -- a Friday commit
+# that only touches a README is the same release as the one before it, which is
+# the same reasoning that makes `behind` a content comparison. Nothing matching
+# prints nothing. The working tree is no release: with no pin and an
+# uncommitted change to the payload or the list, HEAD is not what is being
+# recorded, so no tag may be claimed for it.
+#
+# A tag that points exactly at <commit> is preferred to one that merely carries
+# the same content: pinning the older of two equal-content releases must record
+# the older, or the name a run ships under and the name the lock keeps disagree.
+# When several tags share one commit, FRIDAY_RELEASE=<tag> names the one meant
+# (friday-propagate sets it); it counts only when it is a release tag that
+# points exactly at <commit>, and otherwise the rule above stands.
+release_for() {
+  local c=${1:-$TREE} t want_tree want_list want_commit
+  if [ -z "$c" ]; then
+    [ -z "$(git -C "$KIT_ROOT" status --porcelain -- payload/ bin/managed-core.txt 2>/dev/null)" ] || return 0
+    c=HEAD
+  fi
+  want_tree=$(git -C "$KIT_ROOT" rev-parse -q --verify "$c:payload" 2>/dev/null) || return 0
+  want_list=$(git -C "$KIT_ROOT" rev-parse -q --verify "$c:bin/managed-core.txt" 2>/dev/null) || return 0
+  want_commit=$(git -C "$KIT_ROOT" rev-parse -q --verify "$c^{commit}" 2>/dev/null) || return 0
+  t=${FRIDAY_RELEASE:-}
+  if [[ $t =~ $RELEASE_RE ]] \
+     && [ "$(git -C "$KIT_ROOT" rev-parse -q --verify "refs/tags/$t^{commit}" 2>/dev/null)" = "$want_commit" ]; then
+    printf '%s\n' "$t"
+    return 0
+  fi
+  while IFS= read -r t; do
+    [ "$(git -C "$KIT_ROOT" rev-parse -q --verify "refs/tags/$t^{commit}" 2>/dev/null)" = "$want_commit" ] || continue
+    printf '%s\n' "$t"
+    return 0
+  done < <(release_tags)
+  while IFS= read -r t; do
+    [ -n "$t" ] || continue
+    [ "$(git -C "$KIT_ROOT" rev-parse -q --verify "refs/tags/$t^{commit}:payload" 2>/dev/null)" = "$want_tree" ] || continue
+    [ "$(git -C "$KIT_ROOT" rev-parse -q --verify "refs/tags/$t^{commit}:bin/managed-core.txt" 2>/dev/null)" = "$want_list" ] || continue
+    printf '%s\n' "$t"
+    return 0
+  done < <(release_tags)
+}
+
+# Why a recorded tag can no longer be trusted, if it can't; nothing otherwise.
+# Called only when the tag exists in this clone and the recorded commit does.
+# The tag was recorded because its commit held the payload the lock names, so
+# it is checked against that commit's content, not against the lock's files.
+# The list is the one exception worth a word: `commit` is the last commit that
+# touched payload/, and a commit that changed only the list comes after it, so
+# a differing list is moved only when the tag's commit does not descend from
+# the recorded one. A known blind spot: a tag moved to a descendant commit
+# whose only difference is the managed-core list is not detected.
+tag_moved_reason() {
+  local tag=$1 rc=$2 tc
+  tc=$(git -C "$KIT_ROOT" rev-parse -q --verify "refs/tags/$tag^{commit}" 2>/dev/null) || return 0
+  if [ "$(git -C "$KIT_ROOT" rev-parse -q --verify "$tc:payload" 2>/dev/null)" \
+       != "$(git -C "$KIT_ROOT" rev-parse -q --verify "$rc:payload" 2>/dev/null)" ]; then
+    echo "now points at ${tc:0:7}, whose payload differs from the recorded ${rc:0:7}"; return 0
+  fi
+  if [ "$(git -C "$KIT_ROOT" rev-parse -q --verify "$tc:bin/managed-core.txt" 2>/dev/null)" \
+       != "$(git -C "$KIT_ROOT" rev-parse -q --verify "$rc:bin/managed-core.txt" 2>/dev/null)" ] \
+     && ! git -C "$KIT_ROOT" merge-base --is-ancestor "$rc" "$tc" 2>/dev/null; then
+    echo "now points at ${tc:0:7}, whose managed-core list differs and does not descend from the recorded ${rc:0:7}"; return 0
+  fi
+}
+
 # --- write -------------------------------------------------------------------
 write_lock() {
   local target=$1 rel json
   [ -d "$target" ] || die "no such target: $target"
   target=$(cd "$target" && pwd -P)
 
-  json=$(jq -n --arg commit "$(friday_commit)" --arg date "$(date -u +%Y-%m-%d)" \
-    '{friday:{repo:"ShenYo/Friday",commit:$commit,synced:$date},managed_core:{}}')
+  json=$(jq -n --arg commit "$(friday_commit)" --arg tag "$(release_for)" --arg date "$(date -u +%Y-%m-%d)" \
+    '{friday:{repo:"ShenYo/Friday",commit:$commit,tag:(if $tag == "" then null else $tag end),synced:$date},managed_core:{}}')
 
   # FRIDAY_LOCK_FROM_INDEX=1 records what the target's index holds -- the
   # content its next commit will carry -- instead of the working tree, so an
@@ -236,16 +316,39 @@ check_lock() {
     fi
   fi
 
+  # A lock written before releases existed has no tag field and is a valid
+  # record all the same: it reads `release: none` and is not verified further.
+  local lock_tag moved_reason="" unverified=""
+  lock_tag=$(jq -r '.friday.tag? | if type == "string" and . != "" then . else empty end' "$lock")
+  # A clone that is stale is not evidence of tampering. Without the recorded
+  # commit nothing can be compared, so the tag is not checked at all; with it,
+  # a tag this clone does not have is only unverified -- it may simply not have
+  # been fetched. Only a tag that is here and disagrees is reported as moved.
+  if [ -n "$lock_tag" ] && git -C "$KIT_ROOT" cat-file -e "${lock_commit}^{commit}" 2>/dev/null; then
+    if git -C "$KIT_ROOT" rev-parse -q --verify "refs/tags/$lock_tag^{commit}" >/dev/null 2>&1; then
+      moved_reason=$(tag_moved_reason "$lock_tag" "$lock_commit")
+    else
+      unverified="release $lock_tag not found in this Friday clone (fetch tags, or it was deleted); not verified"
+    fi
+  fi
+
   local recorded
   recorded=$(jq -r '.managed_core // {} | length' "$lock")
   echo "target:  $target"
   echo "friday:  $(jq -r '.friday.commit' "$lock") (synced $(jq -r '.friday.synced' "$lock"))"
+  echo "release: ${lock_tag:-none}"
+  [ -z "$unverified" ] || echo "$unverified"
   echo "checked: $recorded file(s)"
 
   if [ ${#drifted[@]} -gt 0 ]; then
     echo ""
     echo "DRIFTED -- these no longer match what the lock recorded:"
     printf '  %s\n' "${drifted[@]}"
+  fi
+  if [ -n "$moved_reason" ]; then
+    echo ""
+    echo "MOVED -- the release tag no longer matches what this lock recorded:"
+    echo "  $lock_tag $moved_reason"
   fi
   if [ ${#behind[@]} -gt 0 ]; then
     echo ""
@@ -265,6 +368,16 @@ check_lock() {
   if [ ${#drifted[@]} -gt 0 ]; then
     echo ""
     echo "status: drifted"
+    return 1
+  fi
+  # After drifted, because an edited file is the more urgent finding; before
+  # behind, ahead and diverged, because those compare the payload against a
+  # release the lock names, and a name that no longer means that release makes
+  # the comparison's answer untrustworthy. The recorded commit still is.
+  if [ -n "$moved_reason" ]; then
+    echo ""
+    echo "status: tag-moved"
+    echo "Trust the commit the lock records, not the tag. Find out who moved it, then re-run 'friday-lock write'."
     return 1
   fi
   if [ ${#behind[@]} -gt 0 ]; then

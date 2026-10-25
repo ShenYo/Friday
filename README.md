@@ -56,7 +56,7 @@ does not discover arbitrary skills or install a consumer's domain workflow.
 > **中文摘要**：Friday 的可攜成果必須由專案本身承載；輔助工具可以選用但
 > 不可成為 baseline 前提。十四個 managed-core 檔維持封閉
 > byte-exact 範圍，seed、runtime integration 與 overlay 仍由 consumer 擁有。
-> 現行 guard 安全修正已在 payload 與 self-check 實作；B06 的 immutable SHA、
+> 現行 guard 安全修正已在 payload 與 self-check 實作；B06 的 release tag、
 > 手動採用及 rollback 責任不變，backup、replay 與外部 runtime 仍待完成。
 
 Portable outcomes belong in project-controlled documentation, tests, or
@@ -70,15 +70,15 @@ The current payload implements the guard security updates, and its self-check
 exercises the relevant allowed and blocked command forms. That is static and
 direct-guard evidence only; it does not establish native callback delivery,
 exit handling, ordering, or fail-closed enforcement. Those were established
-separately on the Claude side, in a consumer, not by this self-check. Releases remain reviewed
-immutable SHAs, adoption remains manual, and the Friday maintainer proposes a
+separately on the Claude side, in a consumer, not by this self-check. Releases remain annotated tags
+on reviewed commits, adoption remains manual, and the Friday maintainer proposes a
 rollback while the consumer owner performs it. A named backup maintainer,
 real new-machine replay, a further consumer replay, and external-runtime
 closure are still pending.
 
 ## Lifecycle governance (B06)
 
-> **中文摘要**：Friday 的 MVP 採「可審查 SHA + consumer 手動採用」模式：
+> **中文摘要**：Friday 的 MVP 採「可審查 release（tag + commit）+ consumer 手動採用」模式：
 > repository owner 負責維護，backup maintainer 尚待指定；不自動同步、不強制
 > 更新，也不自動 rollback。
 
@@ -87,8 +87,12 @@ This section is normative for Friday's MVP lifecycle.
 - The repository owner is the primary Friday maintainer. A backup maintainer
   is **PENDING**; until one is named, the primary maintainer remains accountable
   for release review, recovery proposals, and recording the decision.
-- A reviewed immutable Friday commit SHA is the release channel. Mutable branch
-  names are not releases.
+- A release is an annotated tag `vMAJOR.MINOR.PATCH` on a reviewed commit on
+  `main`. A consumer's `.friday-lock.json` records the tag and, as the record it
+  trusts, the commit that last changed the payload at that release, whose
+  payload is the release's byte for byte; the tag is a label, and a tag that
+  moves is reported by `friday-lock check` as `status: tag-moved`. Mutable
+  branch names are not releases.
 - A consumer owner manually adopts a reviewed release and preserves that
   consumer's seeds, runtime integration, and overlays. Friday does not
   auto-sync or automatically update an existing consumer.
@@ -118,18 +122,23 @@ precedence enforcement.
 > repo 或把 consumer symlink 到它。既有 consumer 請走後面的 manual reconciliation。
 
 For a new blank repository, first obtain a separately reviewed Friday checkout
-at an immutable commit. Prerequisites are Git, Bash, and `jq`. Do not use a
+at the commit of a release. Prerequisites are Git, Bash, and `jq`. Do not use a
 dirty Friday checkout as the example source: this creates a new checkout at
 the reviewed pin. Before running it, replace both absolute paths and the
 literal SHA placeholder. The commands do not create a commit, install a
 runtime, or configure credentials.
+
+`PIN` is the commit of a reviewed release. To find it, clone Friday once and run
+`git -C "$FRIDAY" rev-parse 'vX.Y.Z^{commit}'` there (the `^{commit}` matters:
+for an annotated tag, `rev-parse vX.Y.Z` prints the tag object, not the
+commit). The script keeps checking that the checkout's `HEAD` equals `PIN`.
 
 ```sh
 (
   set -eu
   TARGET='/absolute/path/to/new-project'
   FRIDAY='/absolute/path/to/new-Friday-checkout'
-  PIN='replace-with-reviewed-immutable-Friday-SHA'
+  PIN='replace-with-the-commit-of-a-reviewed-Friday-release'
 
   command -v git >/dev/null
   command -v bash >/dev/null
@@ -291,11 +300,12 @@ list. There is no manifest or update engine in this MVP.
 ## Updating an existing consumer
 
 An existing consumer update is a reviewed reconciliation, not an installer
-upgrade. Pin a reviewed Friday commit first; use a placeholder rather than a
-mutable branch name:
+upgrade. Pin the commit of a reviewed Friday release first (`git -C "$FRIDAY" rev-parse
+'vX.Y.Z^{commit}'` prints it); use a placeholder rather than a mutable branch
+name:
 
 ```sh
-PIN='replace-with-reviewed-immutable-Friday-SHA'
+PIN='replace-with-the-commit-of-a-reviewed-Friday-release'
 FRIDAY='/absolute/path/to/Friday'
 TARGET='/absolute/path/to/consumer'
 
@@ -428,8 +438,8 @@ not decide whether a merge is safe.
 ## Design notes
 
 **Copy, not link.** Projects retain their own reviewed baseline and local
-overlays. Pin a reviewed Friday commit before installation and record its SHA
-in the project's adoption record; a mutable branch is not a reproducible
+overlays. Pin the commit of a reviewed Friday release before installation and record
+its SHA in the project's adoption record; a mutable branch is not a reproducible
 version. Git history provides rollback: revert the adoption commit or restore
 the selected pinned version in a reviewed change. `--check` detects content
 differences, not who authored them or whether an update is safe to merge.
@@ -468,7 +478,8 @@ That paragraph records the original failure, not current pet-care behavior.
 ## Knowing where a consumer stands
 
 `install.sh` writes `.friday-lock.json` into the target: the Friday commit it
-was installed from, and the sha256 of every managed-core file as installed.
+was installed from, the release tag that names that payload when there is one,
+and the sha256 of every managed-core file as installed.
 
 [`bin/friday-lock`](./bin/friday-lock) reads it back. Only a payload consumer
 has one. A repository that wants one of the payload's hooks without adopting
@@ -485,6 +496,7 @@ The states, and the distinction is the point:
 | --- | --- | --- |
 | `in sync` | every recorded file matches and the payload has not moved | nothing |
 | `drifted` | a file in the consumer no longer matches what the lock recorded | somebody edited a managed-core file locally; reconcile it |
+| `tag-moved` | the lock records a release tag, and Friday's tag of that name now points at a different payload than the lock recorded (a tag this clone lacks is reported as not verified, not as moved) | trust the commit in the lock, not the tag; find out who moved it, then `friday-lock write` |
 | `behind` | Friday's payload moved since the lock was written, or a file joined the managed core (listed as `new in the payload`) | take the change in a reviewed commit, then `friday-lock write` |
 | `retired` | the lock records a file Friday no longer manages | delete it or keep it as the consumer's own, deliberately, then `friday-lock write`. On a consumer with nothing else to carry, `friday-propagate` names it and touches nothing. When it does carry a change, its pull request names the file, and merging that pull request records it as the consumer's own unless it is deleted on that branch first |
 | `ahead` | the consumer holds a payload Friday has not merged yet | do **not** copy the payload over it |
@@ -507,8 +519,9 @@ is how the five stale counts happened.
 
 Run it from a `main` that matches `origin/main`; step 4 of
 [`AGENTS.md`](./AGENTS.md#changing-the-payload) says how to confirm that. The
-run pins the commit checked out here and carries only that commit's tree, so
-an uncommitted payload edit, or a Friday commit made while it runs, cannot
+run pins the commit a release tag names (see Releases below) and carries only that
+commit's tree, so an uncommitted payload edit, a payload change merged to
+`main` but not yet released, or a Friday commit made while it runs, cannot
 reach a consumer.
 
 ```sh
@@ -533,6 +546,8 @@ It refuses rather than guesses:
 | HEAD leaves the sync branch before the write or the commit | **refused**, and it says where HEAD is |
 | `retired` only | **refused**, the retired files named; deleting them is the owner's call |
 | Friday not on `main` | **refused**, before any consumer is read |
+| no release tag, or the tag is not on `main`, not annotated, or not on `origin` | **refused**, before any consumer is read |
+| `tag-moved` | **refused** — the lock's release label can no longer be trusted; a person reconciles it |
 | the branch already exists | **refused** |
 | `gh` fails after the push | reported as a failure with the command to finish by hand, never counted as opened |
 
@@ -548,6 +563,53 @@ secret. A developer machine's `gh` already has that access — scoped to a
 person rather than to an always-on workflow — and the end result is identical:
 pull requests a human still merges. Issue #7 covers the CI-hosted variant if
 the repositories ever go public or a token is issued.
+
+## Releases
+
+A release is an annotated tag `vMAJOR.MINOR.PATCH` on a reviewed commit on
+`main`. The commit is the record; the tag is its name, and a tag can be moved
+where a commit cannot. One is cut only when the payload or
+[`bin/managed-core.txt`](./bin/managed-core.txt) changed.
+
+- **MAJOR** when a file leaves the managed core, or a consumer must act by hand.
+- **MINOR** when a file joins the managed core, or payload behaviour changes.
+- **PATCH** for content fixes.
+
+The annotated tag's message is the release note: what changed, and what a
+consumer must do.
+
+```sh
+git tag -a vX.Y.Z -m '<release note>' <commit>
+git push origin vX.Y.Z
+bin/friday-propagate <consumer>...
+```
+
+Pushing any tag is a checkpoint
+([`safety-boundary.md`](./payload/.agents/docs/git-guideline/safety-boundary.md)):
+an agent pushes one, including through `--tags` or `--follow-tags`, only when
+the user names the tag and its commit in the current turn. Neither Friday's
+guard nor `pre-push` checks it; it is enforced by instruction.
+
+`bin/friday-propagate` carries only releases: the newest tag of the exact form
+`vX.Y.Z` by default (a pre-release such as `v1.1.0-rc1` is never one), or the
+one named with `--tag vX.Y.Z`. It refuses, before any consumer is read, when
+Friday has no release tag, or the tag is not on `main`, is not annotated, or is
+not on `origin` as the same tag object. It notes, without carrying, payload
+changes on `main` that no release holds yet. Each pull request lists the Friday
+commits that changed `payload/` or `bin/managed-core.txt` since the release
+(or, for an older lock, the commit) the consumer's lock recorded.
+
+`friday-lock check` prints the recorded release on a `release:` line, `none`
+for a lock that records no tag. `friday-lock write` records the release tag
+`friday-propagate` named, or the release tag on the commit it reads, or, when
+none is there, the newest release with the same payload and the same
+managed-core list. If the tag of that name later points at different content,
+`check` reports `status: tag-moved`: trust the commit in the lock, not the tag.
+A tag this Friday clone does not have is not reported as moved, since a clone
+that has not fetched it looks the same: when the recorded commit is here,
+`check` prints that the tag is not found and not verified; when the commit is
+missing too, nothing can be compared and it says nothing about the tag. Either
+way the other checks decide the status.
 
 ## Runtime behaviour measured on the Claude side
 

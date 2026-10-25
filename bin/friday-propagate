@@ -1,7 +1,15 @@
 #!/usr/bin/env bash
 # Carry a managed-core change out to consumers, as pull requests.
 #
-#   bin/friday-propagate [--dry-run] <consumer-path>...
+#   bin/friday-propagate [--dry-run] [--tag vX.Y.Z] <consumer-path>...
+#
+# What it carries is a release: an annotated `vMAJOR.MINOR.PATCH` tag on a
+# commit of Friday's main. By default the newest tag by version order, or the
+# one named with --tag. A payload change merged to main and not yet tagged is
+# not carried -- consumers only ever receive a released payload -- and the run
+# says so. The tag is refused when it does not exist or is not on main. The
+# commit the tag points at is the pin, and so the immutable record; the tag is
+# the name it is shipped under.
 #
 # What it does per consumer: ask friday-lock where it stands, and only when it
 # is `behind`, branch from its main, copy the managed-core files whose content
@@ -35,28 +43,60 @@ LOCK="$KIT_ROOT/bin/friday-lock"
 BRANCH_PREFIX=chore/sync-managed-core
 CONSUMER_LOCK=.friday-lock.json
 dry_run=false
+tag=
+# Exactly vMAJOR.MINOR.PATCH: a pre-release or a malformed name is no release.
+RELEASE_RE='^v[0-9]+\.[0-9]+\.[0-9]+$'
 
 die() { echo "friday-propagate: $*" >&2; exit 2; }
 note() { printf '  %s\n' "$*"; }
 
-[ "${1:-}" = "--dry-run" ] && { dry_run=true; shift; }
-[ $# -ge 1 ] || die "usage: friday-propagate [--dry-run] <consumer-path>..."
+usage="usage: friday-propagate [--dry-run] [--tag vX.Y.Z] <consumer-path>..."
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --dry-run) dry_run=true; shift ;;
+    --tag) [ $# -ge 2 ] && [ -n "$2" ] || die "$usage"; tag=$2; shift 2 ;;
+    -*) die "$usage" ;;
+    *) break ;;
+  esac
+done
+[ $# -ge 1 ] || die "$usage"
 command -v gh >/dev/null || die "'gh' is required to open pull requests."
 [ -x "$LOCK" ] || die "missing $LOCK"
 
-# Read once, then use only what was read (#29). The run pins one commit of
-# Friday's main and takes everything from that commit's tree: which files are
+# Read once, then use only what was read (#29). The run pins one release --
+# the commit of a tag on Friday's main -- and takes everything from that
+# commit's tree: which files are
 # managed, their content and mode, what friday-lock compares against, and the
 # commit the consumer's lock records. An uncommitted edit here, or a commit
 # made while the run is going, cannot reach a consumer or disagree with the
 # label it is shipped under.
 [ "$(git -C "$KIT_ROOT" symbolic-ref --short -q HEAD)" = main ] \
-  || die "run from Friday's main: the commit carried out is the one checked out here."
-tree=$(git -C "$KIT_ROOT" rev-parse --verify -q HEAD) || die "cannot read Friday's HEAD"
+  || die "run from Friday's main: the release carried out must be on the main checked out here."
+if [ -z "$tag" ]; then
+  tag=$(git -C "$KIT_ROOT" tag -l 'v[0-9]*' --sort=-v:refname | grep -E "$RELEASE_RE" | sed -n 1p)
+  [ -n "$tag" ] || die "Friday has no release tag (vMAJOR.MINOR.PATCH) -- cut one on main first. Nothing was written."
+fi
+[[ $tag =~ $RELEASE_RE ]] || die "not a release tag (vMAJOR.MINOR.PATCH): $tag"
+tree=$(git -C "$KIT_ROOT" rev-parse --verify -q "refs/tags/$tag^{commit}") || die "no such release tag: $tag"
+# A tag on a commit main does not contain is a release nobody merged.
+git -C "$KIT_ROOT" merge-base --is-ancestor "$tree" refs/heads/main 2>/dev/null \
+  || die "$tag is not on Friday's main (its commit is not an ancestor of main). Nothing was written."
+# Consumers receive a release that is signed off in two places: an annotated
+# tag, and the same tag object on origin. A lightweight tag carries no author
+# or date, and a tag only this clone has -- or has moved -- is not what anyone
+# else sees as that release.
+[ "$(git -C "$KIT_ROOT" cat-file -t "refs/tags/$tag" 2>/dev/null)" = tag ] \
+  || die "$tag is not an annotated tag. Nothing was written."
+local_tag_obj=$(git -C "$KIT_ROOT" rev-parse --verify -q "refs/tags/$tag")
+origin_tag_obj=$(git -C "$KIT_ROOT" ls-remote --tags origin "refs/tags/$tag" 2>/dev/null | awk -v r="refs/tags/$tag" '$2 == r { print $1 }')
+[ -n "$origin_tag_obj" ] || die "$tag is not on origin (push it, or origin cannot be read). Nothing was written."
+[ "$origin_tag_obj" = "$local_tag_obj" ] \
+  || die "origin's $tag points at a different tag object than this checkout's. Nothing was written."
 payload_commit=$(git -C "$KIT_ROOT" log -1 --format=%H "$tree" -- payload/ 2>/dev/null)
 [ -n "$payload_commit" ] || die "cannot read Friday's payload history"
-short=${payload_commit:0:7}
 export FRIDAY_TREE=$tree
+# Two tags can sit on one commit; the lock records the one this run was told.
+export FRIDAY_RELEASE=$tag
 # friday-lock itself comes from the pin as well: a commit that changes it
 # mid-run must not change the rules a later consumer is judged and recorded by.
 LOCK=$(mktemp "${TMPDIR:-/tmp}/friday-lock.XXXXXX") || die "cannot create a temporary file"
@@ -64,8 +104,16 @@ trap 'rm -f "$LOCK"' EXIT
 git -C "$KIT_ROOT" show "$tree:bin/friday-lock" > "$LOCK" || die "no bin/friday-lock at $tree"
 export FRIDAY_KIT_ROOT=$KIT_ROOT
 if [ -n "$(git -C "$KIT_ROOT" status --porcelain -- payload/ bin/managed-core.txt)" ]; then
-  echo "friday-propagate: note: uncommitted payload changes here are not carried; only $short is." >&2
+  echo "friday-propagate: note: uncommitted payload changes here are not carried; only $tag is." >&2
 fi
+# Merged to main and not tagged: a release is a decision, not whatever main
+# happens to hold, so the difference is reported and left behind.
+for path in payload bin/managed-core.txt; do
+  if [ "$(git -C "$KIT_ROOT" rev-parse "refs/heads/main:$path" 2>/dev/null)" != "$(git -C "$KIT_ROOT" rev-parse "$tree:$path" 2>/dev/null)" ]; then
+    echo "friday-propagate: note: main has payload changes not yet released; only $tag is carried." >&2
+    break
+  fi
+done
 
 blob() { git -C "$KIT_ROOT" show "$tree:payload/$1"; }
 blob_mode() { git -C "$KIT_ROOT" ls-tree "$tree" -- "payload/$1" | cut -d' ' -f1; }
@@ -106,6 +154,11 @@ for target in "$@"; do
     diverged)
       note "DIVERGED — this consumer and Friday hold different payload lines."
       note "Check out the Friday branch you mean to carry. Nothing was touched."
+      refused=$((refused + 1)); continue ;;
+    tag-moved)
+      note "TAG MOVED — this lock records release $(printf '%s' "$status" | sed -n 's/^release: //p'), and Friday's tag of that name no longer matches it:"
+      printf '%s' "$status" | sed -n '/^MOVED/,/^$/p' | sed '1d;/^$/d;s/^ */    /'
+      note "The lock's release label can no longer be trusted; a person must reconcile it. Nothing was touched."
       refused=$((refused + 1)); continue ;;
     retired)
       note "RETIRED — the lock records files Friday no longer manages:"
@@ -174,7 +227,7 @@ for target in "$@"; do
     refused=$((refused + 1)); continue
   fi
 
-  branch="$BRANCH_PREFIX-$short"
+  branch="$BRANCH_PREFIX-$tag"
   if git -C "$target" rev-parse --verify --quiet "$branch" >/dev/null \
      || git -C "$target" ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
     note "REFUSED — branch '$branch' already exists. Finish or delete it first."
@@ -245,6 +298,26 @@ for target in "$@"; do
     if [ "$(blob_mode "$rel")" = 100755 ]; then chmod +x "$target/$rel"; else chmod -x "$target/$rel"; fi
     git -C "$target" add "$rel"
   done
+  # What the consumer held before, read before the lock is rewritten: the pull
+  # request lists what changed since it. Its release when it has one, else its
+  # commit; a name this checkout cannot resolve is said so, not guessed at.
+  from=""
+  old_tag=$(jq -r '.friday.tag? | strings' "$target/$CONSUMER_LOCK" 2>/dev/null)
+  old_commit=$(jq -r '.friday.commit? | strings' "$target/$CONSUMER_LOCK" 2>/dev/null)
+  if [ -n "$old_tag" ] && git -C "$KIT_ROOT" rev-parse --verify -q "refs/tags/$old_tag^{commit}" >/dev/null 2>&1; then
+    from=$old_tag; from_ref="refs/tags/$old_tag"
+  elif [ -n "$old_commit" ] && git -C "$KIT_ROOT" rev-parse --verify -q "$old_commit^{commit}" >/dev/null 2>&1; then
+    from=$old_commit; from_ref=$old_commit
+  fi
+  if [ -n "$from" ]; then
+    changes=$(git -C "$KIT_ROOT" log --format='- %h %s' "$from_ref..refs/tags/$tag" -- payload/ bin/managed-core.txt 2>/dev/null)
+    [ -n "$changes" ] || changes="(none: no commit between them touched payload/ or bin/managed-core.txt)"
+    changes_note="Friday commits that changed \`payload/\` or \`bin/managed-core.txt\` since \`$from\`:
+
+$changes"
+  else
+    changes_note="The release or commit this repository's lock recorded could not be found in Friday, so what changed since is not listed."
+  fi
   # Recorded from the index -- exactly what this commit will hold -- not from
   # the working tree, where an edit nobody staged would be written into the
   # lock and read back as drift by everyone who checks out the branch.
@@ -274,7 +347,7 @@ $retired_list
     refused=$((refused + 1)); continue
   fi
   git -C "$target" commit -q -F - <<MSG
-chore(agents): sync the managed core to Friday $short
+chore(agents): sync the managed core to Friday $tag
 
 Adopt the managed-core files whose content moved in Friday. Only the
 files below changed; this repository's own seeds and overlays are
@@ -284,7 +357,7 @@ $list
 The lock is what identified them: friday-lock reported this repository
 as behind and named each path before anything was copied.
 
-Byte-identical to Friday payload at $payload_commit.
+Byte-identical to Friday release $tag, payload at $payload_commit.
 ${FRIDAY_PROPAGATE_TRAILERS:+
 $FRIDAY_PROPAGATE_TRAILERS}
 MSG
@@ -309,8 +382,8 @@ MSG
   fi
 
   if ! url=$(cd "$target" && gh pr create --base main --head "$branch" \
-    --title "chore(agents): sync the managed core to Friday $short" \
-    --body "Opened by \`friday-propagate\` from Friday \`$payload_commit\`.
+    --title "chore(agents): sync the managed core to Friday $tag" \
+    --body "Opened by \`friday-propagate\` from Friday release \`$tag\` (commit \`$tree\`, payload last changed in \`$payload_commit\`).
 
 Managed-core files whose content moved:
 
@@ -321,6 +394,8 @@ ${moved[*]:-(none — the lock alone moves; ${added[*]} joined the managed core 
 \`friday-lock\` reported this repository as \`behind\` and named each path
 before anything was copied. This repository's own seeds and overlays are
 untouched — only managed core is ever carried.
+
+$changes_note
 $retired_note
 
 Verify before merging:

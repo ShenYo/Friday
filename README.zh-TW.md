@@ -51,7 +51,7 @@ Friday 刻意不做成一個通用的 runtime manager。它檢查的是靜態的
 > **摘要**：Friday 的可攜成果必須由專案本身承載；輔助工具可以選用但
 > 不可成為 baseline 前提。十四個 managed-core 檔維持封閉
 > byte-exact 範圍，seed、runtime integration 與 overlay 仍由 consumer 擁有。
-> 現行 guard 安全修正已在 payload 與 self-check 實作；B06 的 immutable SHA、
+> 現行 guard 安全修正已在 payload 與 self-check 實作；B06 的 release tag、
 > 手動採用及 rollback 責任不變，backup、replay 與外部 runtime 仍待完成。
 
 可攜的成果應該放在專案自己管控的文件、測試或自動化裡。輔助工具可以協助操作者，
@@ -62,14 +62,14 @@ runtime integration 與 overlay，仍由消費端自行擁有並以人工方式�
 目前的 payload 已實作 guard 的安全性更新，其 self-check 也會演練相關的允許與
 禁止指令形式。但這僅是靜態且針對 guard 本身的證據，並不足以證明原生的 callback
 傳遞、exit handling、執行順序或 fail-closed 的強制執行。那些是在消費端的
-Claude 側另行建立的，不是由這個 self-check 證明的。發行版本仍是經審查的
-immutable SHA，採用方式仍是人工進行；當需要 rollback 時，由 Friday 維護者提出，
+Claude 側另行建立的，不是由這個 self-check 證明的。發行版本仍是經審查 commit 上的
+annotated tag，採用方式仍是人工進行；當需要 rollback 時，由 Friday 維護者提出，
 消費端的擁有者負責執行。指定備援維護者、真正的新機器 replay、進一步的消費端
 replay，以及 external-runtime 的收尾，都仍待完成。
 
 ## 生命週期治理（B06）
 
-> **摘要**：Friday 的 MVP 採「可審查 SHA + consumer 手動採用」模式：
+> **摘要**：Friday 的 MVP 採「可審查 release（tag + commit）+ consumer 手動採用」模式：
 > repository owner 負責維護，backup maintainer 尚待指定；不自動同步、不強制
 > 更新，也不自動 rollback。
 
@@ -78,8 +78,11 @@ replay，以及 external-runtime 的收尾，都仍待完成。
 - Repository owner 是 Friday 的主要維護者。備援維護者（backup maintainer）
   目前仍是 **PENDING**；在指定之前，主要維護者仍負責發行審查、復原提案，
   以及記錄相關決策。
-- 一個經審查的 immutable Friday commit SHA，才是發行管道（release channel）。
-  可變動的 branch 名稱不算是發行版本。
+- 一個 release 是 `main` 上某個經審查 commit 的 annotated tag
+  `vMAJOR.MINOR.PATCH`。consumer 的 `.friday-lock.json` 會記錄這個 tag，並以
+  「該 release 當下最後一次修改 payload 的 commit」作為信任的依據，它的 payload
+  與這個 release 逐位元組相同；tag 只是標籤，tag 被移動時，`friday-lock check`
+  會回報 `status: tag-moved`。可變動的 branch 名稱不算是發行版本。
 - 消費端的擁有者，以人工方式採用一個經審查的發行版本，並保留該消費端自己的
   seeds、runtime integration 與 overlay。Friday 不會自動同步，也不會自動
   更新既有的消費端。
@@ -106,19 +109,24 @@ Vendor Skills（包含 Matt Pocock Skills）留在安裝它們的個人層，並
 > 再 install、再預覽並檢查差異；這是 copy-based baseline，不是複製整個 Friday
 > repo 或把 consumer symlink 到它。既有 consumer 請走後面的 manual reconciliation。
 
-對於一個全新的空白 repository，請先取得另外經過審查、釘選在某個 immutable
+對於一個全新的空白 repository，請先取得另外經過審查、釘選在某個 release 的
 commit 上的 Friday checkout。先備條件是 Git、Bash 與 `jq`。請不要把一個
 dirty（有未提交變更）的 Friday checkout 當作範例來源：下面的流程會在那個
 已審查的 pin 上建立一份新的 checkout。執行前，請把兩個絕對路徑與那個 SHA
 的 placeholder 都換成實際值。這些指令不會建立 commit、安裝 runtime，也不會
 設定任何憑證。
 
+`PIN` 是一個經審查 release 的 commit。要找到它，先 clone 一次 Friday，在那裡執行
+`git -C "$FRIDAY" rev-parse 'vX.Y.Z^{commit}'`（`^{commit}` 不能省：對 annotated
+tag，`rev-parse vX.Y.Z` 印出的是 tag object，不是 commit）。下面的腳本仍會檢查
+checkout 的 `HEAD` 等於 `PIN`。
+
 ```sh
 (
   set -eu
   TARGET='/absolute/path/to/new-project'
   FRIDAY='/absolute/path/to/new-Friday-checkout'
-  PIN='replace-with-reviewed-immutable-Friday-SHA'
+  PIN='replace-with-the-commit-of-a-reviewed-Friday-release'
 
   command -v git >/dev/null
   command -v bash >/dev/null
@@ -274,11 +282,12 @@ update engine。
 ## 更新既有消費端
 
 既有消費端的更新，是一次經審查的調和（reconciliation），而不是安裝程式的
-升級。請先釘選（pin）一個經審查的 Friday commit；用一個 placeholder，而不是
-一個可變動的 branch 名稱：
+升級。請先釘選（pin）一個經審查的 Friday release 的 commit（`git -C "$FRIDAY" rev-parse
+'vX.Y.Z^{commit}'` 會印出它）；用一個 placeholder，而不是一個可變動的 branch
+名稱：
 
 ```sh
-PIN='replace-with-reviewed-immutable-Friday-SHA'
+PIN='replace-with-the-commit-of-a-reviewed-Friday-release'
 FRIDAY='/absolute/path/to/Friday'
 TARGET='/absolute/path/to/consumer'
 
@@ -404,7 +413,7 @@ Friday 也沒有 manifest、沒有自動探索（auto-discovery）、沒有自�
 ## 設計筆記
 
 **複製，而不是連結（link）。** 專案會保留自己那份經審查的 baseline，以及
-本地的 overlay。請在安裝前先釘選一個經審查的 Friday commit，並把它的
+本地的 overlay。請在安裝前先釘選一個經審查的 Friday release 的 commit，並把它的
 SHA 記錄在專案的採用紀錄裡；一個可變動的 branch，並不是一個可重現的版本。
 Git 歷史提供了 rollback 的能力：revert 那個採用 commit，或是在一次經審查
 的變更中還原回選定的 pin 版本。`--check` 偵測的是內容差異，而不是這些
@@ -443,8 +452,9 @@ settings。
 
 ## 知道某個 consumer 站在哪裡
 
-`install.sh` 會在目標寫入 `.friday-lock.json`：記錄安裝時的 Friday commit，
-以及每個 managed-core 檔案當時的 sha256。
+`install.sh` 會在目標寫入 `.friday-lock.json`：記錄安裝時的 Friday commit、
+（有的話）命名了那份 payload 的 release tag，以及每個 managed-core 檔案當時的
+sha256。
 
 [`bin/friday-lock`](./bin/friday-lock) 負責讀回來比對。只有 payload consumer
 才有這份記錄。想用 payload 裡某個 hook、但不採用整份 payload 的 repository，
@@ -461,6 +471,7 @@ bin/friday-lock write <target>     # 經審查的調和完成後刷新
 | --- | --- | --- |
 | `in sync` | 每個記錄的檔案都相符，payload 也沒動 | 不用做事 |
 | `drifted` | consumer 裡的檔案與 lock 記錄的不符 | 有人在本機改了 managed-core 檔，去調和它 |
+| `tag-moved` | lock 記錄了一個 release tag，而 Friday 同名的 tag 現在指向的 payload 與 lock 記錄的不同（這個 clone 沒有的 tag 會回報為未驗證，而不是被移動） | 信任 lock 裡的 commit，不要信任 tag；查出是誰移動了它，然後 `friday-lock write` |
 | `behind` | lock 寫下之後，Friday 的 payload 前進了，或有檔案新加入 managed core（標為 `new in the payload`） | 以一次經審查的 commit 接收變更，然後 `friday-lock write` |
 | `retired` | lock 記錄了一個 Friday 已不再管理的檔案 | 刻意決定刪除它或保留為 consumer 自己的檔案，然後 `friday-lock write`。consumer 沒有其他東西要帶時，`friday-propagate` 只會列出它，不會動它。有變更要帶時，它的 pull request 會列出這個檔案，merge 之後即記錄為 consumer 自己的檔案，除非先在那個 branch 上刪掉它 |
 | `ahead` | 這個 consumer 持有 Friday 尚未合併的 payload | **不要**把 payload 蓋上去 |
@@ -481,9 +492,10 @@ managed core 的變更必須到達每一個 consumer，而憑記憶做這件事�
 過期數字的由來。
 
 請從一個與 `origin/main` 一致的 `main` 執行；怎麼確認，寫在
-[`AGENTS.md`](./AGENTS.md#changing-the-payload) 第 4 步。一次執行會 pin 住這裡
-checkout 的 commit，只帶那個 commit 的 tree，因此未 commit 的 payload 修改，或執行
-期間才出現的 Friday commit，都不會到達 consumer。
+[`AGENTS.md`](./AGENTS.md#changing-the-payload) 第 4 步。一次執行會 pin 住 release tag 所指的
+commit（見下方 Releases），只帶那個 commit 的 tree，因此未 commit 的 payload 修改、
+已 merge 到 `main` 但尚未 release 的 payload 變更，或執行期間才出現的 Friday
+commit，都不會到達 consumer。
 
 ```sh
 bin/friday-propagate --dry-run ~/Github_Folks/pet_care ~/Desktop/Finance_App_Project
@@ -506,6 +518,8 @@ managed-core 檔案、刷新 lock、commit、push、開 PR。
 | 寫入或 commit 之前，HEAD 離開了 sync branch | **拒絕**，並說明 HEAD 在哪裡 |
 | 只有 `retired` | **拒絕**，並列出退役的檔案；刪不刪是 owner 的決定 |
 | Friday 不在 `main` 上 | **拒絕**，在讀取任何 consumer 之前 |
+| 沒有 release tag，或該 tag 不在 `main` 上、不是 annotated、或不在 `origin` 上 | **拒絕**，在讀取任何 consumer 之前 |
+| `tag-moved` | **拒絕** —— lock 記錄的 release 標籤已不可信，要由人來調和 |
 | 分支已存在 | **拒絕** |
 | push 之後 `gh` 失敗 | 回報為失敗並附上手動完成的指令，絕不算成已開啟 |
 
@@ -519,6 +533,48 @@ managed-core 檔案、刷新 lock、commit、push、開 PR。
 權限 —— 而且它綁定在一個人身上，不是綁在一個永遠在線的 workflow 上 —— 而
 最終結果完全相同：開出 PR，仍由人 merge。issue #7 保留給「repo 轉 public 或
 核發 token 之後」的 CI 版本。
+
+## 發行版本（Releases）
+
+一個 release 是 `main` 上某個經審查 commit 的 annotated tag
+`vMAJOR.MINOR.PATCH`。commit 才是記錄；tag 只是它的名字，而 tag 可以被移動、
+commit 不行。只有在 payload 或 [`bin/managed-core.txt`](./bin/managed-core.txt)
+變動時，才會切一個 release。
+
+- **MAJOR**：有檔案離開 managed core，或 consumer 必須手動處理。
+- **MINOR**：有檔案加入 managed core，或 payload 的行為改變。
+- **PATCH**：內容修正。
+
+annotated tag 的訊息就是 release note：改了什麼、consumer 必須做什麼。
+
+```sh
+git tag -a vX.Y.Z -m '<release note>' <commit>
+git push origin vX.Y.Z
+bin/friday-propagate <consumer>...
+```
+
+推送任何 tag 都是一個 checkpoint
+（[`safety-boundary.md`](./payload/.agents/docs/git-guideline/safety-boundary.md)）：
+只有在使用者於當下這個 turn 點名 tag 與它的 commit 時，agent 才能推送，透過
+`--tags` 或 `--follow-tags` 順帶推送也一樣。Friday 的 guard 和 `pre-push` 都不會檢查
+這一條，它是靠 instruction 執行的。
+
+`bin/friday-propagate` 只帶 release：預設是格式剛好為 `vX.Y.Z` 的最新 tag
+（`v1.1.0-rc1` 這類 pre-release 永遠不算），或用 `--tag vX.Y.Z` 指定的那一個。
+Friday 沒有 release tag，或該 tag 不在 `main` 上、不是 annotated tag、或 `origin`
+上沒有同一個 tag object 時，它會在讀取任何 consumer 之前拒絕。`main` 上還沒有被任何
+release 涵蓋的 payload 變更，它只會提示、不會帶。每個 pull request 都會列出自
+consumer 的 lock 所記錄的 release（較舊的 lock 則是 commit）以來，改動過
+`payload/` 或 `bin/managed-core.txt` 的 Friday commit。
+
+`friday-lock check` 會在 `release:` 那一行印出所記錄的 release；lock 沒有記錄
+tag 時印 `none`。`friday-lock write` 記錄的是 `friday-propagate` 指定的 release
+tag，或它所讀取的那個 commit 上的 release tag；兩者都沒有時，則記錄 payload 與
+managed-core list 都相同的最新 release。之後若同名的 tag 指向了不同的內容，
+`check` 會回報 `status: tag-moved`：信任 lock 裡的 commit，不要信任 tag。這個
+Friday clone 裡沒有的 tag 不會被判定為被移動，因為還沒 fetch 到它的 clone 看起來
+完全一樣：lock 記錄的 commit 在本機時，`check` 會印出找不到這個 tag、未驗證；連
+commit 都不在時，沒有東西可以比對，它不會提到 tag。兩種情況都交由其他檢查決定狀態。
 
 ## 在 Claude 側實測到的 runtime 行為
 

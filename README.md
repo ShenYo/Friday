@@ -16,7 +16,14 @@ conflict-safe, copied content keeps the baseline portable and reviewable, and
 existing-consumer changes stay behind a reviewed reconciliation boundary rather
 than becoming an automatic update. A developer's personal layer stays out of
 it: do not place personal skills, settings, or other personal-home
-dependencies in Friday's project contract.
+dependencies in Friday's project contract. Portable outcomes belong in
+project-controlled documentation, tests, or automation; optional helpers may
+assist an operator, but no consumer may require them to bootstrap or satisfy the
+Friday contract.
+
+How Friday got here is in [`docs/history.md`](./docs/history.md): dated
+decisions and incidents, measurements, and recent progress. This README
+describes the present.
 
 ## When to use Friday
 
@@ -47,34 +54,39 @@ a dependency on Friday's filesystem.
 Friday is deliberately not a universal runtime manager. It checks static Codex
 wiring, not native callback behavior, exit handling, handler order, or
 fail-closed enforcement; Gemini is pending. Those four were measured on the
-Claude side in a consumer (see "Runtime behaviour measured on the Claude side"
-below) and remain unverified for Codex, which is a different adapter. Friday
+Claude side in a consumer ([measurements](./docs/history.md#2026-10-22-runtime-behaviour-measured-on-the-claude-side))
+and remain unverified for Codex, which is a different adapter. Friday
 does not discover arbitrary skills or install a consumer's domain workflow.
 
-## Current operating context
+## Status (2026-10-25)
 
-> **中文摘要**：Friday 的可攜成果必須由專案本身承載；輔助工具可以選用但
-> 不可成為 baseline 前提。十四個 managed-core 檔維持封閉
-> byte-exact 範圍，seed、runtime integration 與 overlay 仍由 consumer 擁有。
-> 現行 guard 安全修正已在 payload 與 self-check 實作；B06 的 release tag、
-> 手動採用及 rollback 責任不變，backup、replay 與外部 runtime 仍待完成。
+> **中文摘要**：managed core 十四檔已以 v1.0.0（2026-10-25）發行；pet_care 與 Finance
+> 兩個 consumer 都已同步在 v1.0.0。待辦：指定 backup maintainer、真正的新機器 replay、
+> 第三個 consumer、external-runtime 收尾，以及 managed-core 更新 bot。
 
-Portable outcomes belong in project-controlled documentation, tests, or
-automation. Optional helpers may assist an operator, but no consumer may
-require them to bootstrap or satisfy the Friday contract. The closed
-fourteen-file managed core remains the only byte-exact comparison set;
-consumer seeds, runtime integration, and overlays remain consumer-owned and
-are reconciled manually.
+In place:
 
-The current payload implements the guard security updates, and its self-check
-exercises the relevant allowed and blocked command forms. That is static and
-direct-guard evidence only; it does not establish native callback delivery,
-exit handling, ordering, or fail-closed enforcement. Those were established
-separately on the Claude side, in a consumer, not by this self-check. Releases remain annotated tags
-on reviewed commits, adoption remains manual, and the Friday maintainer proposes a
-rollback while the consumer owner performs it. A named backup maintainer,
-real new-machine replay, a further consumer replay, and external-runtime
-closure are still pending.
+- The managed core: 14 files, listed in [`bin/managed-core.txt`](./bin/managed-core.txt).
+- Released as `v1.0.0` (2026-10-25). Consumers receive the managed core only as a
+  release (see [Releases](#releases)).
+- Both consumers, `pet_care` and Finance, record `v1.0.0` and are `in sync`.
+- CI is required on `main`: the test suites on ubuntu and macos, shellcheck, and
+  gitleaks ([`ci.yml`](./.github/workflows/ci.yml)).
+
+Pending:
+
+- A named backup maintainer (see [Lifecycle governance](#lifecycle-governance-b06)).
+- A real new-machine replay.
+- A third genuine consumer.
+- External-runtime closure: Codex and Gemini behaviour Friday does not verify.
+- The next payload release will add the two overlay files both consumers
+  already hold identically, `mcp.md` and `triage-labels.md`, to the managed core.
+- The managed-core update bot, so that a Friday release opens the consumer pull
+  requests itself: [ShenYo/Friday#7](https://github.com/ShenYo/Friday/issues/7).
+
+The agent-platform epic that groups the wider work is
+[ShenYo/Friday#10](https://github.com/ShenYo/Friday/issues/10); an item above
+without its own link has no open issue yet.
 
 ## Lifecycle governance (B06)
 
@@ -257,8 +269,8 @@ to the default branch is refused however the command was spelled. The first
 push to a remote with no refs at all is allowed: there is no default branch to
 protect, nothing to delete and no history to rewrite, and refusing it made
 creating a repository impossible without bypassing the hook. They are
-byte-exact like the rest of the core: an earlier revision of this list omitted
-them, which left the reconciliation recipe below silently incomplete.
+byte-exact like the rest of the core, so the reconciliation recipe below must
+carry them ([history](./docs/history.md#2026-10-22-the-git-hooks-were-missing-from-the-managed-core-list)).
 
 The following are blank-repository seeds or runtime integration, not the
 managed core. Existing consumers reconcile them manually:
@@ -281,10 +293,6 @@ project-local guard is readable, then executes it. It does not include a
 consumer protected-path handler. The core checker permits consumer handlers
 alongside that single shared handler, but requires the shared handler exactly
 once.
-
-The reviewed generic promotion source is `pet_care` commit `3e4f03b`;
-its protected-path consumer overlay is intentionally excluded. Record the
-corresponding Friday adoption SHA only after this payload change is committed.
 
 Consumer overlays remain outside both lists. A consumer may add an executable
 regular-file `.agents/hooks/check-project-agent-integration.sh`; when present,
@@ -333,14 +341,6 @@ consumer diff and create one atomic consumer commit under that repository's
 own rules. Friday has no force mode, manifest, auto-sync, or automatic
 reconciliation.
 
-### Dated adoption evidence
-
-As of 2026-10-13, `pet_care` and Finance were verified as 10/10 exact matches
-for the managed core at Friday `b44e1ff`. This is historical evidence only:
-any later payload change requires a fresh managed-core comparison before either
-consumer records a new adoption SHA. It does not claim whole-repository
-equality or native runtime enforcement in either consumer.
-
 ## Safety model and limits
 
 [`guard-collaborative-git.sh`](./payload/.agents/hooks/guard-collaborative-git.sh)
@@ -358,8 +358,17 @@ Claude Code Bash and Codex Bash/`apply_patch` receive static project wiring to
 the shared guard. Review the trusted project hook definition and pinned Friday
 hash before relying on Codex; for Codex, callback delivery, exit handling,
 handler order, and fail-closed behavior are not verified. Gemini remains
-pending. All four were measured on the Claude side — see below. This setup is
-a guardrail, not a security boundary.
+pending. All four were measured on the Claude side
+([measurements](./docs/history.md#2026-10-22-runtime-behaviour-measured-on-the-claude-side)).
+This setup is a guardrail, not a security boundary.
+
+Two of those results shape the payload. Every handler declares
+`onFailure: "block"`, because a failing hook without it fails open silently,
+indistinguishable from no guard. And handlers under one matcher run
+concurrently, and when several block only one reason reaches the model, so no
+handler may assume it runs first or that it alone will be heard. Hook sources
+merge rather than override, so a permissive settings file cannot lift a guard:
+`claude --settings <empty>.json` is not a bypass.
 
 The three Git skills are the other half.
 [`safety-boundary.md`](./payload/.agents/docs/git-guideline/safety-boundary.md) treats invoking
@@ -461,19 +470,15 @@ kit in a disposable project before adoption; this is not permission to refresh
 an existing consumer or change personal settings.
 
 **The payload owns no project references.** Worked examples use `#123` rather
-than real issue numbers, and no file names another repository's documents. This
-was checked before the first commit — the version in `pet_care` did carry issue
-numbers and paths, which is exactly the coupling that makes a library
-unportable.
+than real issue numbers, and no file names another repository's documents,
+because that coupling makes a library unportable
+([history](./docs/history.md#2026-09-08-the-payload-was-checked-for-project-references-before-the-first-commit)).
 
-**No dependency on `rg`.** The self-check originally used ripgrep for its
-stale-reference scan. On the machine this kit was built on, `rg` exists only as
-an interactive shell function, so a script calling it failed with "command not
-found" — and because that check treats "found nothing" as success, it had been
-passing vacuously. It now uses `grep`, and first proves the search can find a
-string that is definitely present before trusting any negative result.
-
-That paragraph records the original failure, not current pet-care behavior.
+**No dependency on `rg`.** The self-check uses `grep`, and first proves the
+search can find a string that is definitely present before trusting any negative
+result, because a check that treats "found nothing" as success passes vacuously
+when its tool is missing
+([history](./docs/history.md#2026-09-08-the-self-check-searched-with-a-tool-that-was-not-there)).
 
 ## Knowing where a consumer stands
 
@@ -508,14 +513,14 @@ what makes a daily scheduled check quiet enough to be worth running.
 
 [`bin/managed-core.txt`](./bin/managed-core.txt) is the single source of truth
 for which files are managed and which are consumer-owned. A payload file listed
-as neither fails the tool loudly rather than shipping unchecked — the gap that
-once let three githooks sit outside the byte-exact set while the docs still
-said eleven.
+as neither fails the tool loudly rather than shipping unchecked
+([history](./docs/history.md#2026-10-22-the-git-hooks-were-missing-from-the-managed-core-list)).
 
 ## Carrying a change out to consumers
 
 A managed-core change has to reach every consumer, and doing that from memory
-is how the five stale counts happened.
+leaves stale counts behind
+([history](./docs/history.md#2026-10-22-the-git-hooks-were-missing-from-the-managed-core-list)).
 
 Run it from a `main` that matches `origin/main`; step 4 of
 [`AGENTS.md`](./AGENTS.md#changing-the-payload) says how to confirm that. The
@@ -557,23 +562,26 @@ to start.
 
 ### Why this is a local command and not a CI bot
 
-The four repositories are private and span three accounts, so a CI-hosted bot
-needs a cross-repository token with write access to all of them, living in a
-secret. A developer machine's `gh` already has that access — scoped to a
+The consumers are private and sit in two other accounts than Friday's, so a
+CI-hosted bot needs a cross-repository token with write access to all of them,
+living in a secret. A developer machine's `gh` already has that access — scoped to a
 person rather than to an always-on workflow — and the end result is identical:
-pull requests a human still merges. Issue #7 covers the CI-hosted variant if
-the repositories ever go public or a token is issued.
+pull requests a human still merges. [Issue #7](https://github.com/ShenYo/Friday/issues/7)
+covers the CI-hosted variant if the consumers ever go public or a token is issued.
 
 ## Releases
 
 A release is an annotated tag `vMAJOR.MINOR.PATCH` on a reviewed commit on
 `main`. The commit is the record; the tag is its name, and a tag can be moved
-where a commit cannot. One is cut only when the payload or
-[`bin/managed-core.txt`](./bin/managed-core.txt) changed.
+where a commit cannot. Any reviewed change on `main` may be released, the
+documentation included; only a release whose payload or
+[`bin/managed-core.txt`](./bin/managed-core.txt) differs gives consumers
+anything to take, and `friday-propagate` leaves the others alone.
 
-- **MAJOR** when a file leaves the managed core, or a consumer must act by hand.
-- **MINOR** when a file joins the managed core, or payload behaviour changes.
-- **PATCH** for content fixes.
+- **PATCH** for documentation-only changes, the payload's documents included.
+- **MINOR** for changes to what runs: the Skills, the Git hooks and the guard
+  scripts.
+- **MAJOR** for a large structural change.
 
 The annotated tag's message is the release note: what changed, and what a
 consumer must do.
@@ -610,44 +618,6 @@ that has not fetched it looks the same: when the recorded commit is here,
 `check` prints that the tag is not found and not verified; when the commit is
 missing too, nothing can be compared and it says nothing about the tag. Either
 way the other checks decide the status.
-
-## Runtime behaviour measured on the Claude side
-
-Measured in a consumer on **Claude Code 2.1.306** (2026-10-22), in disposable
-fixtures, and recorded there rather than here. Friday's own self-check proves
-none of it — it is static wiring and direct-guard evidence. Codex is a
-different adapter and none of this transfers to it.
-
-**`onFailure: "block"` does what the payload assumes.** A hook exiting a code
-other than 0 or 2 blocks the tool call, and so does one that overruns its
-`timeout`; the message handed to the model says `blocking because onFailure is
-"block"`.
-
-**Without `onFailure`, a failing hook fails open silently.** The same hook
-exiting 127 with the field omitted let the command run, and the model was told
-nothing at all — no error, no warning. A guard that breaks is then
-indistinguishable from no guard, from inside the session. Every handler in
-this payload declares the field; the consequence of ever dropping it is now
-known rather than assumed.
-
-**Handlers under one matcher run concurrently, not in declared order.** With a
-first handler sleeping two seconds, the second handler's work completed 2.0 s
-earlier. All handlers run even when one of them blocks, and when several
-block, only one reason reaches the model — not necessarily the first declared.
-Blocking itself is reliable: any handler exiting 2 refuses the call. Nothing
-in this payload depends on ordering, but a future handler that assumes it runs
-first, or that it alone will be heard, would be wrong.
-
-**Hook sources merge; they cannot be used to lift a guard.** A permissive
-handler in `.claude/settings.local.json`, or supplied through `--settings`,
-runs *alongside* a project handler that refuses, and the call is still
-blocked. Passing `{}` as an entire `--settings` file removes nothing: the
-project handler still ran and still blocked. So `claude --settings
-<empty>.json` is not a bypass.
-
-Not measured: precedence for user-level `~/.claude/settings.json`, which could
-not be reached without copying a credential into a temporary directory; and
-anything at all about Codex or Gemini.
 
 ## Verification and tests
 

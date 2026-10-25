@@ -107,11 +107,28 @@ diff "$FRIDAY/payload/<path>" "$TARGET/<path>"
 除非你能精確說出你的版本為什麼不同，否則採用 Friday 的版本。如果你保留了差異，
 那個檔案就不再是 managed core，整套機制也就再也無法告訴你任何關於它的事。
 
-當每個 managed-core 檔案都相符時，把它記錄下來：
+### 這裡的安裝程式不會替你做完
+
+在既有專案上，`install.sh` **只能預覽**。只要有任何已宣告的檔案衝突，它就會拒絕；
+而你的 `AGENTS.md`、`.agents/AGENTS.md` 與 `.gitignore` 是*刻意設計成*會衝突的，
+而且永遠都會 —— 它們是你的。所以在已經有這些檔案的專案上，安裝程式永遠不會執行
+到完成，這是正確的行為，不是需要繞過的問題。
+
+請自己把 managed core 複製過去，放在一次經審查的 commit 裡，並且不要動你自己的
+檔案：
 
 ```sh
+while IFS= read -r rel; do
+  case "$rel" in ''|'#'*|'!'*) continue ;; esac
+  mkdir -p "$TARGET/$(dirname "$rel")"
+  cp "$FRIDAY/payload/$rel" "$TARGET/$rel"
+done < "$FRIDAY/bin/managed-core.txt"
+
+git -C "$TARGET" config core.hooksPath .agents/githooks
 bash "$FRIDAY/bin/friday-lock" write "$TARGET"
 ```
+
+絕對不要複製整個 `.agents/` 目錄：那會覆蓋你剛剛合併好的路由表。
 
 ### 為什麼不讓安裝程式直接合併
 

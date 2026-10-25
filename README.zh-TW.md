@@ -14,6 +14,11 @@ repository，而不依賴開發者個人的 home 目錄、個人 Skills 或 vend
 以複製方式交付內容讓 baseline 保持可攜且可審查；既有消費端的變更則停留在經審查的
 調和（reconciliation）邊界之後，而不會變成自動更新。開發者的個人層不屬於這裡：
 請勿將個人的 Skills、settings 或其他依賴個人 home 目錄的內容，放進 Friday 的專案契約中。
+可攜的成果應該放在專案自己管控的文件、測試或自動化裡；輔助工具可以協助操作者，
+但沒有任何消費端被允許把這些輔助工具當成 bootstrap 或滿足 Friday 契約的前提。
+
+Friday 是怎麼走到現在的，記錄在 [`docs/history.md`](./docs/history.md)（英文）：有日期的
+決策與事故、實測記錄與近期進度。本 README 只描述現在。
 
 ## 何時該使用 Friday
 
@@ -42,30 +47,39 @@ adapter 共用同一份經審查的 guard 實作，而不會對 Friday 的檔案
 
 Friday 刻意不做成一個通用的 runtime manager。它檢查的是靜態的 Codex 接線（wiring），
 而不是原生的 callback 行為、exit handling、handler 順序，或 fail-closed 的強制
-執行；Gemini 的支援仍是 pending。這四項已在某個消費端的 Claude 側實測（見下方
-「在 Claude 側實測到的 runtime 行為」），但 Codex 是另一個 adapter，對它而言
+執行；Gemini 的支援仍是 pending。這四項已在某個消費端的 Claude 側實測（見
+[實測記錄](./docs/history.md#2026-10-22-runtime-behaviour-measured-on-the-claude-side)），但 Codex 是另一個 adapter，對它而言
 仍未驗證。Friday 也不會自動探索任意 Skills，或安裝消費端專屬的 domain workflow。
 
-## 現行運作情境
+## 現況（2026-10-25）
 
-> **摘要**：Friday 的可攜成果必須由專案本身承載；輔助工具可以選用但
-> 不可成為 baseline 前提。十四個 managed-core 檔維持封閉
-> byte-exact 範圍，seed、runtime integration 與 overlay 仍由 consumer 擁有。
-> 現行 guard 安全修正已在 payload 與 self-check 實作；B06 的 release tag、
-> 手動採用及 rollback 責任不變，backup、replay 與外部 runtime 仍待完成。
+> **摘要**：managed core 十四檔已以 v1.0.0（2026-10-25）發行；pet_care 與 Finance
+> 兩個 consumer 都已同步在 v1.0.0。待辦：指定 backup maintainer、真正的新機器 replay、
+> 第三個 consumer、external-runtime 收尾，以及 managed-core 更新 bot。
 
-可攜的成果應該放在專案自己管控的文件、測試或自動化裡。輔助工具可以協助操作者，
-但沒有任何消費端被允許把這些輔助工具當成 bootstrap 或滿足 Friday 契約的前提。
-封閉的十四檔 managed core，始終是唯一的 byte-exact 比對集合；消費端的 seeds、
-runtime integration 與 overlay，仍由消費端自行擁有並以人工方式調和。
+已就位：
 
-目前的 payload 已實作 guard 的安全性更新，其 self-check 也會演練相關的允許與
-禁止指令形式。但這僅是靜態且針對 guard 本身的證據，並不足以證明原生的 callback
-傳遞、exit handling、執行順序或 fail-closed 的強制執行。那些是在消費端的
-Claude 側另行建立的，不是由這個 self-check 證明的。發行版本仍是經審查 commit 上的
-annotated tag，採用方式仍是人工進行；當需要 rollback 時，由 Friday 維護者提出，
-消費端的擁有者負責執行。指定備援維護者、真正的新機器 replay、進一步的消費端
-replay，以及 external-runtime 的收尾，都仍待完成。
+- managed core：14 個檔案，列在 [`bin/managed-core.txt`](./bin/managed-core.txt)。
+- 已發行 `v1.0.0`（2026-10-25）。consumer 只以 release 接收 managed core（見
+  [發行版本（Releases）](#發行版本releases)）。
+- 兩個 consumer，`pet_care` 與 Finance，都記錄 `v1.0.0`，狀態為 `in sync`。
+- `main` 上要求 CI：ubuntu 與 macos 的測試、shellcheck 與 gitleaks
+  （[`ci.yml`](./.github/workflows/ci.yml)）。
+
+待辦：
+
+- 指定備援維護者（見[生命週期治理](#生命週期治理b06)）。
+- 真正的新機器 replay。
+- 第三個 genuine consumer。
+- External-runtime 的收尾：Friday 尚未驗證的 Codex 與 Gemini 行為。
+- 下一個 payload release 會把兩個 consumer 已經逐位元組相同持有的 overlay 檔
+  `mcp.md` 與 `triage-labels.md` 加入 managed core。
+- managed-core 更新 bot，讓 Friday 發行時自動向 consumer 開 pull request：
+  [ShenYo/Friday#7](https://github.com/ShenYo/Friday/issues/7)。
+
+把更廣的工作歸在一起的 agent-platform epic 是
+[ShenYo/Friday#10](https://github.com/ShenYo/Friday/issues/10)；上面沒有自己連結的項目，
+目前沒有 open issue。
 
 ## 生命週期治理（B06）
 
@@ -240,8 +254,8 @@ tool hooks，由 installer 透過 `core.hooksPath` 接上。
 對一個完全沒有 ref 的 remote 做第一次推送則會放行：沒有 default branch 要保護、
 沒有 ref 可刪、也沒有歷史可改寫，而拒絕它會讓「建立一個 repository」在不繞過
 hook 的前提下變得不可能。它們
-與 managed core 其餘檔案一樣需要逐位元組比對：先前版本的清單遺漏了它們，使得
-下方的對帳流程在無聲中並不完整。
+與 managed core 其餘檔案一樣需要逐位元組比對，所以下方的對帳流程必須帶上它們
+（[history](./docs/history.md#2026-10-22-the-git-hooks-were-missing-from-the-managed-core-list)）。
 
 以下這些屬於空白 repository 的 seeds 或 runtime integration，並不是
 managed core。既有消費端需要自行以人工方式調和它們：
@@ -263,10 +277,6 @@ AGENTS.md                                    root pointer
 可被讀取，然後才執行它。它並不包含消費端自己的 protected-path handler。
 managed core 的 checker，允許消費端在那唯一的共用 handler 之外再加上自己的
 handler，但要求那個共用 handler 必須恰好存在一次。
-
-這次審查過的通用化（generic promotion）來源，是 `pet_care` 的 commit
-`3e4f03b`；其 protected-path 消費端 overlay 刻意被排除在外。只有在這個
-payload 變更被 commit 之後，才記錄對應的 Friday 採用 SHA。
 
 消費端的 overlay，不屬於上面任何一份清單。消費端可以額外加入一個可執行的
 一般檔案 `.agents/hooks/check-project-agent-integration.sh`；當它存在時，
@@ -313,14 +323,6 @@ git -C "$TARGET" diff --check
 並依該 repository 自己的規則，建立一個原子性（atomic）的消費端 commit。
 Friday 沒有強制模式、沒有 manifest、沒有自動同步，也沒有自動調和機制。
 
-### 具日期標記的採用證據
-
-截至 2026-10-13，`pet_care` 與 Finance 都已驗證，在 Friday 的 `b44e1ff`
-上，managed core 達到 10/10 的完全相符。這僅是歷史性的證據：之後任何
-payload 的變更，都需要重新做一次 managed-core 的比對，才能讓任一消費端
-記錄新的採用 SHA。它也不代表整個 repository 相等，或在任一消費端有原生
-runtime 的強制執行。
-
 ## 安全模型與限制
 
 [`guard-collaborative-git.sh`](./payload/.agents/hooks/guard-collaborative-git.sh)
@@ -338,8 +340,14 @@ Code 的 Bash，以及 Codex 的 Bash/`apply_patch`，都收到了靜態的專�
 指向這個共用的 guard。在依賴 Codex 之前，請先審查受信任的專案 hook
 定義，以及釘選的 Friday hash；就 Codex 而言，其 callback 傳遞、exit
 handling、handler 順序，以及 fail-closed 行為都尚未被驗證。Gemini 仍是
-pending。這四項都已在 Claude 側實測 —— 見下方。
+pending。這四項都已在 Claude 側實測（[實測記錄](./docs/history.md#2026-10-22-runtime-behaviour-measured-on-the-claude-side)）。
 這套機制是一個 guardrail，而不是一個安全邊界（security boundary）。
+
+其中兩項結果決定了 payload 的寫法。每個 handler 都宣告 `onFailure: "block"`，因為沒有
+它時，失敗的 hook 會靜默 fail-open，與沒有 guard 無法區分。而同一個 matcher 下的
+handler 是並行執行的，多個 handler 同時阻擋時只有一個理由會傳到 model，所以任何
+handler 都不能假設自己先執行、或只有自己會被聽見。hook 的設定來源是合併而不是覆蓋，
+所以寬鬆的設定檔無法解除 guard：`claude --settings <empty>.json` 不是繞過的方法。
 
 另外一半則是那三個 Git skills。
 [`safety-boundary.md`](./payload/.agents/docs/git-guideline/safety-boundary.md) 把呼叫
@@ -436,19 +444,14 @@ routing、runtime 設定，以及專案 overlay，都需要分別審查。特別
 settings。
 
 **Payload 本身不帶有任何專案引用。** 範例一律使用 `#123` 這類佔位符，
-而不是真實的 issue 編號，也不會有任何檔案指向另一個 repository 的文件。
-這一點在第一次 commit 之前就已經檢查過——`pet_care` 裡原本的那個版本，
-確實帶有真實的 issue 編號與路徑，而這正是會讓一個 library 無法保持可攜
-（unportable）的那種耦合。
+而不是真實的 issue 編號，也不會有任何檔案指向另一個 repository 的文件，
+因為那種耦合會讓一個 library 無法保持可攜（unportable）
+（[history](./docs/history.md#2026-09-08-the-payload-was-checked-for-project-references-before-the-first-commit)）。
 
-**不依賴 `rg`。** Self-check 原本用 ripgrep 來做 stale-reference 的掃描。
-但在打造這套工具的機器上，`rg` 只存在於一個互動式的 shell function 裡，
-所以透過腳本呼叫它時，會出現「command not found」的錯誤——而因為那個檢查
-把「什麼都沒找到」當成成功，所以它其實一直都是以一種空洞的方式「通過」。
-現在它改用 `grep`，並且會先證明這個搜尋確實能找到一個已知存在的字串，
-才會去信任任何「找不到」的結果。
-
-這一段記錄的是當時那次失敗的經過，並不代表目前 pet-care 的實際行為。
+**不依賴 `rg`。** Self-check 使用 `grep`，並且會先證明這個搜尋確實能找到一個已知
+存在的字串，才會去信任任何「找不到」的結果，因為把「什麼都沒找到」當成成功的檢查，
+在它的工具不存在時會空洞地「通過」
+（[history](./docs/history.md#2026-09-08-the-self-check-searched-with-a-tool-that-was-not-there)）。
 
 ## 知道某個 consumer 站在哪裡
 
@@ -483,13 +486,13 @@ bin/friday-lock write <target>     # 經審查的調和完成後刷新
 
 [`bin/managed-core.txt`](./bin/managed-core.txt) 是「哪些檔案屬於 managed、
 哪些屬於 consumer」的唯一真實來源。一個兩邊都沒登記的 payload 檔會讓工具大聲
-失敗，而不是悄悄被發出去卻從不比對 —— 那正是當初讓三個 githooks 落在 byte-exact
-集合之外、而文件還寫著十一檔的那個缺口。
+失敗，而不是悄悄被發出去卻從不比對
+（[history](./docs/history.md#2026-10-22-the-git-hooks-were-missing-from-the-managed-core-list)）。
 
 ## 把變更帶到各個 consumer
 
-managed core 的變更必須到達每一個 consumer，而憑記憶做這件事，正是那五處
-過期數字的由來。
+managed core 的變更必須到達每一個 consumer，而憑記憶做這件事，會留下過期的數字
+（[history](./docs/history.md#2026-10-22-the-git-hooks-were-missing-from-the-managed-core-list)）。
 
 請從一個與 `origin/main` 一致的 `main` 執行；怎麼確認，寫在
 [`AGENTS.md`](./AGENTS.md#changing-the-payload) 第 4 步。一次執行會 pin 住 release tag 所指的
@@ -528,22 +531,23 @@ managed-core 檔案、刷新 lock、commit、push、開 PR。
 
 ### 為什麼是本機指令而不是 CI bot
 
-四個 repository 都是 private 且分屬三個帳號，所以 CI 託管的 bot 需要一把對
+consumer 都是 private，且位於 Friday 以外的兩個帳號，所以 CI 託管的 bot 需要一把對
 全部都有寫入權的跨 repo token 常駐在 secret 裡。開發機上的 `gh` 本來就有這個
 權限 —— 而且它綁定在一個人身上，不是綁在一個永遠在線的 workflow 上 —— 而
-最終結果完全相同：開出 PR，仍由人 merge。issue #7 保留給「repo 轉 public 或
+最終結果完全相同：開出 PR，仍由人 merge。[issue #7](https://github.com/ShenYo/Friday/issues/7) 保留給「consumer 轉 public 或
 核發 token 之後」的 CI 版本。
 
 ## 發行版本（Releases）
 
 一個 release 是 `main` 上某個經審查 commit 的 annotated tag
 `vMAJOR.MINOR.PATCH`。commit 才是記錄；tag 只是它的名字，而 tag 可以被移動、
-commit 不行。只有在 payload 或 [`bin/managed-core.txt`](./bin/managed-core.txt)
-變動時，才會切一個 release。
+commit 不行。`main` 上任何經審查的變更都可以發版，文件也包括在內；只有 payload 或
+[`bin/managed-core.txt`](./bin/managed-core.txt) 有差異的 release，consumer 才有東西
+要接收，其他的 `friday-propagate` 不會動。
 
-- **MAJOR**：有檔案離開 managed core，或 consumer 必須手動處理。
-- **MINOR**：有檔案加入 managed core，或 payload 的行為改變。
-- **PATCH**：內容修正。
+- **PATCH**：只有文件的變更，payload 裡的文件也算在內。
+- **MINOR**：會執行的東西的變更：Skill、Git hooks 與 guard script。
+- **MAJOR**：結構上的大變更。
 
 annotated tag 的訊息就是 release note：改了什麼、consumer 必須做什麼。
 
@@ -575,37 +579,6 @@ managed-core list 都相同的最新 release。之後若同名的 tag 指向了�
 Friday clone 裡沒有的 tag 不會被判定為被移動，因為還沒 fetch 到它的 clone 看起來
 完全一樣：lock 記錄的 commit 在本機時，`check` 會印出找不到這個 tag、未驗證；連
 commit 都不在時，沒有東西可以比對，它不會提到 tag。兩種情況都交由其他檢查決定狀態。
-
-## 在 Claude 側實測到的 runtime 行為
-
-在某個消費端、以 **Claude Code 2.1.306** 於一次性 fixture 中實測（2026-10-22），
-證據記錄在該消費端而不是這裡。Friday 自己的 self-check 證明不了其中任何一項 ——
-它是靜態接線與 guard 直接探測的證據。Codex 是另一個 adapter，這些結論都不轉移。
-
-**`onFailure: "block"` 確實做到 payload 所假設的事。** hook 以 0 與 2 以外的
-exit code 結束時會擋下工具呼叫，超過 `timeout` 時也會；交給模型的訊息會寫出
-`blocking because onFailure is "block"`。
-
-**不設 `onFailure` 時，失敗的 hook 會靜默 fail-open。** 同一個 hook 以 127
-結束、但省略該欄位時，指令照常執行，而模型完全沒被告知任何事 —— 沒有錯誤、
-沒有警告。從 session 內部看，壞掉的 guard 與沒有 guard 無法區分。這個 payload
-的每個 handler 都宣告了該欄位；拿掉它的後果現在是已知的，而不是假設的。
-
-**同一個 matcher 下的 handler 是並行執行，不照宣告順序。** 讓第一個 handler
-先睡兩秒，第二個 handler 的工作仍比它早 2.0 秒完成。即使其中一個擋下，所有
-handler 仍會執行；而當多個都擋下時，只有一個理由會送達模型，且不一定是宣告在
-前的那個。擋下本身是可靠的：任何 handler exit 2 都會拒絕該呼叫。這個 payload
-沒有任何東西依賴順序，但未來若有 handler 假設自己會先跑、或假設只有自己會被
-聽見，那就會是錯的。
-
-**Hook 來源是疊加的，不能用來解除 guard。** 放在
-`.claude/settings.local.json` 或透過 `--settings` 提供的放行 handler，會與
-專案中拒絕的 handler **一起**執行，而該呼叫仍然被擋下。把整個 `--settings`
-檔傳成 `{}` 也移除不了任何東西：專案的 handler 照樣執行、照樣擋下。所以
-`claude --settings <空檔>.json` 不是一條繞過路徑。
-
-未實測：user 層 `~/.claude/settings.json` 的優先序 —— 要測就得把憑證複製到
-暫存目錄；以及關於 Codex 或 Gemini 的任何事。
 
 ## 驗證與測試
 

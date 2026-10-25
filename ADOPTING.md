@@ -94,6 +94,7 @@ Look only at the path on each CONFLICT line.
 | CONFLICT on | What it is | What to do |
 | --- | --- | --- |
 | `AGENTS.md` | your root pointer | **expected** — keep yours; it only has to point at `.agents/AGENTS.md` |
+| `CLAUDE.md` | your root pointer for Claude Code | **expected** — keep yours; it only has to import `.agents/AGENTS.md` |
 | `.agents/AGENTS.md` | your routing table | **expected** — keep yours; add Friday's routing rows to it |
 | `.gitignore` | yours | **expected** — append Friday's entries |
 | `.claude/settings.json` | your runtime wiring | **expected** — add Friday's handler to your `hooks` array, do not replace the file |
@@ -102,12 +103,12 @@ Look only at the path on each CONFLICT line.
 | `.git/hooks` | hooks that `core.hooksPath` would stop running | **decide first** — move what they do into the reviewed hooks, or drop them deliberately |
 | **anything else** | **the managed core** | **a real conflict** — see below |
 
-Those five are the only files Friday seeds and then leaves to you. Everything
+Those six are the only files Friday seeds and then leaves to you. Everything
 else it ships is the managed core, which must end up byte-identical.
 
 ### A real conflict
 
-A CONFLICT on one of the fourteen managed-core files means your copy and
+A CONFLICT on one of the fifteen managed-core files means your copy and
 Friday's have diverged. Reconcile it file by file, in a reviewed commit:
 
 ```sh
@@ -136,8 +137,22 @@ while IFS= read -r rel; do
   cp "$FRIDAY/payload/$rel" "$TARGET/$rel"
 done < "$FRIDAY/bin/managed-core.txt"
 
-git -C "$TARGET" config core.hooksPath .agents/githooks
 bash "$FRIDAY/bin/friday-lock" write "$TARGET"
+```
+
+The copy includes `.agents/bin/setup.sh`. Run it in the target to wire the
+clone: it sets `core.hooksPath`, links the runtime guard and the Claude Code
+Skills, and creates `AGENTS.md` and `CLAUDE.md` only if they are missing. It
+never overwrites what it did not create, so your own pointers stay as they are.
+The one thing it replaces is a dangling `.claude/skills/<name>` link that points
+into `../../.agents/skills/` (the only form it writes); any other dangling link is
+reported as a CONFLICT and left.
+Preview with `--check` first:
+
+```sh
+cd "$TARGET"
+bash .agents/bin/setup.sh --check   # exits 1 when it would change something
+bash .agents/bin/setup.sh
 ```
 
 Never copy a whole `.agents/` directory: that would overwrite the routing table
@@ -158,10 +173,11 @@ bash "$TARGET/.agents/hooks/check-collaborative-git.sh"
 
 `core.hooksPath` is per-clone config that is never cloned. A fresh clone, a CI
 checkout or a worktree made outside the installer runs **no commit-time hook**
-until someone sets it again:
+until someone sets it again. After cloning, and after the project's Skills
+change, run:
 
 ```sh
-git -C "$TARGET" config core.hooksPath .agents/githooks
+bash .agents/bin/setup.sh   # --check to preview; refuses a linked worktree
 ```
 
 This cannot be fixed by a hook. The checker reports it as a note rather than a

@@ -60,13 +60,15 @@ does not discover arbitrary skills or install a consumer's domain workflow.
 
 ## Status (2026-10-25)
 
-> **中文摘要**：managed core 十四檔已以 v1.0.0（2026-10-25）發行；pet_care 與 Finance
+> **中文摘要**：managed core 現為十五檔，其中十四檔已以 v1.0.0（2026-10-25）發行，
+> `.agents/bin/setup.sh` 隨下一版發行；pet_care 與 Finance
 > 兩個 consumer 都已同步在 v1.0.0。待辦：指定 backup maintainer、真正的新機器 replay、
 > 第三個 consumer、external-runtime 收尾，以及 managed-core 更新 bot。
 
 In place:
 
-- The managed core: 14 files, listed in [`bin/managed-core.txt`](./bin/managed-core.txt).
+- The managed core: 15 files, listed in [`bin/managed-core.txt`](./bin/managed-core.txt).
+  `v1.0.0` (2026-10-25) shipped the first 14; `.agents/bin/setup.sh` is the 15th.
 - Released as `v1.0.0` (2026-10-25). Consumers receive the managed core only as a
   release (see [Releases](#releases)).
 - Both consumers, `pet_care` and Finance, record `v1.0.0` and are `in sync`.
@@ -81,6 +83,9 @@ Pending:
 - External-runtime closure: Codex and Gemini behaviour Friday does not verify.
 - The next payload release will add the two overlay files both consumers
   already hold identically, `mcp.md` and `triage-labels.md`, to the managed core.
+- That release also carries `.agents/bin/setup.sh` and the `CLAUDE.md` seed, so
+  a consumer stops needing a project-local `setup-ai.sh` for the root pointer and
+  the Claude Code Skill links.
 - The managed-core update bot, so that a Friday release opens the consumer pull
   requests itself: [ShenYo/Friday#7](https://github.com/ShenYo/Friday/issues/7).
 
@@ -187,10 +192,18 @@ no hooks). The target is the repository root, not
 an `.agents/` subdirectory. `--check` reports `NEW`, `IDENTICAL`, or
 `CONFLICT`, exits nonzero on conflicts, and does not copy, chmod, create links,
 or run the self-check. Both modes validate prerequisites, every destination,
-and the target's existing hook setup (a `core.hooksPath` already set elsewhere,
-or hooks in `.git/hooks` that wiring would bypass) before any target write. Unexpected destination symlinks, including ancestor
-symlinks, conflict; only the two exact expected Claude and Codex hook links
-are accepted.
+and the target's existing hook setup (an effective `core.hooksPath`, from any
+config scope, that is not `.agents/githooks`, or hooks or hook symlinks in
+`.git/hooks` that wiring would bypass) before any target write. They also
+check the `.claude/skills/<name>` links `setup.sh` will make, for the Skills as
+they will be once the copy is done (the target's own `.agents/skills` plus the
+payload's): a name two Skills share, a real file or directory in the way, a
+link elsewhere, and a dangling link that the copy would make live or that
+`setup.sh` did not write are all conflicts, so the install is refused rather
+than stopped halfway. Unexpected destination symlinks, including ancestor
+symlinks, conflict; the only links accepted are the two exact Claude and Codex
+hook links, a `.claude/skills/<name>` link that is already correct, and a
+dangling one into `.agents/skills/` that `setup.sh` will replace.
 
 Installation fills missing files and preserves identical content. It refuses
 different content rather than overwriting it, including `.claude/settings.json`.
@@ -202,16 +215,19 @@ not a transaction: a later I/O or self-check failure can leave new files in
 place, and concurrent target changes are outside this guarantee. Inspect the
 result before retrying; never run concurrent installers against one target.
 
-The install ends by running the payload's own self-check, so broken runtime
-wiring fails now rather than the first time someone relies on the boundary.
+The install wires the clone by running the payload's own
+[`.agents/bin/setup.sh`](./payload/.agents/bin/setup.sh) in the target (see
+[After cloning](#after-cloning-a-consumer-or-changing-its-skills)), and ends by
+running the payload's own self-check, so broken runtime wiring fails now rather
+than the first time someone relies on the boundary.
 
 ## Starting an agent in a bootstrapped project
 
-> **中文摘要**：安裝只 seed root [`AGENTS.md`](./payload/AGENTS.md) 與
-> [`.agents/AGENTS.md`](./payload/.agents/AGENTS.md) 的 agent
-> instructions；不會生成 root `CLAUDE.md`、`GEMINI.md` 或 `setup-ai.sh`。先讀
-> 兩個 AGENTS，再選擇已安裝的單一 runtime 啟動；各 runtime 的 trust 與原生行為
-> 仍須各自驗證。
+> **中文摘要**：安裝會 seed root [`AGENTS.md`](./payload/AGENTS.md)、
+> [`CLAUDE.md`](./payload/CLAUDE.md) 與 [`.agents/AGENTS.md`](./payload/.agents/AGENTS.md)；
+> 不會生成 `GEMINI.md` 或 `setup-ai.sh`。clone 一個 consumer 之後、以及新增／移除／
+> 改名 Skill 之後，執行 `bash .agents/bin/setup.sh`。先讀兩個 AGENTS，再選擇已安裝的
+> 單一 runtime 啟動；各 runtime 的 trust 與原生行為仍須各自驗證。
 
 From the target repository root, read the two installed instruction entrypoints
 before asking an agent to change anything:
@@ -229,17 +245,58 @@ automatic sequence. In the first prompt, ask it to read the root instructions
 and report the instruction documents it loaded plus its branch, HEAD, and
 working-tree status before editing.
 
-Friday does not generate root `CLAUDE.md`, `GEMINI.md`, or `setup-ai.sh`.
-Claude users therefore need a verified Claude entrypoint or an explicit
-session prompt to read the AGENTS files; this README cannot guarantee automatic
-AGENTS loading. Native workspace trust, callback delivery, precedence, and
-other runtime behavior remain runtime-specific evidence work. Gemini CLI and
+Friday seeds a root `CLAUDE.md` that imports `.agents/AGENTS.md`, and does not
+generate `GEMINI.md` or `setup-ai.sh`. Whether a Claude session actually loaded
+the import is runtime behavior this README cannot guarantee, so keep asking the
+agent to report the instruction documents it loaded. Native workspace trust,
+callback delivery, precedence, and other runtime behavior remain
+runtime-specific evidence work. Gemini CLI and
 `agy` remain pending here, so this guide intentionally provides no speculative
 launch command for either.
 
+### After cloning a consumer, or changing its Skills
+
+Install runs once, on one machine, and some of what makes a consumer work is
+lost on every fresh clone: `core.hooksPath` is local Git config, so a clone has
+none of the payload's Git hooks running until it is set. After cloning a
+consumer, and again after adding, removing or renaming a Skill, run this from
+anywhere inside it (add `--check` to preview; it writes nothing):
+
+```sh
+bash .agents/bin/setup.sh
+```
+
+It does four things:
+
+- sets `core.hooksPath` to `.agents/githooks` (an effective value from any
+  config scope that is something else is a `CONFLICT`, not overridden), and
+  reports Git hooks that are missing or not executable, and hooks or hook
+  symlinks in `.git/hooks` that it would bypass;
+- links `.claude/hooks/guard-collaborative-git.sh` and
+  `.codex/hooks/guard-collaborative-git.sh` to the shared guard;
+- creates the root `AGENTS.md` and `CLAUDE.md` from the seeds when they are
+  missing, and leaves them alone whatever they say when they are present;
+- links every Skill under `.agents/skills` (a directory holding `SKILL.md`, at
+  depth 1 or 2) as `.claude/skills/<name>`, taking `<name>` from the Skill's
+  `name:` frontmatter, else its directory name, so Claude Code sees them.
+  Entries in `.claude/skills` that are dangling or match no Skill are
+  reported as `STALE` for a person to remove (names starting with `.` are skipped).
+  A Skill directory that is a symlink is not followed: one resolving outside
+  `.agents/skills` is reported as `SKIPPED`, and an alias inside it, such as
+  `git-commit -> git/commit`, is ignored silently.
+
+It never overwrites, moves or deletes something it did not create. The one
+exception is a dangling `.claude/skills/<name>` link that points into
+`../../.agents/skills/`, the only form it writes, which it replaces; any other
+dangling link is a `CONFLICT`. Anything in the way is reported as `CONFLICT <path> (<reason>)` and left alone while the
+rest still runs, and the exit status is then 1; so is `--check`'s when
+something would change. A second run changes nothing and says
+`nothing to change`. The install runs this same script in the target. It
+refuses a linked worktree, for the reason `install.sh` does.
+
 ## Ownership: managed core, seeds, and overlays
 
-The managed core is exact: existing consumers compare these fourteen files
+The managed core is exact: existing consumers compare these fifteen files
 byte-for-byte with their reviewed Friday version.
 
 ```
@@ -249,6 +306,7 @@ byte-for-byte with their reviewed Friday version.
 .agents/docs/git-guideline/git-commit.md
 .agents/docs/git-guideline/pr-evidence.md
 .agents/docs/git-guideline/safety-boundary.md
+.agents/bin/setup.sh
 .agents/hooks/check-collaborative-git.sh
 .agents/hooks/guard-collaborative-git.sh
 .agents/githooks/pre-commit
@@ -260,7 +318,9 @@ byte-for-byte with their reviewed Friday version.
 ```
 
 The three [`githooks`](./payload/.agents/githooks) files are Git hooks rather
-than runtime tool hooks, wired by the installer through `core.hooksPath`.
+than runtime tool hooks, wired through `core.hooksPath` by
+[`setup.sh`](./payload/.agents/bin/setup.sh), which the installer runs and every
+clone runs again.
 [`pre-commit`](./payload/.agents/githooks/pre-commit) scans staged content for
 credentials, [`commit-msg`](./payload/.agents/githooks/commit-msg) enforces the
 message contract, and [`pre-push`](./payload/.agents/githooks/pre-push) decides
@@ -277,10 +337,12 @@ managed core. Existing consumers reconcile them manually:
 
 ```
 AGENTS.md                                    root pointer
+CLAUDE.md                                    root pointer for Claude Code
 .agents/AGENTS.md                            shared policy router
 .gitignore                                   temporary-file ignore rule
 .claude/settings.json                        Claude PreToolUse wiring
 .claude/hooks/guard-collaborative-git.sh     generated symlink to the guard
+.claude/skills/<name>                        generated symlinks to .agents/skills
 .codex/hooks.json                            Codex PreToolUse runtime seed
 .codex/hooks/guard-collaborative-git.sh      generated symlink to the guard
 ```
@@ -323,9 +385,11 @@ bash "$FRIDAY/install.sh" --check "$TARGET"
 ```
 
 Read every `CONFLICT` and reconcile it in a reviewed consumer change. Sync
-only the fourteen managed-core paths listed above, then prove each has the exact
+only the fifteen managed-core paths listed above, then prove each has the exact
 bytes of `"$FRIDAY/payload/$rel"`. Preserve consumer seeds, runtime
-integration, and overlays; do not copy a whole `.agents/` directory.
+integration, and overlays; do not copy a whole `.agents/` directory. Then run
+`bash .agents/bin/setup.sh` in the consumer (`--check` first to preview) to wire
+the clone.
 
 After reconciliation, verify the consumer rather than treating the installer
 as an update engine:
@@ -421,7 +485,8 @@ a leading `+` on the refspec, `--mirror`, `--delete` and `:ref` all reduce to
 the same two tests.
 
 Two limits remain. `core.hooksPath` is per-clone configuration that is never
-cloned, so a fresh clone runs no hook until someone sets it. And the hooks are
+cloned, so a fresh clone runs no hook until someone sets it (in a consumer,
+`bash .agents/bin/setup.sh` does). And the hooks are
 a guard against mistakes, not a control surface: the server-side ruleset is the
 part that holds when they are skipped.
 
@@ -626,3 +691,6 @@ Run `bash` [`tests/install-smoke.sh`](./tests/install-smoke.sh)
 The check creates disposable Git fixtures, installs the repository's actual
 payload, and retains evidence for review. It never installs into an existing
 project. Cleanup is a separate, explicitly authorized operation.
+
+[`tests/setup.sh`](./tests/setup.sh) proves the setup script case by case, each
+in a scratch clone, and prints `all N passed`.

@@ -84,6 +84,7 @@ error: resolve conflicts in a reviewed change; nothing was written.
 | CONFLICT 的檔案 | 這是什麼 | 怎麼處理 |
 | --- | --- | --- |
 | `AGENTS.md` | 你的 root pointer | **預期** —— 保留你的；它只需要指向 `.agents/AGENTS.md` |
+| `CLAUDE.md` | 你給 Claude Code 的 root pointer | **預期** —— 保留你的；它只需要 import `.agents/AGENTS.md` |
 | `.agents/AGENTS.md` | 你的路由表 | **預期** —— 保留你的；把 Friday 的路由列加進去 |
 | `.gitignore` | 你的 | **預期** —— 把 Friday 的條目附加上去 |
 | `.claude/settings.json` | 你的 runtime 接線 | **預期** —— 把 Friday 的 handler 加進你的 `hooks` 陣列，不要替換整個檔案 |
@@ -92,12 +93,12 @@ error: resolve conflicts in a reviewed change; nothing was written.
 | `.git/hooks` | `core.hooksPath` 生效後就不會再執行的 hook | **先決定** —— 把它們做的事移進經過審查的 hook，或刻意捨棄 |
 | **其他任何檔案** | **managed core** | **真衝突** —— 見下 |
 
-這五個是 Friday 只負責 seed、之後就交給你的全部檔案。它發出的其他東西都是
+這六個是 Friday 只負責 seed、之後就交給你的全部檔案。它發出的其他東西都是
 managed core，最終必須 byte-identical。
 
 ### 真衝突
 
-CONFLICT 出現在十四個 managed-core 檔案之一，代表你的副本與 Friday 的已經分歧。
+CONFLICT 出現在十五個 managed-core 檔案之一，代表你的副本與 Friday 的已經分歧。
 請逐檔調和，並放在一次經審查的 commit 裡：
 
 ```sh
@@ -124,8 +125,20 @@ while IFS= read -r rel; do
   cp "$FRIDAY/payload/$rel" "$TARGET/$rel"
 done < "$FRIDAY/bin/managed-core.txt"
 
-git -C "$TARGET" config core.hooksPath .agents/githooks
 bash "$FRIDAY/bin/friday-lock" write "$TARGET"
+```
+
+複製的內容包含 `.agents/bin/setup.sh`。請在目標中執行它來為這個 clone 接線：它會設定
+`core.hooksPath`、連結 runtime guard 與 Claude Code 的 Skills，並且只在 `AGENTS.md`
+與 `CLAUDE.md` 不存在時才建立它們。它絕不覆寫不是它自己建立的東西，所以你自己的
+pointer 會維持原樣。唯一會替換的，是指向 `../../.agents/skills/`（它自己寫入的
+唯一形式）的斷掉的 `.claude/skills/<name>` 連結；其他任何斷鏈都會回報為 CONFLICT
+並原封不動。請先用 `--check` 預覽：
+
+```sh
+cd "$TARGET"
+bash .agents/bin/setup.sh --check   # 有東西會被改變時結束碼為 1
+bash .agents/bin/setup.sh
 ```
 
 絕對不要複製整個 `.agents/` 目錄：那會覆蓋你剛剛合併好的路由表。
@@ -145,10 +158,10 @@ bash "$TARGET/.agents/hooks/check-collaborative-git.sh"
 
 `core.hooksPath` 是 per-clone 設定，永遠不會被 clone 帶走。重新 clone、CI
 checkout、或在安裝程式之外建立的 worktree，在有人再次設定之前都**不會執行任何
-commit 期的 hook**：
+commit 期的 hook**。clone 之後，以及專案的 Skills 變動之後，請執行：
 
 ```sh
-git -C "$TARGET" config core.hooksPath .agents/githooks
+bash .agents/bin/setup.sh   # --check 可預覽；會拒絕 linked worktree
 ```
 
 這無法用 hook 修復。checker 會把它回報成 note 而不是失敗，因為 CI checkout

@@ -283,6 +283,11 @@ for target in "$@"; do
   # before the first write, so a concurrent edit is refused, not overwritten.
   changed_since=""
   for rel in ${moved+"${moved[@]}"}; do
+    # A path untracked in a directory the consumer lacks cannot hold an edit;
+    # asking git about it only prints "could not open directory".
+    if [ ! -d "$target/$(dirname "$rel")" ] && ! git -C "$target" ls-files --error-unmatch -- "$rel" >/dev/null 2>&1; then
+      continue
+    fi
     [ -z "$(git -C "$target" status --porcelain -- "$rel")" ] || changed_since="$changed_since $rel"
   done
   if [ -n "$changed_since" ]; then

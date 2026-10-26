@@ -1,7 +1,24 @@
 #!/usr/bin/env bash
 # Install the agent-management payload into a target repository, then verify it.
 #
-#   ~/.Friday/install.sh [target-repo-path]    (default: current directory)
+#   ~/.Friday/install.sh [--check] [--release vX.Y.Z | --working-tree]
+#                        [--managed-only] [target-repo-path]
+#                                               (default target: current directory)
+#
+# By default this installs a release, never this checkout as it stands: the
+# newest annotated tag vMAJOR.MINOR.PATCH, chosen and validated the way
+# bin/friday-propagate does (on origin as the same tag object, reachable from
+# main). The release's tree is exported to a temporary directory and its own
+# install.sh does the work, so a checkout on a feature branch, or with
+# uncommitted edits, cannot reach the target; the lock records the release.
+#   --release vX.Y.Z   install that release instead of the newest
+#   --working-tree     install this checkout as it is -- for developing Friday,
+#                      not for a project; the lock names no tag unless the
+#                      payload happens to match one
+#   --managed-only     for a project that already has its own AGENTS.md,
+#                      .gitignore and the like: copy only the managed core, leave
+#                      every consumer-owned seed (the `!` entries of
+#                      bin/managed-core.txt) alone and list each as SEED
 #
 # --check previews without writing. Installation adds missing files, preserves
 # identical files, and refuses conflicts before making any target changes.
@@ -13,15 +30,96 @@ set -euo pipefail
 
 KIT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 PAYLOAD="$KIT_ROOT/payload"
+# The interface this installer speaks. A release install reads this line from
+# the exported copy to know whether it takes --as-release and --managed-only
+# (2 and later) or is an older installer that installs its own tree under
+# [--check] [target]. Raise it when the flags the release path passes change.
+INSTALL_INTERFACE=2
+# Exactly vMAJOR.MINOR.PATCH: a pre-release or a malformed name is no release.
+RELEASE_RE='^v[0-9]+\.[0-9]+\.[0-9]+$'
 check_only=false
-if [ "${1:-}" = "--check" ]; then check_only=true; shift; fi
-if [ "$#" -gt 1 ] || [[ "${1:-}" = -* ]]; then
-  echo "usage: $0 [--check] [target-repo-path]" >&2
+managed_only=false
+working_tree=false
+release_tag=
+as_release=   # internal: set by the release install below on the exported copy
+target_arg=
+have_target=false
+usage="usage: $0 [--check] [--release vX.Y.Z | --working-tree] [--managed-only] [target-repo-path]"
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --check) check_only=true; shift ;;
+    --managed-only) managed_only=true; shift ;;
+    --working-tree) working_tree=true; shift ;;
+    --release|--as-release)
+      if [ "$#" -lt 2 ] || [ -z "$2" ]; then echo "$usage" >&2; exit 2; fi
+      if [ "$1" = --release ]; then release_tag=$2; else as_release=$2; fi
+      shift 2 ;;
+    -*) echo "$usage" >&2; exit 2 ;;
+    *)
+      if "$have_target"; then echo "$usage" >&2; exit 2; fi
+      target_arg=$1; have_target=true; shift ;;
+  esac
+done
+if [ -n "$as_release" ]; then working_tree=true; fi
+if [ -n "$release_tag" ] && [ "$working_tree" = true ]; then
+  echo "error: --release and --working-tree are alternatives: a release is not this checkout." >&2
+  echo "$usage" >&2
   exit 2
 fi
-TARGET=$(cd "${1:-.}" && pwd)
+TARGET=$(cd "${target_arg:-.}" && pwd)
+# friday-lock records the index instead of the working tree when this is set,
+# and a target's index holds none of what is about to be copied.
+unset FRIDAY_LOCK_FROM_INDEX
 
-[ -d "$PAYLOAD" ] || { echo "error: $PAYLOAD missing — is this the Friday repo?" >&2; exit 1; }
+# The allowlist is bin/managed-core.txt: every entry, managed and
+# consumer-owned (`!`) alike. It is still closed -- nothing is discovered from
+# payload/ -- and the inventory check below refuses a payload file the list
+# does not name, before the target is touched.
+managed_files=()
+seed_files=()
+read_list() { # <list file>: fills managed_files and seed_files
+  local line
+  managed_files=()
+  seed_files=()
+  while IFS= read -r line || [ -n "$line" ]; do
+    line=${line%%#*}
+    line=$(printf '%s' "$line" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+    [ -n "$line" ] || continue
+    case "$line" in
+      '!'*) seed_files+=("${line#!}") ;;
+      *) managed_files+=("$line") ;;
+    esac
+  done < "$1"
+}
+
+# One line per consumer-owned file: a project that took only the managed core
+# keeps its own, and this is what it has left to reconcile by hand.
+# setup_makes_pointers: yes when the install will run a setup.sh that creates a
+# missing AGENTS.md or CLAUDE.md, so the line for one can say what will happen.
+setup_makes_pointers=no
+report_seeds() { # uses PAYLOAD, TARGET, seed_files and setup_makes_pointers
+  local rel dest
+  for rel in ${seed_files+"${seed_files[@]}"}; do
+    dest="$TARGET/$rel"
+    if [ -L "$dest" ] || { [ -e "$dest" ] && [ ! -f "$dest" ]; }; then
+      echo "SEED $rel (yours: a link or not a regular file; not touched)"
+    elif [ ! -e "$dest" ]; then
+      case $rel in
+        AGENTS.md|CLAUDE.md)
+          if [ "$setup_makes_pointers" = yes ]; then
+            echo "SEED $rel (missing; setup.sh creates it from Friday's seed)"
+          else
+            echo "SEED $rel (missing; not created)"
+          fi ;;
+        *) echo "SEED $rel (missing; not created)" ;;
+      esac
+    elif cmp -s "$PAYLOAD/$rel" "$dest"; then
+      echo "SEED $rel (identical to Friday's; not touched)"
+    else
+      echo "SEED $rel (yours; not touched)"
+    fi
+  done
+}
 
 # A linked worktree has a .git file, not a directory, and a git dir that is not
 # the repository's common dir (a submodule has the file too, but not that).
@@ -55,33 +153,154 @@ if [ "$TARGET" = "$KIT_ROOT" ]; then
   exit 1
 fi
 
+# --- A release, by default -----------------------------------------------------
+# What a project receives is a release, not whatever this checkout holds: the
+# checkout is a development one, often on a feature branch or with uncommitted
+# edits. The release is picked and checked the way bin/friday-propagate does it,
+# its tree is exported, and that tree's own install.sh installs it, so the
+# tooling that runs is the release's and not this checkout's. FRIDAY_KIT_ROOT and
+# FRIDAY_TREE make the lock it writes read this repository at the release's
+# commit, so the lock records that commit and tag. A release that predates
+# this interface (v1.0.0, v1.0.1) has no --as-release and installs its own tree
+# under its old one, which is exactly the release.
+if [ "$working_tree" != true ]; then
+  die() { echo "error: $*" >&2; exit 1; }
+  command -v jq >/dev/null || die "'jq' is required."
+  command -v git >/dev/null && command -v tar >/dev/null || die "'git' and 'tar' are required to install a release."
+  git -C "$KIT_ROOT" rev-parse --git-dir >/dev/null 2>&1 \
+    || die "$KIT_ROOT is not a Git checkout, so it holds no release. Clone Friday (git clone https://github.com/ShenYo/Friday.git), or use --working-tree to install these files as they are."
+  shallow=
+  if [ "$(git -C "$KIT_ROOT" rev-parse --is-shallow-repository 2>/dev/null)" = true ]; then
+    shallow=" $KIT_ROOT is a shallow clone, which can lack the history a release needs: run 'git -C $KIT_ROOT fetch --unshallow --tags'."
+  fi
+  no_release="Fetch the releases ('git -C $KIT_ROOT fetch --tags'), or cut one in $KIT_ROOT: an annotated tag on main, pushed to origin ('git tag -a vX.Y.Z -m <note> <commit>', then 'git push origin vX.Y.Z').$shallow Nothing was written."
+
+  tag=$release_tag
+  if [ -z "$tag" ]; then
+    tag=$(git -C "$KIT_ROOT" tag -l 'v[0-9]*' --sort=-v:refname | grep -E "$RELEASE_RE" | sed -n 1p || true)
+    [ -n "$tag" ] || die "Friday has no release tag (vMAJOR.MINOR.PATCH). $no_release"
+  fi
+  [[ $tag =~ $RELEASE_RE ]] || die "not a release tag (vMAJOR.MINOR.PATCH): $tag. Nothing was written."
+  tree=$(git -C "$KIT_ROOT" rev-parse --verify -q "refs/tags/$tag^{commit}") \
+    || die "no such release tag: $tag. $no_release"
+  git -C "$KIT_ROOT" rev-parse --verify -q refs/heads/main >/dev/null \
+    || die "$KIT_ROOT has no local main branch to check $tag against. Create it ('git -C $KIT_ROOT branch main origin/main'). Nothing was written."
+  git -C "$KIT_ROOT" merge-base --is-ancestor "$tree" refs/heads/main 2>/dev/null \
+    || die "$tag is not on Friday's main (its commit is not an ancestor of the main branch in $KIT_ROOT; if main is behind origin, pull it).$shallow Nothing was written."
+  [ "$(git -C "$KIT_ROOT" cat-file -t "refs/tags/$tag" 2>/dev/null)" = tag ] \
+    || die "$tag is not an annotated tag. Nothing was written."
+  local_tag_obj=$(git -C "$KIT_ROOT" rev-parse --verify -q "refs/tags/$tag") || die "cannot read tag $tag. Nothing was written."
+  # Read origin on its own: inside a pipeline a failure here would end the script
+  # under set -e before any message, with git's status.
+  origin_refs=$(git -C "$KIT_ROOT" ls-remote --tags origin "refs/tags/$tag" 2>&1) \
+    || die "cannot read origin of $KIT_ROOT, so $tag cannot be checked against it (offline, no access, or no remote named origin): $origin_refs. Nothing was written."
+  origin_tag_obj=$(printf '%s\n' "$origin_refs" | awk -v r="refs/tags/$tag" '$2 == r { print $1 }')
+  [ -n "$origin_tag_obj" ] || die "$tag is not on origin (push it: git push origin $tag). Nothing was written."
+  [ "$origin_tag_obj" = "$local_tag_obj" ] \
+    || die "origin's $tag points at a different tag object than this checkout's. Nothing was written."
+
+  released=$(mktemp -d "${TMPDIR:-/tmp}/friday-release.XXXXXX") || die "cannot create a temporary directory"
+  trap 'rm -rf "$released"' EXIT
+  git -C "$KIT_ROOT" archive --format=tar "$tree" | tar -x -C "$released" \
+    || die "cannot export $tag from $KIT_ROOT"
+  echo "release: $tag (commit $tree), installed by its own install.sh"
+
+  export FRIDAY_KIT_ROOT=$KIT_ROOT FRIDAY_TREE=$tree FRIDAY_RELEASE=$tag
+  args=()
+  if "$check_only"; then args+=(--check); fi
+  interface=$(sed -n 's/^INSTALL_INTERFACE=\([0-9][0-9]*\)$/\1/p' "$released/install.sh" | sed -n 1p)
+  if [ "${interface:-1}" -ge 2 ]; then
+    args+=(--as-release "$tag")
+    if "$managed_only"; then args+=(--managed-only); fi
+  elif "$managed_only"; then
+    # The release predates --managed-only. Take the seeds out of the exported
+    # copy -- from its list and from its payload -- so its old install.sh finds
+    # only the managed core to install, and say what is left alone here.
+    PAYLOAD="$released/payload"
+    read_list "$released/bin/managed-core.txt"
+    setup_makes_pointers=no   # the old installer never runs setup.sh
+    report_seeds
+    grep -v '^[[:space:]]*!' "$released/bin/managed-core.txt" > "$released/managed-only.txt"
+    mv -f "$released/managed-only.txt" "$released/bin/managed-core.txt"
+    for rel in ${seed_files+"${seed_files[@]}"}; do rm -f "$released/payload/$rel"; done
+  fi
+  status=0
+  bash "$released/install.sh" ${args+"${args[@]}"} "$TARGET" || status=$?
+  exit "$status"
+fi
+# From here on this checkout, or the exported copy of a release, installs itself.
+# A caller's FRIDAY_* variables must not point the lock at anything else.
+if [ -z "$as_release" ]; then
+  unset FRIDAY_KIT_ROOT FRIDAY_TREE FRIDAY_RELEASE
+  {
+    echo "warning: --working-tree installs this checkout as it is, not a release."
+    branch=$(git -C "$KIT_ROOT" symbolic-ref --short -q HEAD 2>/dev/null || echo "(not on a branch)")
+    echo "         $KIT_ROOT is on $branch; the lock records a release tag only if the payload matches one."
+    if [ -n "$(git -C "$KIT_ROOT" status --porcelain -- payload/ bin/managed-core.txt 2>/dev/null)" ]; then
+      echo "         It has uncommitted changes under payload/ or to bin/managed-core.txt."
+    fi
+  } >&2
+fi
+
+[ -d "$PAYLOAD" ] || { echo "error: $PAYLOAD missing — is this the Friday repo?" >&2; exit 1; }
+
+# --as-release says "this tree is that release". Nothing here takes its word for
+# it: the variables must be the ones a release install sets, the tag must be the
+# tree it names, and every file about to be copied must be that tree's bytes in
+# the repository they point to. Otherwise a checkout with edits, run with the
+# right variables, would install unreleased files and have the lock call them a
+# release.
+if [ -n "$as_release" ]; then
+  refuse_as_release() { echo "error: --as-release: $*. Nothing was written." >&2; exit 1; }
+  [ -n "${FRIDAY_KIT_ROOT:-}" ] && [ -n "${FRIDAY_TREE:-}" ] && [ -n "${FRIDAY_RELEASE:-}" ] \
+    || refuse_as_release "FRIDAY_KIT_ROOT, FRIDAY_TREE and FRIDAY_RELEASE must be set; this flag is for the copy a release install exports, not for use by hand (use --working-tree)"
+  [ "$as_release" = "$FRIDAY_RELEASE" ] \
+    || refuse_as_release "$as_release is not FRIDAY_RELEASE ($FRIDAY_RELEASE)"
+  want_commit=$(git -C "$FRIDAY_KIT_ROOT" rev-parse --verify -q "$FRIDAY_TREE^{commit}") \
+    || refuse_as_release "FRIDAY_TREE ($FRIDAY_TREE) is not a commit in $FRIDAY_KIT_ROOT"
+  tag_commit=$(git -C "$FRIDAY_KIT_ROOT" rev-parse --verify -q "refs/tags/$as_release^{commit}") \
+    || refuse_as_release "$as_release is not a tag in $FRIDAY_KIT_ROOT"
+  [ "$tag_commit" = "$want_commit" ] \
+    || refuse_as_release "$as_release does not resolve to FRIDAY_TREE ($FRIDAY_TREE)"
+  tree_count=0
+  while IFS= read -r rel; do
+    [ -n "$rel" ] || continue
+    tree_count=$((tree_count + 1))
+    { [ -f "$PAYLOAD/${rel#payload/}" ] && [ ! -L "$PAYLOAD/${rel#payload/}" ] \
+      && git -C "$FRIDAY_KIT_ROOT" show "$want_commit:$rel" | cmp -s - "$PAYLOAD/${rel#payload/}"; } \
+      || refuse_as_release "$rel does not match $as_release in $FRIDAY_KIT_ROOT"
+  done < <(git -C "$FRIDAY_KIT_ROOT" -c core.quotePath=false ls-tree -r --name-only "$want_commit" -- payload/)
+  [ "$(find "$PAYLOAD" \( -type f -o -type l \) -print | wc -l | tr -d ' ')" -eq "$tree_count" ] \
+    || refuse_as_release "the payload holds files $as_release does not, so it does not match $as_release in $FRIDAY_KIT_ROOT"
+  { [ -f "$KIT_ROOT/bin/managed-core.txt" ] \
+    && git -C "$FRIDAY_KIT_ROOT" show "$want_commit:bin/managed-core.txt" | cmp -s - "$KIT_ROOT/bin/managed-core.txt"; } \
+    || refuse_as_release "bin/managed-core.txt does not match $as_release in $FRIDAY_KIT_ROOT"
+fi
+
+
 # Check prerequisites before copying, not after a partially completed install.
 command -v jq >/dev/null || { echo "error: 'jq' is required." >&2; exit 1; }
-# The allowlist is bin/managed-core.txt: every entry, managed and
-# consumer-owned (`!`) alike. It used to be written out here as well, a second
-# copy of one list that could disagree with the first. It is still closed --
-# nothing is discovered from payload/ -- and the inventory check below refuses
-# a payload file the list does not name, before the target is touched.
 LIST="$KIT_ROOT/bin/managed-core.txt"
 [ -f "$LIST" ] || { echo "error: $LIST missing — is this the Friday repo?" >&2; exit 1; }
-files=()
-while IFS= read -r line || [ -n "$line" ]; do
-  line=${line%%#*}
-  line=$(printf '%s' "$line" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
-  [ -n "$line" ] || continue
-  files+=("${line#!}")
-done < "$LIST"
-[ ${#files[@]} -gt 0 ] || { echo "error: $LIST names no files" >&2; exit 1; }
+read_list "$LIST"
+# A payload with its own setup.sh gets it run, and that creates a missing
+# AGENTS.md or CLAUDE.md; the --managed-only preview says so.
+if [ -f "$PAYLOAD/.agents/bin/setup.sh" ]; then setup_makes_pointers=yes; fi
+all_files=(${managed_files+"${managed_files[@]}"} ${seed_files+"${seed_files[@]}"})
+[ ${#all_files[@]} -gt 0 ] || { echo "error: $LIST names no files" >&2; exit 1; }
+# What is copied: the whole payload, or with --managed-only just the managed
+# core, leaving every consumer-owned seed to the project.
+if "$managed_only"; then files=(${managed_files+"${managed_files[@]}"}); else files=("${all_files[@]}"); fi
 
 contains_file() {
   local candidate=$1 rel
-  for rel in "${files[@]}"; do
+  for rel in "${all_files[@]}"; do
     [ "$rel" = "$candidate" ] && return 0
   done
   return 1
 }
 
-for rel in "${files[@]}"; do
+for rel in "${all_files[@]}"; do
   src="$PAYLOAD/$rel"
   [ -f "$src" ] && [ ! -L "$src" ] || {
     echo "error: declared payload file is missing or unsafe: $rel" >&2
@@ -98,7 +317,7 @@ while IFS= read -r src; do
   }
   actual_count=$((actual_count + 1))
 done < <(find "$PAYLOAD" \( -type f -o -type l \) -print)
-[ "$actual_count" -eq "${#files[@]}" ] || {
+[ "$actual_count" -eq "${#all_files[@]}" ] || {
   echo "error: payload inventory does not match the install allowlist." >&2
   exit 1
 }
@@ -141,7 +360,10 @@ check_destination() {
   fi
 }
 
-for rel in "${files[@]}"; do check_destination "$rel" file; done
+for rel in ${files+"${files[@]}"}; do check_destination "$rel" file; done
+# With --managed-only the seeds are not conflicts, whatever they hold: they stay
+# the project's. They are listed so the person sees what is left to reconcile.
+if "$managed_only"; then report_seeds; fi
 for link in "${links[@]}"; do
   rel=${link%%:*}
   check_destination "$rel" link "${link#*:}"
@@ -354,6 +576,9 @@ if (cd "$TARGET" && bash .agents/hooks/check-collaborative-git.sh); then
   echo "self-check passed: static declared hook wiring and direct guard probes passed; native Codex callback delivery, exit handling, handler order, and fail-closed behavior remain unverified."
 else
   echo "self-check FAILED — the boundary is not trustworthy in $TARGET." >&2
+  if "$managed_only"; then
+    echo "       --managed-only left the seeds listed as SEED to you; the boundary needs their wiring (see ADOPTING.md)." >&2
+  fi
   exit 1
 fi
 

@@ -24,25 +24,68 @@ Friday 是怎麼走到現在的，記錄在 [`docs/history.md`](./docs/history.m
 
 | 情境 | Friday 的角色 | 該怎麼做 |
 | --- | --- | --- |
-| 全新的 Git repository | Bootstrap 經審查的 baseline | 先 Preview，再安裝，然後再 Preview 一次。 |
-| 既有消費端 | 安全地揭露差異 | Pin 住 Friday 版本、執行 `--check`，並在一次經審查的消費端變更中調和每一個衝突。 |
+| 全新的 Git repository | Bootstrap 經審查的 baseline | 先 Preview，安裝最新的 release，然後再 Preview 一次。 |
+| 既有專案 | 取走 managed core，保留專案自己的檔案 | 執行 `--managed-only`，然後在一次經審查的變更中，以人工調和列出的 seeds。 |
 | 個人 Skills 或偏好 | 讓個人範圍維持個人 | 留在你的個人層；不要把它推進 Friday。 |
 | 專案特有的政策或檢查 | 保留消費端的所有權 | 在審查過共享 baseline 之後，再新增消費端 overlay。 |
 
 ## 架構
 
+Friday 是一個 repository：baseline。它收納 **payload**（`payload/`，專案收到的檔案）、
+搬運 payload 的工具，以及證明這些工具的測試。拿了 payload 的專案叫 **consumer**
+（消費端）。payload 是被複製進消費端的，而不是連結（link）回 Friday 的 checkout，
+所以消費端對 Friday 的檔案系統沒有相依性。
+
+### Payload 包含什麼
+
+[`bin/managed-core.txt`](./bin/managed-core.txt) 為每個 payload 檔案分類，清單沒有點名的檔案會讓工具失敗。
+檔案分三種：
+
+| 種類 | 哪些檔案 | 規則 |
+| --- | --- | --- |
+| **Managed core** | 十五個檔案：`.agents/docs` 底下的政策文件、`.agents/bin/setup.sh`、guard 與它的 checker、三個 Git hooks、三個 Git Skills | 逐位元組比對。消費端讓它們與某個 release 完全相同；每一次變更都經由 release 到達。 |
+| **Seeds** | `AGENTS.md`、`CLAUDE.md`、`.agents/AGENTS.md`、`.gitignore`、`.claude/settings.json`、`.codex/hooks.json`（清單中帶 `!` 的項目） | 只在新專案複製一次。之後就是專案自己的：不比對、不帶出。 |
+| **消費端自己的 overlay** | 專案另外加入的任何東西：自己的 Skills、自己的文件、`.agents/hooks/check-project-agent-integration.sh` | Friday 絕不碰，也不列在清單裡。 |
+
+runtime hook 連結與 `.claude/skills/<name>` 連結，由 `setup.sh` 在每個 clone 裡建立；它們不是 payload 檔案。
+
+### 工具，以及各自何時執行
+
+| 工具 | 何時執行 | 做什麼 |
+| --- | --- | --- |
+| [`install.sh`](./install.sh) | 每個專案一次，從 Friday checkout 執行 | 預覽、寫入前先拒絕衝突，然後把 release 放進專案（`--working-tree` 則是這個 checkout；`--managed-only` 則只放 managed core），執行 `setup.sh`（該 release 有附的話）、寫入 lock、執行 self-check。 |
+| [`.agents/bin/setup.sh`](./payload/.agents/bin/setup.sh) | 在消費端，v1.1.0 起：由安裝執行，之後每次 clone、每次 Skill 變動後再執行 | 不從 Friday 搬任何東西。補上 clone 缺少的接線：`core.hooksPath`、runtime hook 連結、缺少時的 root pointer、Skill 連結。 |
+| [`bin/friday-lock`](./bin/friday-lock) | `write` 由安裝與 `friday-propagate` 執行；`check` 隨時可用 | 寫入並讀取消費端的 `.friday-lock.json`，並說明消費端是 in sync、drifted 還是 behind。 |
+| [`bin/friday-propagate`](./bin/friday-propagate) | 維護者有 release 要帶出去時 | 把某個 release 的 managed-core 變更，以 pull request 的形式複製進每個 behind 的消費端。它永遠不會 merge。 |
+
+### 發行版本與 lock
+
+**release** 是 `main` 上某個經審查 commit 的 annotated tag `vMAJOR.MINOR.PATCH`，並已推送到
+`origin`（見[發行版本（Releases）](#發行版本releases)）。它是消費端唯一會收到的東西：
+`install.sh` 與 `friday-propagate` 都只取 release，絕不取 branch，也不取 checkout 當下持有的內容。
+消費端的 `.friday-lock.json` 記錄 release 的 tag、最後一次修改 payload 的 commit，以及安裝當下每個
+managed 檔案的 sha256（見[知道某個 consumer 站在哪裡](#知道某個-consumer-站在哪裡)）。
+
 ```text
-Friday payload
-     |
-     v
-install.sh (closed allowlist + preflight)
-     |
-     v
-copied consumer baseline + runtime seed + consumer overlay
+  Friday checkout (~/.Friday)                 consumer project
+  +----------------------------+              +----------------------------+
+  | main  --o--o--o            |              | managed core   identical   |
+  |              \             |  install.sh  | seeds          yours       |
+  |           [v1.1.0] --------+------------> | overlays       yours       |
+  |                            |  (the tag's  | .friday-lock.json          |
+  | feature branch, edits      |   tree only) |   tag, commit, sha256      |
+  |   never installed, unless  |              +-------------^--------------+
+  |   --working-tree           |                            |
+  +-------------|--------------+          .agents/bin/setup.sh: hooks and
+                |                         links, in every clone (the install
+                v                         runs it too)
+  bin/friday-propagate: the tag's managed-core changes become a pull request
+  in each consumer that is behind; a person merges it.
+  bin/friday-lock: writes the lock at install and propagate; check compares a
+  consumer with its lock and with Friday.
 ```
 
-Payload 的內容是被複製進消費端的，而不是連結（link）回 Friday 的 checkout。兩個
-生成出來的 runtime hook 連結，都指向消費端自己那份已複製的共用 guard，因此這些
+兩個生成出來的 runtime hook 連結，都指向消費端自己那份已複製的共用 guard，因此這些
 adapter 共用同一份經審查的 guard 實作，而不會對 Friday 的檔案系統產生相依性。
 
 Friday 刻意不做成一個通用的 runtime manager。它檢查的是靜態的 Codex 接線（wiring），
@@ -51,19 +94,123 @@ Friday 刻意不做成一個通用的 runtime manager。它檢查的是靜態的
 [實測記錄](./docs/history.md#2026-10-22-runtime-behaviour-measured-on-the-claude-side)），但 Codex 是另一個 adapter，對它而言
 仍未驗證。Friday 也不會自動探索任意 Skills，或安裝消費端專屬的 domain workflow。
 
+## 採用 Friday
+
+> **摘要**：`install.sh` 預設安裝最新的 release，不是這個 checkout 目前的內容；
+> 新專案用 `install.sh`，既有專案用 `--managed-only` 只拿 managed core、seeds 留給專案自己
+> 調和；clone 之後執行 `setup.sh`；之後由維護者用 `friday-propagate` 開 pull request。
+
+先備條件是 Git、Bash 與 `jq`。`.agents/bin/setup.sh` 與 `CLAUDE.md` seed 從 `v1.1.0` 起才附帶；更早的 release
+（`v1.0.0`、`v1.0.1`）兩者都沒有，它的安裝程式自己為 clone 接線，從這類 release 安裝的專案也沒有 `setup.sh`
+可在 clone 之後執行（那裡全新 clone 缺少的是 `git config core.hooksPath .agents/githooks`）。安裝程式是本機
+Friday checkout 裡的一支腳本；還沒有的話，一行就能取得：
+
+```sh
+git clone https://github.com/ShenYo/Friday.git ~/.Friday
+```
+
+那個 checkout 是開發用 checkout，常常停在 feature branch 上或有未提交的修改，所以 `install.sh`
+絕不安裝它手上的內容。它安裝的是一個 release：最新的 annotated tag `vX.Y.Z`，挑選與檢查的方式與
+`friday-propagate` 相同（在 `origin` 上是同一個 tag object，且可從 `main` 到達）。它會匯出該 release
+的 tree，並在其上執行該 release 自己的 `install.sh`，因此不論 checkout 長什麼樣子，lock 記錄的都是
+release 的 commit 與 tag。沒有任何 release 合格時，它會拒絕，並說明怎麼 fetch 或建立一個。
+`--release vX.Y.Z` 指定其中一個；`--working-tree` 則照原樣安裝這個 checkout，會附上警告，
+只供開發 Friday 本身使用。
+
+### 新專案
+
+```sh
+git init <project>
+bash ~/.Friday/install.sh --check <project>   # 預覽；不寫入任何東西
+bash ~/.Friday/install.sh <project>           # 最新的 release
+bash ~/.Friday/install.sh --check <project>   # 每個檔案行都應該是 IDENTICAL
+```
+
+要釘選某個 release：`bash ~/.Friday/install.sh --release vX.Y.Z <project>`。安裝最後會執行 payload
+自己的 self-check，因此 runtime 接線出錯時會在當下就失敗，而不是等到有人真正依賴那個邊界時才出事。
+安裝輸出的第一行 `release: vX.Y.Z (commit ...)` 會點名 release；請對它驗證位元組：
+
+```sh
+FRIDAY_TREE=vX.Y.Z bash ~/.Friday/bin/friday-lock check <project>   # 預期：status: in sync
+```
+
+`FRIDAY_TREE` 讓 `friday-lock` 讀 release 本身。單純的 `check` 讀的是 checkout 的 working tree，在開發用
+checkout 上它比 release 新，所以會對一個正確的安裝回報 `behind`。審查完產生的 worktree diff 之後，再依專案
+自己的規則，另外決定是否、以及如何 commit 它。
+
+### 既有專案
+
+已經有自己的 `AGENTS.md`、`.gitignore` 或 runtime 接線的專案，只取 managed core：
+
+```sh
+bash ~/.Friday/install.sh --managed-only --check <project>
+bash ~/.Friday/install.sh --managed-only <project>
+```
+
+seeds 仍是專案自己的。每一個都會列成 `SEED <path> (yours; not touched)`（或 `missing; not
+created`；release 有附 `setup.sh` 時，兩個 root pointer 會是 `missing; setup.sh creates it from Friday's
+seed`；或 `identical to Friday's`），讓人看到還有哪些要以人工調和；[`ADOPTING.zh-TW.md`](./ADOPTING.zh-TW.md)
+有判讀預覽輸出的決策樹。安裝真正會寫入的部分，仍維持寫入前拒絕的 preflight：managed 檔案內容不同就是
+`CONFLICT`（完全相同則不是），既有的 `core.hooksPath`、`.git/hooks` 裡的 hook，以及擋路的 Skill
+連結也是。`--managed-only` 可與預設的 release、`--release`、`--working-tree` 搭配。self-check 仍在最後執行，
+在帶有 guard 接線的 seeds（`.claude/settings.json`、`.codex/hooks.json`）成為專案自己的、並接好線之前，
+它會失敗。
+
+### clone 消費端之後，或 Skills 變動之後
+
+```sh
+bash .agents/bin/setup.sh   # --check 可預覽；它做什麼見下方
+```
+
+`core.hooksPath` 是本地 Git 設定，所以全新的 clone 在執行這行之前，不會執行 payload 的任何 Git hooks。
+它做什麼，見[setup.sh 做什麼](#setupsh-做什麼)。
+
+### 持續保持最新
+
+Friday 的維護者在建立 release 之後，執行 `bin/friday-propagate <consumer>...`。它會在每個 behind 的
+消費端開一個 pull request，帶上有變動的 managed-core 檔案；由人審查並 merge。見
+[把變更帶到各個 consumer](#把變更帶到各個-consumer)。
+
+### 安裝會檢查並拒絕什麼
+
+`--check` 會回報 `NEW`、`IDENTICAL` 或 `CONFLICT`（搭配 `--managed-only` 時還有 `SEED`），遇到衝突時以
+非零碼結束，且不會複製檔案、改變檔案權限、建立連結，也不會執行 self-check。兩種模式都會在對目標進行
+任何寫入之前，先驗證所有先備條件、每一個目的地，以及目標現有的 hook 設定（任何設定範圍中生效、且不是
+`.agents/githooks` 的 `core.hooksPath`，或接線後會被略過的 `.git/hooks` 裡的 hook 與 hook symlink）。
+目標是 repository 的根目錄，而不是某個 `.agents/` 子目錄，且具有 `.git/` 目錄（linked worktree 會被
+拒絕，因為 `core.hooksPath` 由同一個 repository 的所有 worktree 共用，從其中一個接線會讓其他 worktree
+不再執行任何 hook）。它們也會檢查 `setup.sh` 將建立的 `.claude/skills/<name>` 連結，依複製完成後的 Skills
+（目標自己的 `.agents/skills` 加上 payload 的）計算：兩個 Skill 同名、被真實檔案或目錄擋住、指向別處的連結、
+複製後會變成有效的斷鏈、或不是 `setup.sh` 寫的斷鏈，都是衝突，所以安裝會被拒絕，而不是做到一半才停下。
+任何非預期的目的地 symlink（包含祖先路徑上的 symlink）都視為衝突；只接受三種連結：那兩個精確指定的
+Claude 與 Codex hook 連結、已經正確的 `.claude/skills/<name>` 連結，以及指向 `.agents/skills/`、會由
+`setup.sh` 替換掉的斷鏈。
+
+安裝會補齊缺少的檔案，並保留內容相同的既有檔案。當內容不同時，它會拒絕覆寫，`.claude/settings.json`
+也包含在內。這裡刻意沒有提供強制（force）模式。請先在目標專案中審查並調和衝突，再重新預覽一次。與
+payload 並存的專案特定檔案維持本地狀態；只有 payload 自己擁有的 hook 腳本，才會被賦予可執行權限。
+Preview 比對的是內容與路徑型別，而不是可執行權限。Preflight 本身不是一個 transaction：之後發生的 I/O
+或 self-check 失敗，可能會讓新檔案已經留在原地，而並行發生的目標端變更，也不在這個保證範圍之內。請在
+重試之前先檢查結果；絕對不要對同一個目標同時執行多個安裝程序。Friday 複製的是它自己封閉的 payload 到
+目標專案；它不會複製整個 Friday repository，也不會把目標專案連結（link）回 Friday。
+
+從 `v1.1.0` 起，安裝流程會在目標中執行 payload 自己的
+[`.agents/bin/setup.sh`](./payload/.agents/bin/setup.sh) 來為這個 clone 接線；更早的 release 沒有
+`setup.sh`，由它的安裝程式自己接線。最後一步再執行 payload 自己的 self-check。
+
 ## 現況（2026-10-25）
 
-> **摘要**：managed core 現為十五檔，其中十四檔已以 v1.0.0（2026-10-25）發行，
-> `.agents/bin/setup.sh` 隨下一版發行；pet_care 與 Finance
-> 兩個 consumer 都已同步在 v1.0.0。待辦：指定 backup maintainer、真正的新機器 replay、
-> 第三個 consumer、external-runtime 收尾，以及 managed-core 更新 bot。
+> **摘要**：managed core 現為十五檔，其中十四檔已以 v1.0.0（2026-10-25）發行；
+> 下一版 v1.1.0 帶來 `.agents/bin/setup.sh`、`CLAUDE.md` seed 與以 release 為準的安裝。
+> pet_care 與 Finance 兩個 consumer 都已同步在 v1.0.0。待辦：指定 backup maintainer、
+> 真正的新機器 replay、第三個 consumer、external-runtime 收尾，以及 managed-core 更新 bot。
 
 已就位：
 
 - managed core：15 個檔案，列在 [`bin/managed-core.txt`](./bin/managed-core.txt)。
   `v1.0.0`（2026-10-25）發行了前 14 個，`.agents/bin/setup.sh` 是第 15 個。
-- 已發行 `v1.0.0`（2026-10-25）。consumer 只以 release 接收 managed core（見
-  [發行版本（Releases）](#發行版本releases)）。
+- 已發行 `v1.0.0`（2026-10-25），以及 `v1.0.1`（2026-10-25，只有文件，payload 相同）。
+  consumer 只以 release 接收 managed core（見 [發行版本（Releases）](#發行版本releases)）。
 - 兩個 consumer，`pet_care` 與 Finance，都記錄 `v1.0.0`，狀態為 `in sync`。
 - `main` 上要求 CI：ubuntu 與 macos 的測試、shellcheck 與 gitleaks
   （[`ci.yml`](./.github/workflows/ci.yml)）。
@@ -74,10 +221,9 @@ Friday 刻意不做成一個通用的 runtime manager。它檢查的是靜態的
 - 真正的新機器 replay。
 - 第三個 genuine consumer。
 - External-runtime 的收尾：Friday 尚未驗證的 Codex 與 Gemini 行為。
-- 下一個 payload release 會把兩個 consumer 已經逐位元組相同持有的 overlay 檔
-  `mcp.md` 與 `triage-labels.md` 加入 managed core。
-- 該 release 也會帶上 `.agents/bin/setup.sh` 與 `CLAUDE.md` seed，讓 consumer 不再需要
-  專案本地的 `setup-ai.sh` 來建立 root pointer 與 Claude Code 的 Skill 連結。
+- 下一個 release `v1.1.0` 帶來 `.agents/bin/setup.sh`、`CLAUDE.md` seed 與以 release 為準的安裝
+  （`install.sh` 安裝 release，而不是 checkout），讓 consumer 不再需要專案本地的 `setup-ai.sh`
+  來建立 root pointer 與 Claude Code 的 Skill 連結。
 - managed-core 更新 bot，讓 Friday 發行時自動向 consumer 開 pull request：
   [ShenYo/Friday#7](https://github.com/ShenYo/Friday/issues/7)。
 
@@ -116,95 +262,6 @@ Vendor Skills（包含 Matt Pocock Skills）留在安裝它們的個人層，並
 [`scratch-files.md`](./payload/.agents/docs/scratch-files.md)；它既不安裝也
 不複製 vendor Skills，也不宣稱擁有 runtime 的 invocation 或 precedence 強制力。
 
-## 快速開始
-
-> 要把 Friday 採用到**既有**專案，而 `--check` 吐出一串 CONFLICT？
-> [`ADOPTING.zh-TW.md`](./ADOPTING.zh-TW.md) 有判讀決策樹 ——
-> 哪些是預期的 overlay、哪些是真衝突。
-
-
-> **摘要**：blank project 先在乾淨、固定 SHA 的 Friday checkout 上預覽，
-> 再 install、再預覽並檢查差異；這是 copy-based baseline，不是複製整個 Friday
-> repo 或把 consumer symlink 到它。既有 consumer 請走後面的 manual reconciliation。
-
-對於一個全新的空白 repository，請先取得另外經過審查、釘選在某個 release 的
-commit 上的 Friday checkout。先備條件是 Git、Bash 與 `jq`。請不要把一個
-dirty（有未提交變更）的 Friday checkout 當作範例來源：下面的流程會在那個
-已審查的 pin 上建立一份新的 checkout。執行前，請把兩個絕對路徑與那個 SHA
-的 placeholder 都換成實際值。這些指令不會建立 commit、安裝 runtime，也不會
-設定任何憑證。
-
-`PIN` 是一個經審查 release 的 commit。要找到它，先 clone 一次 Friday，在那裡執行
-`git -C "$FRIDAY" rev-parse 'vX.Y.Z^{commit}'`（`^{commit}` 不能省：對 annotated
-tag，`rev-parse vX.Y.Z` 印出的是 tag object，不是 commit）。下面的腳本仍會檢查
-checkout 的 `HEAD` 等於 `PIN`。
-
-```sh
-(
-  set -eu
-  TARGET='/absolute/path/to/new-project'
-  FRIDAY='/absolute/path/to/new-Friday-checkout'
-  PIN='replace-with-the-commit-of-a-reviewed-Friday-release'
-
-  command -v git >/dev/null
-  command -v bash >/dev/null
-  command -v jq >/dev/null
-  test ! -e "$FRIDAY"
-  test ! -L "$FRIDAY"
-  git clone https://github.com/ShenYo/Friday.git "$FRIDAY"
-  git -C "$FRIDAY" checkout --detach "$PIN"
-  test "$(git -C "$FRIDAY" rev-parse HEAD)" = "$PIN"
-  test -z "$(git -C "$FRIDAY" status --porcelain)"
-  test ! -e "$TARGET"
-  test ! -L "$TARGET"
-  mkdir -p "$TARGET"
-  git -C "$TARGET" init
-  bash "$FRIDAY/install.sh" --check "$TARGET"
-  bash "$FRIDAY/install.sh" "$TARGET"
-  bash "$FRIDAY/install.sh" --check "$TARGET"
-  (cd "$TARGET" && bash .agents/hooks/check-collaborative-git.sh)
-  git -C "$TARGET" diff --check
-  git -C "$TARGET" status --short
-)
-```
-
-第一次 preview 會回報 `NEW`、`IDENTICAL` 或 `CONFLICT`；在重新執行之前，
-請先在一次經審查的變更中解決每一個衝突。審查完產生的 worktree diff 之後，
-再依目標 repository 自己的規則，另外決定是否、以及如何 commit 它。Friday
-複製的是它自己封閉的 payload 到目標專案；它不會複製整個 Friday repository，
-也不會把目標專案連結（link）回 Friday。
-
-需要 `jq`，且目標必須是空白或相容的專案，並具有 `.git/` 目錄（linked
-worktree 會被拒絕，因為 `core.hooksPath` 由同一個 repository 的所有 worktree
-共用，從其中一個接線會讓其他 worktree 不再執行任何 hook）。目標是 repository 的根目錄，而不是某個 `.agents/` 子目錄。
-`--check` 會回報 `NEW`、`IDENTICAL` 或 `CONFLICT`，遇到衝突時以非零碼結束，
-且不會複製檔案、改變檔案權限、建立連結，也不會執行 self-check。兩種模式都會
-在對目標進行任何寫入之前，先驗證所有先備條件、每一個目的地，以及目標現有的
-hook 設定（任何設定範圍中生效、且不是 `.agents/githooks` 的 `core.hooksPath`，
-或接線後會被略過的 `.git/hooks` 裡的 hook 與 hook symlink）。它們也會檢查
-`setup.sh` 將建立的 `.claude/skills/<name>` 連結，依複製完成後的 Skills（目標自己的
-`.agents/skills` 加上 payload 的）計算：兩個 Skill 同名、被真實檔案或目錄擋住、
-指向別處的連結、複製後會變成有效的斷鏈、或不是 `setup.sh` 寫的斷鏈，都是衝突，
-所以安裝會被拒絕，而不是做到一半才停下。任何非預期的
-目的地 symlink（包含祖先路徑上的 symlink）都視為衝突；只接受三種連結：那兩個精確
-指定的 Claude 與 Codex hook 連結、已經正確的 `.claude/skills/<name>` 連結，以及指向
-`.agents/skills/`、會由 `setup.sh` 替換掉的斷鏈。
-
-安裝會補齊缺少的檔案，並保留內容相同的既有檔案。當內容不同時，它會拒絕
-覆寫，`.claude/settings.json` 也包含在內。這裡刻意沒有提供強制（force）模式。
-請先在目標專案中審查並調和衝突，再重新預覽一次。與 payload 並存的專案特定
-檔案維持本地狀態；只有 payload 自己擁有的 hook 腳本，才會被賦予可執行權限。
-Preview 比對的是內容與路徑型別，而不是可執行權限。Preflight 本身不是一個
-transaction：之後發生的 I/O 或 self-check 失敗，可能會讓新檔案已經留在原地，
-而並行發生的目標端變更，也不在這個保證範圍之內。請在重試之前先檢查結果；
-絕對不要對同一個目標同時執行多個安裝程序。
-
-安裝流程會在目標中執行 payload 自己的
-[`.agents/bin/setup.sh`](./payload/.agents/bin/setup.sh) 來為這個 clone 接線
-（見下方〈clone 消費端之後，或 Skills 變動之後〉），最後一步再執行 payload
-自己的 self-check，因此執行環境接線出錯時，會在當下就失敗，而不是等到有人真正
-依賴那個邊界時才出事。
-
 ## 在已完成 Bootstrap 的專案中啟動 Agent
 
 > **摘要**：安裝會 seed root [`AGENTS.md`](./payload/AGENTS.md)、
@@ -235,7 +292,7 @@ instruction 文件。原生的 workspace trust、callback 傳遞、優先序，�
 runtime 自己要補的證據工作。Gemini CLI 與 `agy` 在這裡仍是 pending，所以
 本指南刻意不為它們提供任何臆測性的啟動指令。
 
-### clone 消費端之後，或 Skills 變動之後
+### setup.sh 做什麼
 
 安裝只執行一次、在一台機器上，所以讓消費端能運作的部分東西，每次重新 clone 都
 會遺失：`core.hooksPath` 是本地 Git 設定，clone 在它被設定之前，payload 的 Git
@@ -343,26 +400,23 @@ update engine。
 
 ## 更新既有消費端
 
-既有消費端的更新，是一次經審查的調和（reconciliation），而不是安裝程式的
-升級。請先釘選（pin）一個經審查的 Friday release 的 commit（`git -C "$FRIDAY" rev-parse
-'vX.Y.Z^{commit}'` 會印出它）；用一個 placeholder，而不是一個可變動的 branch
-名稱：
+既有消費端由 `bin/friday-propagate` 更新到某個 release，由它開 pull request（見
+[持續保持最新](#持續保持最新)）。手動做則是一次經審查的調和（reconciliation），而不是安裝程式的升級：
+`--managed-only` 用來採用 managed core，managed 檔案已經變動時，在那裡是 `CONFLICT`，絕不會被覆寫。
+先針對你打算採用的 release，預覽哪些檔案不同：
 
 ```sh
-PIN='replace-with-the-commit-of-a-reviewed-Friday-release'
-FRIDAY='/absolute/path/to/Friday'
+FRIDAY=~/.Friday
 TARGET='/absolute/path/to/consumer'
 
-test "$(git -C "$FRIDAY" rev-parse HEAD)" = "$PIN"
-test -z "$(git -C "$FRIDAY" status --porcelain)"
-bash "$FRIDAY/install.sh" --check "$TARGET"
+bash "$FRIDAY/install.sh" --managed-only --check --release vX.Y.Z "$TARGET"
 ```
 
-請讀過每一個 `CONFLICT`，並在一次經審查的消費端變更中調和它。只同步上面
-列出的十五個 managed-core 路徑，然後逐一證明它們的內容，與
-`"$FRIDAY/payload/$rel"` 完全一致。請保留消費端自己的 seeds、runtime
-integration 與 overlay；不要整個複製一份 `.agents/` 目錄。接著在消費端執行
-`bash .agents/bin/setup.sh`（先用 `--check` 預覽）為這個 clone 接線。
+請讀過每一個 `CONFLICT`，並在一次經審查的消費端變更中調和它。只同步上面列出的十五個 managed-core
+路徑，每個都取自該 release（`git -C "$FRIDAY" show "vX.Y.Z:payload/$rel" > "$TARGET/$rel"`，並保留
+Git hooks 與腳本的檔案權限）。請保留消費端自己的 seeds、runtime integration 與 overlay；不要整個複製一份
+`.agents/` 目錄。接著在消費端執行 `bash .agents/bin/setup.sh`（先用 `--check` 預覽）為這個 clone 接線，
+再執行 `bash "$FRIDAY/bin/friday-lock" write "$TARGET"` 刷新 lock。
 
 調和完成之後，請驗證該消費端，而不是把安裝程式當成一個更新引擎來用：
 
@@ -475,15 +529,15 @@ Friday 也沒有 manifest、沒有自動探索（auto-discovery）、沒有自�
 ## 設計筆記
 
 **複製，而不是連結（link）。** 專案會保留自己那份經審查的 baseline，以及
-本地的 overlay。請在安裝前先釘選一個經審查的 Friday release 的 commit，並把它的
-SHA 記錄在專案的採用紀錄裡；一個可變動的 branch，並不是一個可重現的版本。
-Git 歷史提供了 rollback 的能力：revert 那個採用 commit，或是在一次經審查
-的變更中還原回選定的 pin 版本。`--check` 偵測的是內容差異，而不是這些
+本地的 overlay。安裝取的是 release，所以專案的 lock 會記錄 tag 與它背後的 commit，
+`--release vX.Y.Z` 可釘選其中一個；可變動的 branch，或帶有修改的 checkout，都不是可重現的
+版本。Git 歷史提供了 rollback 的能力：revert 那個採用 commit，或是在一次經審查
+的變更中還原回選定的 release。`--check` 偵測的是內容差異，而不是這些
 差異是誰造成的，也不會判斷某次更新是否適合合併。
 
 **既有消費端以人工方式調和。** Managed-core 檔案，是唯一需要逐位元組
 相符的比對集合。Seeds、runtime integration，以及消費端的 overlay，會因
-專案而異，需要以人工方式調和。
+專案而異，需要以人工方式調和；`--managed-only` 不動它們，只把 seeds 列出來。
 [`.gitignore`](./payload/.gitignore) 是一個普通、已列入 allowlist 的
 seed：目標端只要內容不同，寫入前就會被視為衝突。Friday 這套空白專案的
 MVP，刻意不去解析或合併 `.gitignore` 裡的 marker block。
@@ -510,8 +564,8 @@ settings。
 ## 知道某個 consumer 站在哪裡
 
 `install.sh` 會在目標寫入 `.friday-lock.json`：記錄安裝時的 Friday commit、
-（有的話）命名了那份 payload 的 release tag，以及每個 managed-core 檔案當時的
-sha256。
+（有的話）命名了那份 payload 的 release tag（release 安裝一定有；`--working-tree` 的 payload
+對不上任何 release 時為 `null`），以及每個 managed-core 檔案當時的 sha256。
 
 [`bin/friday-lock`](./bin/friday-lock) 負責讀回來比對。只有 payload consumer
 才有這份記錄。想用 payload 裡某個 hook、但不採用整份 payload 的 repository，
@@ -521,6 +575,10 @@ sha256。
 bin/friday-lock check <target>     # 也可以直接在 consumer 內部執行
 bin/friday-lock write <target>     # 經審查的調和完成後刷新
 ```
+
+`check` 拿消費端與它所在的 Friday checkout 比對，所以當 checkout 的 payload 比消費端採用的 release
+更新時，它會顯示 `behind`：這代表 Friday 往前走了，不是安裝出了問題。
+要對照消費端採用的那個 release，請點名它：`FRIDAY_TREE=vX.Y.Z bin/friday-lock check <target>`。
 
 這些狀態，而這個區分正是重點：
 
@@ -611,6 +669,11 @@ git push origin vX.Y.Z
 bin/friday-propagate <consumer>...
 ```
 
+`install.sh` 以同樣方式安裝 release：預設是最新的一個，挑選與檢查的方式如下，或用
+`--release vX.Y.Z` 指定；沒有合格的 release 時，它會拒絕、什麼都不寫，並說明要 fetch tags
+或建立一個。比加入 `--working-tree` 的那一版更早的 release 沒有這個旗標；它自己的安裝程式以舊介面執行，
+安裝它自己的 tree，而那正是這個 release。
+
 推送任何 tag 都是一個 checkpoint
 （[`safety-boundary.md`](./payload/.agents/docs/git-guideline/safety-boundary.md)）：
 只有在使用者於當下這個 turn 點名 tag 與它的 commit 時，agent 才能推送，透過
@@ -638,9 +701,14 @@ commit 都不在時，沒有東西可以比對，它不會提到 tag。兩種情
 
 執行 `bash` [`tests/install-smoke.sh`](./tests/install-smoke.sh)
 `/absolute/path/to/retained-test-output`。
-這個檢查會建立可拋棄的 Git fixture，安裝這個 repository 真正的 payload，
+這個檢查會建立可拋棄的 Git fixture，以 `--working-tree` 安裝這個 repository 真正的 payload，
 並保留證據供日後審查。它絕對不會安裝進一個既有的專案。清理（cleanup）是
 另一個需要另外、明確授權才能執行的操作。
+
+[`tests/install-release.sh`](./tests/install-release.sh) 在有自己 origin 與 tag 的拋棄式 Friday repository
+中，證明 release 安裝與 `--managed-only`：不論 checkout 在哪個 branch、有什麼修改，安裝的都是最新或指定的
+release；`friday-propagate` 會拒絕的 tag 同樣被拒絕；比這些旗標更早的 release 以舊介面安裝；既有專案的 seeds
+逐位元組原封不動。它會印出 `all N passed`。
 
 [`tests/setup.sh`](./tests/setup.sh) 逐案證明 setup 腳本，每案都在拋棄式的 clone 中
 執行，並印出 `all N passed`。

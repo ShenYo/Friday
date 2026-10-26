@@ -25,7 +25,7 @@ Each step ends on the condition that says it is done.
 
    ```text
    bin/friday-lock check <any consumer>     → classified neither managed nor consumer-owned
-   bash install.sh --check <empty git repo> → undeclared payload file
+   bash install.sh --working-tree --check <empty git repo> → undeclared payload file
    ```
 
 2. **A changed hook runs here first.** This repository's `core.hooksPath` is
@@ -112,5 +112,6 @@ Each step ends on the condition that says it is done.
   judge a squash merge, where every commit shows as left behind. This
   repository uses merge commits.
 - **Adopting into a project that already has files** follows
-  [`ADOPTING.md`](ADOPTING.md). `install.sh` only previews there. It never
-  merges, and it refuses on conflict.
+  [`ADOPTING.md`](ADOPTING.md): `install.sh --managed-only` copies the managed
+  core and leaves the project's seeds alone, listing them for a person to
+  reconcile. It never merges, and it refuses on conflict.

@@ -10,6 +10,7 @@
 .agents/docs/git-guideline/git-commit.md
 .agents/docs/git-guideline/pr-evidence.md
 .agents/docs/git-guideline/safety-boundary.md
+.agents/bin/setup.sh
 .agents/hooks/check-collaborative-git.sh
 .agents/hooks/guard-collaborative-git.sh
 .agents/githooks/pre-commit
@@ -23,6 +24,7 @@
 # Seeds and runtime integration. The consumer owns these; they are reconciled
 # by hand and are never compared byte-for-byte.
 !AGENTS.md
+!CLAUDE.md
 !.agents/AGENTS.md
 !.gitignore
 !.claude/settings.json

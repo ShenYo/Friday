@@ -53,13 +53,15 @@ Friday 刻意不做成一個通用的 runtime manager。它檢查的是靜態的
 
 ## 現況（2026-10-25）
 
-> **摘要**：managed core 十四檔已以 v1.0.0（2026-10-25）發行；pet_care 與 Finance
+> **摘要**：managed core 現為十五檔，其中十四檔已以 v1.0.0（2026-10-25）發行，
+> `.agents/bin/setup.sh` 隨下一版發行；pet_care 與 Finance
 > 兩個 consumer 都已同步在 v1.0.0。待辦：指定 backup maintainer、真正的新機器 replay、
 > 第三個 consumer、external-runtime 收尾，以及 managed-core 更新 bot。
 
 已就位：
 
-- managed core：14 個檔案，列在 [`bin/managed-core.txt`](./bin/managed-core.txt)。
+- managed core：15 個檔案，列在 [`bin/managed-core.txt`](./bin/managed-core.txt)。
+  `v1.0.0`（2026-10-25）發行了前 14 個，`.agents/bin/setup.sh` 是第 15 個。
 - 已發行 `v1.0.0`（2026-10-25）。consumer 只以 release 接收 managed core（見
   [發行版本（Releases）](#發行版本releases)）。
 - 兩個 consumer，`pet_care` 與 Finance，都記錄 `v1.0.0`，狀態為 `in sync`。
@@ -74,6 +76,8 @@ Friday 刻意不做成一個通用的 runtime manager。它檢查的是靜態的
 - External-runtime 的收尾：Friday 尚未驗證的 Codex 與 Gemini 行為。
 - 下一個 payload release 會把兩個 consumer 已經逐位元組相同持有的 overlay 檔
   `mcp.md` 與 `triage-labels.md` 加入 managed core。
+- 該 release 也會帶上 `.agents/bin/setup.sh` 與 `CLAUDE.md` seed，讓 consumer 不再需要
+  專案本地的 `setup-ai.sh` 來建立 root pointer 與 Claude Code 的 Skill 連結。
 - managed-core 更新 bot，讓 Friday 發行時自動向 consumer 開 pull request：
   [ShenYo/Friday#7](https://github.com/ShenYo/Friday/issues/7)。
 
@@ -176,10 +180,15 @@ worktree 會被拒絕，因為 `core.hooksPath` 由同一個 repository 的所�
 `--check` 會回報 `NEW`、`IDENTICAL` 或 `CONFLICT`，遇到衝突時以非零碼結束，
 且不會複製檔案、改變檔案權限、建立連結，也不會執行 self-check。兩種模式都會
 在對目標進行任何寫入之前，先驗證所有先備條件、每一個目的地，以及目標現有的
-hook 設定（已指向別處的 `core.hooksPath`，或接線後會被略過的 `.git/hooks`
-裡的 hook）。任何非預期的
-目的地 symlink（包含祖先路徑上的 symlink）都視為衝突；只有那兩個精確指定的
-Claude 與 Codex hook 連結會被接受。
+hook 設定（任何設定範圍中生效、且不是 `.agents/githooks` 的 `core.hooksPath`，
+或接線後會被略過的 `.git/hooks` 裡的 hook 與 hook symlink）。它們也會檢查
+`setup.sh` 將建立的 `.claude/skills/<name>` 連結，依複製完成後的 Skills（目標自己的
+`.agents/skills` 加上 payload 的）計算：兩個 Skill 同名、被真實檔案或目錄擋住、
+指向別處的連結、複製後會變成有效的斷鏈、或不是 `setup.sh` 寫的斷鏈，都是衝突，
+所以安裝會被拒絕，而不是做到一半才停下。任何非預期的
+目的地 symlink（包含祖先路徑上的 symlink）都視為衝突；只接受三種連結：那兩個精確
+指定的 Claude 與 Codex hook 連結、已經正確的 `.claude/skills/<name>` 連結，以及指向
+`.agents/skills/`、會由 `setup.sh` 替換掉的斷鏈。
 
 安裝會補齊缺少的檔案，並保留內容相同的既有檔案。當內容不同時，它會拒絕
 覆寫，`.claude/settings.json` 也包含在內。這裡刻意沒有提供強制（force）模式。
@@ -190,16 +199,19 @@ transaction：之後發生的 I/O 或 self-check 失敗，可能會讓新檔案�
 而並行發生的目標端變更，也不在這個保證範圍之內。請在重試之前先檢查結果；
 絕對不要對同一個目標同時執行多個安裝程序。
 
-安裝流程的最後一步，會執行 payload 自己的 self-check，因此執行環境接線出錯時，
-會在當下就失敗，而不是等到有人真正依賴那個邊界時才出事。
+安裝流程會在目標中執行 payload 自己的
+[`.agents/bin/setup.sh`](./payload/.agents/bin/setup.sh) 來為這個 clone 接線
+（見下方〈clone 消費端之後，或 Skills 變動之後〉），最後一步再執行 payload
+自己的 self-check，因此執行環境接線出錯時，會在當下就失敗，而不是等到有人真正
+依賴那個邊界時才出事。
 
 ## 在已完成 Bootstrap 的專案中啟動 Agent
 
-> **摘要**：安裝只 seed root [`AGENTS.md`](./payload/AGENTS.md) 與
-> [`.agents/AGENTS.md`](./payload/.agents/AGENTS.md) 的 agent
-> instructions；不會生成 root `CLAUDE.md`、`GEMINI.md` 或 `setup-ai.sh`。先讀
-> 兩個 AGENTS，再選擇已安裝的單一 runtime 啟動；各 runtime 的 trust 與原生行為
-> 仍須各自驗證。
+> **摘要**：安裝會 seed root [`AGENTS.md`](./payload/AGENTS.md)、
+> [`CLAUDE.md`](./payload/CLAUDE.md) 與 [`.agents/AGENTS.md`](./payload/.agents/AGENTS.md)；
+> 不會生成 `GEMINI.md` 或 `setup-ai.sh`。clone 一個 consumer 之後、以及新增／移除／
+> 改名 Skill 之後，執行 `bash .agents/bin/setup.sh`。先讀兩個 AGENTS，再選擇已安裝的
+> 單一 runtime 啟動；各 runtime 的 trust 與原生行為仍須各自驗證。
 
 在要求 agent 變更任何東西之前，請先從目標 repository 的根目錄，讀過那兩份
 已安裝的 instruction 進入點：
@@ -216,16 +228,51 @@ Codex，就另外從該根目錄用 `codex` 啟動它；請依你實際要用的
 root 的 instructions，並回報它實際載入了哪些 instruction 文件，以及目前的
 branch、HEAD 與 working-tree 狀態，再開始進行任何編輯。
 
-Friday 不會生成 root 的 `CLAUDE.md`、`GEMINI.md` 或 `setup-ai.sh`。因此
-Claude 的使用者，需要有一個已驗證的 Claude 進入點，或者在 session 裡明確地
-提示它去讀 AGENTS 檔案；本 README 無法保證 AGENTS 會被自動載入。原生的
-workspace trust、callback 傳遞、優先序，以及其他 runtime 行為，仍屬於各
+Friday 會 seed 一個 import `.agents/AGENTS.md` 的 root `CLAUDE.md`，但不會生成
+`GEMINI.md` 或 `setup-ai.sh`。Claude session 是否真的載入了那個 import，屬於
+runtime 行為，本 README 無法保證，所以請持續要求 agent 回報它實際載入了哪些
+instruction 文件。原生的 workspace trust、callback 傳遞、優先序，以及其他 runtime 行為，仍屬於各
 runtime 自己要補的證據工作。Gemini CLI 與 `agy` 在這裡仍是 pending，所以
 本指南刻意不為它們提供任何臆測性的啟動指令。
 
+### clone 消費端之後，或 Skills 變動之後
+
+安裝只執行一次、在一台機器上，所以讓消費端能運作的部分東西，每次重新 clone 都
+會遺失：`core.hooksPath` 是本地 Git 設定，clone 在它被設定之前，payload 的 Git
+hooks 都不會執行。clone 消費端之後，以及新增、移除或改名 Skill 之後，請在它裡面
+的任何位置執行下面這行（加上 `--check` 可預覽，它不會寫入任何東西）：
+
+```sh
+bash .agents/bin/setup.sh
+```
+
+它做四件事：
+
+- 把 `core.hooksPath` 設為 `.agents/githooks`（任何設定範圍中生效、且是別的值時，
+  回報為 `CONFLICT`，不會覆蓋它），並回報缺少或不可執行的 Git hook，以及接線後會被
+  略過的 `.git/hooks` 裡的 hook 與 hook symlink；
+- 把 `.claude/hooks/guard-collaborative-git.sh` 與
+  `.codex/hooks/guard-collaborative-git.sh` 連結到共用 guard；
+- root 的 `AGENTS.md` 與 `CLAUDE.md` 不存在時，從 seed 建立；已存在時不論內容為何
+  都不動它；
+- 把 `.agents/skills` 底下的每個 Skill（深度 1 或 2、含 `SKILL.md` 的目錄）連結為
+  `.claude/skills/<name>`，`<name>` 取自 Skill 的 `name:` frontmatter，沒有則用
+  目錄名，讓 Claude Code 看得到它們。`.claude/skills` 裡已斷掉、或對不上任何
+  Skill 的項目，會回報為 `STALE`，由人決定是否移除（以 `.` 開頭的名稱會被略過）。
+  本身是 symlink 的 Skill 目錄不會被跟隨：解析後落在 `.agents/skills` 之外的，
+  回報為 `SKIPPED`；落在其中的別名（如 `git-commit -> git/commit`）則靜默略過。
+
+它絕不覆寫、移動或刪除不是它自己建立的東西。唯一的例外是指向
+`../../.agents/skills/`（它自己寫入的唯一形式）的斷掉的 `.claude/skills/<name>`
+連結，它會替換；其他任何斷鏈都是 `CONFLICT`。擋在路上的項目會回報為
+`CONFLICT <path> (<reason>)` 並原封不動，其餘步驟照常執行，結束碼為 1；`--check`
+在有東西會被改變時，結束碼同樣是 1。再執行一次不會改變任何東西，並會印出
+`nothing to change`。安裝程式在目標中執行的就是這支腳本。它與 `install.sh` 一樣，
+基於相同的理由拒絕 linked worktree。
+
 ## 所有權：Managed Core、Seeds 與 Overlays
 
-Managed core 是精確比對的：既有消費端會把這十四個檔案，與他們審查過的
+Managed core 是精確比對的：既有消費端會把這十五個檔案，與他們審查過的
 Friday 版本逐位元組（byte-for-byte）比對。
 
 ```
@@ -235,6 +282,7 @@ Friday 版本逐位元組（byte-for-byte）比對。
 .agents/docs/git-guideline/git-commit.md
 .agents/docs/git-guideline/pr-evidence.md
 .agents/docs/git-guideline/safety-boundary.md
+.agents/bin/setup.sh
 .agents/hooks/check-collaborative-git.sh
 .agents/hooks/guard-collaborative-git.sh
 .agents/githooks/pre-commit
@@ -246,7 +294,9 @@ Friday 版本逐位元組（byte-for-byte）比對。
 ```
 
 這三個 [`githooks`](./payload/.agents/githooks) 檔案是 Git hooks，而非 runtime
-tool hooks，由 installer 透過 `core.hooksPath` 接上。
+tool hooks，透過 `core.hooksPath` 由
+[`setup.sh`](./payload/.agents/bin/setup.sh) 接上，installer 會執行它，每個 clone
+也會再執行一次。
 [`pre-commit`](./payload/.agents/githooks/pre-commit) 掃描 staged 內容中的憑證、
 [`commit-msg`](./payload/.agents/githooks/commit-msg) 強制訊息契約、
 [`pre-push`](./payload/.agents/githooks/pre-push) 則依 Git 即將送出的 refs 判斷，
@@ -262,10 +312,12 @@ managed core。既有消費端需要自行以人工方式調和它們：
 
 ```
 AGENTS.md                                    root pointer
+CLAUDE.md                                    root pointer for Claude Code
 .agents/AGENTS.md                            shared policy router
 .gitignore                                   temporary-file ignore rule
 .claude/settings.json                        Claude PreToolUse wiring
 .claude/hooks/guard-collaborative-git.sh     generated symlink to the guard
+.claude/skills/<name>                        generated symlinks to .agents/skills
 .codex/hooks.json                            Codex PreToolUse runtime seed
 .codex/hooks/guard-collaborative-git.sh      generated symlink to the guard
 ```
@@ -307,9 +359,10 @@ bash "$FRIDAY/install.sh" --check "$TARGET"
 ```
 
 請讀過每一個 `CONFLICT`，並在一次經審查的消費端變更中調和它。只同步上面
-列出的十四個 managed-core 路徑，然後逐一證明它們的內容，與
+列出的十五個 managed-core 路徑，然後逐一證明它們的內容，與
 `"$FRIDAY/payload/$rel"` 完全一致。請保留消費端自己的 seeds、runtime
-integration 與 overlay；不要整個複製一份 `.agents/` 目錄。
+integration 與 overlay；不要整個複製一份 `.agents/` 目錄。接著在消費端執行
+`bash .agents/bin/setup.sh`（先用 `--check` 預覽）為這個 clone 接線。
 
 調和完成之後，請驗證該消費端，而不是把安裝程式當成一個更新引擎來用：
 
@@ -397,7 +450,8 @@ branch，無論指令怎麼拼寫都會被拒絕 —— `--force`、`-f`、refsp
 `--mirror`、`--delete` 與 `:ref` 最終都歸結到同樣的兩項測試。
 
 仍有兩個限制。`core.hooksPath` 是 per-clone 設定，永遠不會被 clone 帶走，所以
-新 clone 在有人設定之前不會執行任何 hook。而這些 hooks 是防止失誤的護欄，不是
+新 clone 在有人設定之前不會執行任何 hook（在消費端，`bash .agents/bin/setup.sh`
+會設定它）。而這些 hooks 是防止失誤的護欄，不是
 控制面：hooks 被略過時，真正擋得住的是 server 端的 ruleset。
 
 ## 非目標與復原
@@ -587,3 +641,6 @@ commit 都不在時，沒有東西可以比對，它不會提到 tag。兩種情
 這個檢查會建立可拋棄的 Git fixture，安裝這個 repository 真正的 payload，
 並保留證據供日後審查。它絕對不會安裝進一個既有的專案。清理（cleanup）是
 另一個需要另外、明確授權才能執行的操作。
+
+[`tests/setup.sh`](./tests/setup.sh) 逐案證明 setup 腳本，每案都在拋棄式的 clone 中
+執行，並印出 `all N passed`。

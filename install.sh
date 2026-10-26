@@ -103,6 +103,8 @@ done < <(find "$PAYLOAD" \( -type f -o -type l \) -print)
   exit 1
 }
 
+# The runtime links setup.sh makes. Listed here too so the preflight refuses
+# whatever stands in their way before anything is written.
 links=(
   '.claude/hooks/guard-collaborative-git.sh:../../.agents/hooks/guard-collaborative-git.sh'
   '.codex/hooks/guard-collaborative-git.sh:../../.agents/hooks/guard-collaborative-git.sh'
@@ -144,6 +146,134 @@ for link in "${links[@]}"; do
   rel=${link%%:*}
   check_destination "$rel" link "${link#*:}"
 done
+# setup.sh links every Skill as .claude/skills/<name>, for Claude Code, and
+# stops on what stands in the way. The same rules are applied here to the Skills
+# as they will be once the copy is done -- the target's own plus the payload's --
+# so a target setup would then stop on is refused now, before anything is
+# written. A Skill is a directory holding SKILL.md at depth 1 or 2, named by its
+# `name:` frontmatter, else its directory; a symlinked directory is not one.
+skill_name() {
+  awk '
+    NR == 1 { if ($0 !~ /^---[[:space:]]*$/) exit; next }
+    /^---[[:space:]]*$/ { exit }
+    /^name:/ {
+      v = $0; sub(/^name:[[:space:]]*/, "", v); sub(/\r$/, "", v)
+      q = substr(v, 1, 1)
+      if (q == "\"" || q == "\047") {
+        i = index(substr(v, 2), q)
+        if (i > 0) { print substr(v, 2, i - 1); exit }
+      }
+      sub(/[[:space:]]+#.*$/, "", v); sub(/[[:space:]]+$/, "", v)
+      print v; exit
+    }
+  ' "$1"
+}
+skill_rels=()
+skill_names=()
+collect_skills() { # <skills root> <skip rels the payload replaces: yes|no>
+  local root=$1 skip=$2 dir rel name r shipped
+  [ -d "$root" ] || return 0
+  while IFS= read -r dir; do
+    rel=${dir#"$root"/}
+    shipped=no
+    if [ "$skip" = yes ]; then
+      for r in "${skill_rels[@]}"; do [ "$r" = "$rel" ] && shipped=yes; done
+    fi
+    [ "$shipped" = no ] || continue
+    name=$(skill_name "$dir/SKILL.md")
+    [ -n "$name" ] || name=${rel##*/}
+    skill_rels+=("$rel")
+    skill_names+=("$name")
+  done < <(find -H "$root" -mindepth 1 -maxdepth 2 -type d -exec test -f '{}/SKILL.md' \; -print | sort)
+}
+collect_skills "$PAYLOAD/.agents/skills" no
+collect_skills "$TARGET/.agents/skills" yes
+
+# Whether a path (relative to the repository root) exists once the copy is
+# done: already there, or a file or directory the payload is about to put there.
+will_exist() {
+  [ -e "$TARGET/$1" ] || [ -e "$PAYLOAD/$1" ]
+}
+# The path a link in .claude/skills/ names, resolved without touching the disk
+# beyond that, so the answer can be about files that do not exist yet.
+link_resolves() { # <link text>
+  local text=$1 part resolved='.claude/skills'
+  case $text in
+    "$TARGET"/*) will_exist "${text#"$TARGET"/}"; return ;;
+    /*) [ -e "$text" ]; return ;;
+  esac
+  local -a parts
+  IFS=/ read -r -a parts <<< "$text"
+  for part in "${parts[@]}"; do
+    case $part in
+      ''|.) ;;
+      ..) case $resolved in
+            */*) resolved=${resolved%/*} ;;
+            ?*) resolved= ;;
+            *) return 1 ;;
+          esac ;;
+      *) resolved=${resolved:+$resolved/}$part ;;
+    esac
+  done
+  will_exist "$resolved"
+}
+
+check_skill_link() { # <link name> <skill rel>
+  local rel=.claude/skills/$1 want=../../.agents/skills/$2 current=$TARGET part have
+  local -a components
+  IFS=/ read -r -a components <<< "$rel"
+  for ((i=0; i<${#components[@]}-1; i++)); do
+    part=${components[i]}
+    current="$current/$part"
+    if [ -L "$current" ] || { [ -e "$current" ] && [ ! -d "$current" ]; }; then
+      echo "CONFLICT $rel (unsafe parent: $current)"
+      conflicts=1
+      return
+    fi
+  done
+  current=$TARGET/$rel
+  if [ -L "$current" ]; then
+    have=$(readlink "$current")
+    if [ "$have" = "$want" ]; then
+      echo "IDENTICAL $rel"
+    elif link_resolves "$have"; then
+      echo "CONFLICT $rel (points to $have, expected $want)"
+      conflicts=1
+    elif [[ $have == ../../.agents/skills/* ]]; then
+      echo "NEW $rel (replaces a dangling link to $have)"
+    else
+      echo "CONFLICT $rel (a dangling link to $have, which is not one setup wrote; expected $want)"
+      conflicts=1
+    fi
+  elif [ -e "$current" ]; then
+    echo "CONFLICT $rel (exists and is not a symlink)"
+    conflicts=1
+  else
+    echo "NEW $rel"
+  fi
+}
+seen_names=$'\n'
+for ((k=0; k<${#skill_rels[@]}; k++)); do
+  name=${skill_names[k]}
+  case $seen_names in *$'\n'"$name"$'\n'*) continue ;; esac
+  seen_names=$seen_names$name$'\n'
+  case $name in
+    */*|.|..) echo "CONFLICT .agents/skills/${skill_rels[k]} (its name '$name' is not usable as a link name)"; conflicts=1; continue ;;
+  esac
+  owners=; count=0
+  for ((m=0; m<${#skill_rels[@]}; m++)); do
+    if [ "${skill_names[m]}" = "$name" ]; then
+      owners="${owners:+$owners, }.agents/skills/${skill_rels[m]}"
+      count=$((count + 1))
+    fi
+  done
+  if [ "$count" -gt 1 ]; then
+    echo "CONFLICT .claude/skills/$name (declared by more than one Skill: $owners; linked for none)"
+    conflicts=1
+    continue
+  fi
+  check_skill_link "$name" "${skill_rels[k]}"
+done
 if [ -f "$TARGET/.codex/config.toml" ] \
   && grep -Eq '^[[:space:]]*\[\[hooks\.' "$TARGET/.codex/config.toml"; then
   echo "CONFLICT .codex/config.toml (inline hooks duplicate hooks.json)"
@@ -152,14 +282,15 @@ fi
 # Wiring core.hooksPath replaces .git/hooks wholesale, so a target already
 # using husky or another manager needs a deliberate decision rather than a
 # silent override. Checked here with every other conflict, before anything is
-# written, so --check reports it and a refusal leaves the target untouched.
-existing_hooks_path=$(git -C "$TARGET" config --local core.hooksPath 2>/dev/null || true)
+# written, so --check reports it and a refusal leaves the target untouched. The
+# effective value counts, from whichever scope it comes (setup.sh does the same).
+existing_hooks_path=$(git -C "$TARGET" config --get core.hooksPath 2>/dev/null || true)
 if [ -n "$existing_hooks_path" ] && [ "$existing_hooks_path" != .agents/githooks ]; then
   echo "CONFLICT core.hooksPath (already set to '$existing_hooks_path'; reconcile it with .agents/githooks)"
   conflicts=1
 fi
 if [ -d "$TARGET/.git/hooks" ] \
-  && [ -n "$(find "$TARGET/.git/hooks" -type f ! -name '*.sample' -print -quit 2>/dev/null)" ]; then
+  && [ -n "$(find "$TARGET/.git/hooks" \( -type f -o -type l \) ! -name '*.sample' -print -quit 2>/dev/null)" ]; then
   echo "CONFLICT .git/hooks (holds hooks that core.hooksPath would bypass; move or remove them deliberately)"
   conflicts=1
 fi
@@ -185,29 +316,26 @@ done
 
 for rel in "${files[@]}"; do
   case "$rel" in
+    .agents/bin/*.sh) chmod +x "$TARGET/$rel" ;;
     .agents/hooks/*.sh) chmod +x "$TARGET/$rel" ;;
     .agents/githooks/*) chmod +x "$TARGET/$rel" ;;
   esac
 done
 
-# --- Wire the commit-time hooks ---------------------------------------------
-# core.hooksPath is per-clone config, not tracked, so it has to be set here.
-# These hooks are where the secret scan and the message checks actually run: a
-# runtime tool hook cannot see a staged diff, and `git commit -F -` hides the
-# message from it entirely. The preflight above has already refused a target
-# where this would override another hook manager.
-git -C "$TARGET" config core.hooksPath .agents/githooks
-echo "  wired  core.hooksPath -> .agents/githooks"
-
-# --- Wire runtime hooks -----------------------------------------------------
-# Runtime hook paths must hold links, not copies, so both adapters share the
-# reviewed guard implementation.
-for link in "${links[@]}"; do
-  rel=${link%%:*}
-  mkdir -p "$(dirname "$TARGET/$rel")"
-  if [ ! -L "$TARGET/$rel" ]; then ln -s "${link#*:}" "$TARGET/$rel"; fi
-  echo "  linked $rel"
-done
+# --- Wire the clone ---------------------------------------------------------
+# core.hooksPath is per-clone config, not tracked, and the runtime hook paths
+# must hold links, not copies, so both adapters share the one reviewed guard.
+# That wiring, and the Skill links and root pointers, live in the one script
+# the payload ships, so a later clone does it the same way: this runs the copy
+# just installed. The preflight above has already refused a target where it
+# would override another hook manager, so a conflict here is unexpected.
+setup_status=0
+setup_out=$(cd "$TARGET" && bash .agents/bin/setup.sh 2>&1) || setup_status=$?
+printf '%s\n' "$setup_out" | sed 's/^/  /'
+if [ "$setup_status" -ne 0 ]; then
+  echo "error: .agents/bin/setup.sh reported a problem in $TARGET (exit $setup_status); see above." >&2
+  exit 1
+fi
 
 # --- Record the position ------------------------------------------------------
 # The lock is what lets a consumer answer "which Friday am I on, and has

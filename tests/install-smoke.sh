@@ -6,9 +6,16 @@ source_root=$(cd "$(dirname "$BASH_SOURCE")/.." && pwd)
 mkdir -p "$1"
 run=$(mktemp -d "$1/run.XXXXXX")
 kit="$source_root"
+# A core.hooksPath in the global config of the machine running this would count
+# as set; a global config of our own, empty unless a case fills it, keeps the
+# targets alone.
+export GIT_CONFIG_GLOBAL="$run/global.gitconfig"
+: > "$GIT_CONFIG_GLOBAL"
 expected='
 AGENTS.md
+CLAUDE.md
 .agents/AGENTS.md
+.agents/bin/setup.sh
 .agents/docs/agent-rules.md
 .agents/docs/testing.md
 .agents/docs/scratch-files.md
@@ -60,7 +67,9 @@ reject() {
 
 target fresh
 bash "$kit/install.sh" --check "$run/fresh" > "$run/preview.log"
-inventory_check "the install preview" "$(sed -n 's/^NEW //p' "$run/preview.log")"
+# The Skill links setup.sh will make are previewed too, but are not payload files.
+inventory_check "the install preview" "$(sed -n 's/^NEW //p' "$run/preview.log" | grep -v '^\.claude/skills/')"
+for name in git-commit git-create-pr git-push; do grep -q "^NEW \.claude/skills/$name\$" "$run/preview.log"; done
 [ ! -e "$run/fresh/AGENTS.md" ] && [ ! -e "$run/fresh/.agents" ]
 bash "$kit/install.sh" "$run/fresh" > "$run/install.log"
 for rel in $expected; do cmp "$kit/payload/$rel" "$run/fresh/$rel"; done
@@ -209,7 +218,8 @@ mkdir -p "$run/fresh/docs/temp/probe"
 touch "$run/fresh/docs/temp/probe/file.md"
 git -C "$run/fresh" check-ignore -v docs/temp/probe/file.md > "$run/ignore.log"
 grep -q 'docs/temp/' "$run/ignore.log"
-actual=$(cd "$run/fresh" && { printf '%s\n' AGENTS.md .gitignore; find .agents .claude .codex \( -type f -o -type l \) -print; })
+# The Skill links setup.sh makes are not payload files; they are asserted below.
+actual=$(cd "$run/fresh" && { printf '%s\n' AGENTS.md CLAUDE.md .gitignore; find .agents .claude .codex -path .claude/skills -prune -o \( -type f -o -type l \) -print; })
 inventory_check "the installed tree" "$actual"
 printf 'local overlay\n' > "$run/fresh/local.txt"
 printf '# local hook\n' > "$run/fresh/.agents/hooks/local.sh"
@@ -222,6 +232,20 @@ bash "$kit/install.sh" "$run/fresh" > "$run/reinstall.log"
 [ -x "$run/fresh/.agents/hooks/guard-collaborative-git.sh" ]
 [ ! -x "$run/fresh/.agents/hooks/local.sh" ]
 [ "$(< "$run/fresh/local.txt")" = 'local overlay' ]
+# The install ends by running the setup script the payload ships, so a fresh
+# install already has the root CLAUDE.md pointer and the Claude Code Skill
+# links, and running the script again has nothing left to do.
+cmp "$kit/payload/CLAUDE.md" "$run/fresh/CLAUDE.md"
+[ -x "$run/fresh/.agents/bin/setup.sh" ]
+[ "$(git -C "$run/fresh" config --local core.hooksPath)" = .agents/githooks ]
+[ "$(readlink "$run/fresh/.claude/skills/git-commit")" = ../../.agents/skills/git/commit ]
+[ "$(readlink "$run/fresh/.claude/skills/git-create-pr")" = ../../.agents/skills/git/create-pr ]
+[ "$(readlink "$run/fresh/.claude/skills/git-push")" = ../../.agents/skills/git/push ]
+[ -f "$run/fresh/.claude/skills/git-commit/SKILL.md" ]
+(cd "$run/fresh" && bash .agents/bin/setup.sh) > "$run/second-setup.log" 2>&1 \
+  || { echo 'FAIL: a second setup run failed' >&2; cat "$run/second-setup.log" >&2; exit 1; }
+grep -q 'nothing to change' "$run/second-setup.log" \
+  || { echo 'FAIL: a second setup run did not say nothing to change' >&2; cat "$run/second-setup.log" >&2; exit 1; }
 
 target self-check-failure
 mkdir -p "$run/self-check-failure/.agents/hooks"
@@ -281,6 +305,96 @@ grep -q '^CONFLICT .gitignore ' "$run/rejection.log"
 reject "$run/gitignore-conflict"
 [ ! -e "$run/gitignore-conflict/AGENTS.md" ] && [ ! -e "$run/gitignore-conflict/.agents" ]
 [ "$(cat "$run/gitignore-conflict/.gitignore")" = 'local ignore rule' ]
+
+# The Skill links setup.sh makes are checked by the same preflight: whatever
+# setup would stop on is refused before a single file is written.
+target skill-dir-conflict
+mkdir -p "$run/skill-dir-conflict/.claude/skills/git-push"
+printf 'mine\n' > "$run/skill-dir-conflict/.claude/skills/git-push/notes.txt"
+reject --check "$run/skill-dir-conflict"
+grep -q '^CONFLICT .claude/skills/git-push ' "$run/rejection.log"
+reject "$run/skill-dir-conflict"
+grep -q '^CONFLICT .claude/skills/git-push ' "$run/rejection.log"
+[ ! -e "$run/skill-dir-conflict/AGENTS.md" ] && [ ! -e "$run/skill-dir-conflict/.agents" ]
+[ ! -e "$run/skill-dir-conflict/.friday-lock.json" ]
+[ -z "$(git -C "$run/skill-dir-conflict" config core.hooksPath || true)" ]
+[ "$(cat "$run/skill-dir-conflict/.claude/skills/git-push/notes.txt")" = mine ]
+
+target skill-link-elsewhere
+mkdir -p "$run/skill-link-elsewhere/.claude/skills" "$run/skill-link-elsewhere/mine"
+ln -s ../../mine "$run/skill-link-elsewhere/.claude/skills/git-commit"
+reject --check "$run/skill-link-elsewhere"
+grep -q '^CONFLICT .claude/skills/git-commit ' "$run/rejection.log"
+reject "$run/skill-link-elsewhere"
+[ ! -e "$run/skill-link-elsewhere/AGENTS.md" ] && [ ! -e "$run/skill-link-elsewhere/.agents" ]
+
+target skill-parent-link
+mkdir -p "$run/skill-parent-link/.claude" "$run/skill-parent-elsewhere"
+ln -s "$run/skill-parent-elsewhere" "$run/skill-parent-link/.claude/skills"
+reject --check "$run/skill-parent-link"
+grep -q '^CONFLICT .claude/skills/git-commit (unsafe parent' "$run/rejection.log"
+reject "$run/skill-parent-link"
+[ ! -e "$run/skill-parent-link/AGENTS.md" ] && [ -z "$(ls -A "$run/skill-parent-elsewhere")" ]
+
+# A correct link may already be there (it dangles until the install copies the
+# Skill), and so may a dangling one pointing nowhere useful; neither blocks.
+target skill-link-ok
+mkdir -p "$run/skill-link-ok/.claude/skills"
+ln -s ../../.agents/skills/git/push "$run/skill-link-ok/.claude/skills/git-push"
+ln -s ../../.agents/skills/old/commit "$run/skill-link-ok/.claude/skills/git-commit"
+bash "$kit/install.sh" --check "$run/skill-link-ok" > "$run/skill-link-ok-preview.log"
+grep -q '^IDENTICAL .claude/skills/git-push$' "$run/skill-link-ok-preview.log"
+grep -q '^NEW .claude/skills/git-commit (replaces a dangling link' "$run/skill-link-ok-preview.log"
+bash "$kit/install.sh" "$run/skill-link-ok" > "$run/skill-link-ok.log"
+[ "$(readlink "$run/skill-link-ok/.claude/skills/git-push")" = ../../.agents/skills/git/push ]
+[ "$(readlink "$run/skill-link-ok/.claude/skills/git-commit")" = ../../.agents/skills/git/commit ]
+[ -f "$run/skill-link-ok/.claude/skills/git-push/SKILL.md" ]
+[ -f "$run/skill-link-ok/.claude/skills/git-commit/SKILL.md" ]
+
+# Install must refuse every conflict setup would later stop on, including the
+# ones that depend on what the copy itself will put there. Both modes refuse and
+# neither writes a file.
+refused() { # <target> <CONFLICT line prefix>
+  reject --check "$run/$1"
+  grep -q "^CONFLICT $2" "$run/rejection.log" || { echo "FAIL: --check did not report CONFLICT $2" >&2; exit 1; }
+  reject "$run/$1"
+  grep -q "^CONFLICT $2" "$run/rejection.log" || { echo "FAIL: install did not report CONFLICT $2" >&2; exit 1; }
+  [ ! -e "$run/$1/AGENTS.md" ] && [ ! -e "$run/$1/CLAUDE.md" ] && [ ! -e "$run/$1/.agents/AGENTS.md" ] \
+    && [ ! -e "$run/$1/.agents/skills/git" ] && [ ! -e "$run/$1/.friday-lock.json" ] \
+    || { echo "FAIL: a refused install wrote into $1" >&2; exit 1; }
+  [ -z "$(git -C "$run/$1" config --local core.hooksPath || true)" ]
+}
+
+target skill-own-dir
+mkdir -p "$run/skill-own-dir/.agents/skills/mine" "$run/skill-own-dir/.claude/skills/mine"
+printf -- '---\ndescription: theirs\n---\n' > "$run/skill-own-dir/.agents/skills/mine/SKILL.md"
+refused skill-own-dir '.claude/skills/mine (exists and is not a symlink)'
+
+target skill-own-name
+mkdir -p "$run/skill-own-name/.agents/skills/mine"
+printf -- '---\nname: git-commit\n---\n' > "$run/skill-own-name/.agents/skills/mine/SKILL.md"
+refused skill-own-name '.claude/skills/git-commit (declared by more than one Skill: .agents/skills/git/commit, .agents/skills/mine'
+
+# A dangling link becomes live once the install creates what it points at.
+target skill-dangling-becomes-live
+mkdir -p "$run/skill-dangling-becomes-live/.claude/skills"
+ln -s ../../.agents/docs "$run/skill-dangling-becomes-live/.claude/skills/git-push"
+refused skill-dangling-becomes-live '.claude/skills/git-push (points to ../../.agents/docs'
+
+# A dangling link of a form setup never writes is not setup's to replace.
+target skill-dangling-foreign
+mkdir -p "$run/skill-dangling-foreign/.claude/skills"
+ln -s ../../nowhere "$run/skill-dangling-foreign/.claude/skills/git-push"
+refused skill-dangling-foreign '.claude/skills/git-push (a dangling link to ../../nowhere'
+
+# The effective core.hooksPath counts, from whichever scope it comes.
+target hooks-path-global
+printf '[core]\n\thooksPath = .husky/_\n' > "$run/global-husky.gitconfig"
+( export GIT_CONFIG_GLOBAL="$run/global-husky.gitconfig"; refused hooks-path-global 'core.hooksPath (already set to '"'"'.husky/_'"'"'' )
+
+target git-hooks-symlink
+ln -s "$run" "$run/git-hooks-symlink/.git/hooks/pre-commit"
+refused git-hooks-symlink '.git/hooks '
 
 target parent-link
 mkdir -p "$run/outside"

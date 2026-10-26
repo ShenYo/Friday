@@ -741,12 +741,16 @@ anything to take, and `friday-propagate` leaves the others alone.
   scripts.
 - **MAJOR** for a large structural change.
 
-The annotated tag's message is the release note: what changed, and what a
-consumer must do.
+The release note is the entry for the release in [`CHANGELOG.md`](./CHANGELOG.md):
+what changed, and what a consumer must do. The release's pull request adds the
+entry, so it is reviewed with the change. The annotated tag's message is that
+entry, and after the tag is pushed the GitHub Release is created from the tag,
+with the same text.
 
 ```sh
-git tag -a vX.Y.Z -m '<release note>' <commit>
+git tag -a vX.Y.Z <commit> -F <file with the entry>
 git push origin vX.Y.Z
+gh release create vX.Y.Z --notes-from-tag
 bin/friday-propagate <consumer>...
 ```
 
@@ -757,11 +761,13 @@ older than the one that added `--working-tree` has no such flag; its own
 installer runs under its old interface and installs its own tree, which is
 exactly the release.
 
-Pushing any tag is a checkpoint
+Pushing any tag, and creating, editing or uploading to a GitHub Release, are
+checkpoints
 ([`safety-boundary.md`](./payload/.agents/docs/git-guideline/safety-boundary.md)):
-an agent pushes one, including through `--tags` or `--follow-tags`, only when
-the user names the tag and its commit in the current turn. Neither Friday's
-guard nor `pre-push` checks it; it is enforced by instruction.
+an agent pushes a tag, including through `--tags` or `--follow-tags`, or
+publishes a release, only when the user names the tag and its commit in the
+current turn. Neither Friday's guard nor `pre-push` checks it; it is enforced
+by instruction.
 
 `bin/friday-propagate` carries only releases: the newest tag of the exact form
 `vX.Y.Z` by default (a pre-release such as `v1.1.0-rc1` is never one), or the

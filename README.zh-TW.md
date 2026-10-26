@@ -661,11 +661,14 @@ commit 不行。`main` 上任何經審查的變更都可以發版，文件也包
 - **MINOR**：會執行的東西的變更：Skill、Git hooks 與 guard script。
 - **MAJOR**：結構上的大變更。
 
-annotated tag 的訊息就是 release note：改了什麼、consumer 必須做什麼。
+release note 就是 [`CHANGELOG.md`](./CHANGELOG.md) 裡該 release 的條目：改了什麼、consumer
+必須做什麼。條目由該 release 的 pull request 加入，所以會連同變更一起被審查。annotated tag
+的訊息就是這個條目；tag 推送之後，GitHub Release 由這個 tag 建立，文字相同。
 
 ```sh
-git tag -a vX.Y.Z -m '<release note>' <commit>
+git tag -a vX.Y.Z <commit> -F <file with the entry>
 git push origin vX.Y.Z
+gh release create vX.Y.Z --notes-from-tag
 bin/friday-propagate <consumer>...
 ```
 
@@ -674,11 +677,11 @@ bin/friday-propagate <consumer>...
 或建立一個。比加入 `--working-tree` 的那一版更早的 release 沒有這個旗標；它自己的安裝程式以舊介面執行，
 安裝它自己的 tree，而那正是這個 release。
 
-推送任何 tag 都是一個 checkpoint
+推送任何 tag，以及建立、編輯或上傳到 GitHub Release，都是 checkpoint
 （[`safety-boundary.md`](./payload/.agents/docs/git-guideline/safety-boundary.md)）：
-只有在使用者於當下這個 turn 點名 tag 與它的 commit 時，agent 才能推送，透過
-`--tags` 或 `--follow-tags` 順帶推送也一樣。Friday 的 guard 和 `pre-push` 都不會檢查
-這一條，它是靠 instruction 執行的。
+只有在使用者於當下這個 turn 點名 tag 與它的 commit 時，agent 才能推送 tag（透過
+`--tags` 或 `--follow-tags` 順帶推送也一樣）或發布 release。Friday 的 guard 和
+`pre-push` 都不會檢查這一條，它是靠 instruction 執行的。
 
 `bin/friday-propagate` 只帶 release：預設是格式剛好為 `vX.Y.Z` 的最新 tag
 （`v1.1.0-rc1` 這類 pre-release 永遠不算），或用 `--tag vX.Y.Z` 指定的那一個。

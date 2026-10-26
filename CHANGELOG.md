@@ -15,7 +15,9 @@ MAJOR entry says what changed, why, and what a consumer must do.
 
 ## Unreleased
 
-Documentation only, so the next release is a PATCH (v1.1.1).
+## v1.1.1 (2026-10-26)
+
+The payload changes only in documentation, so this is a PATCH.
 
 - safety-boundary.md: publishing, editing or uploading to a GitHub Release
   (`gh release create|edit|upload`, or the same through the API) is a
@@ -27,6 +29,12 @@ Documentation only, so the next release is a PATCH (v1.1.1).
 - Each release now carries a note people can read: this changelog, the
   annotated tag's message and the GitHub Release share one text, and the
   READMEs and AGENTS.md state the process.
+- friday-propagate no longer prints "could not open directory" when a
+  managed file joins the core in a directory a consumer lacks.
+
+### What a consumer must do
+
+Merge the sync pull request friday-propagate opens; nothing else.
 
 ## v1.1.0 (2026-10-26)
 

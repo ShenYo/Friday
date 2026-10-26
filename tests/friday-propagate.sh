@@ -232,6 +232,18 @@ check "joined, matching: a lock-only sync is opened" bash -c "[ -e '$GH_SHIM_LOG
 check "joined, matching: the lock now records it" \
   bash -c "git -C '$case_dir/c1' show 'chore/sync-managed-core-v1.1.0:.friday-lock.json' | jq -e '.managed_core | has(\".agents/AGENTS.md\")' >/dev/null"
 
+# 10b. A file that joins the core in a directory the consumer lacks is carried,
+#      and git is not asked about a path under a directory that is not there.
+new_case; new_consumer c1
+mkdir -p "$kit/payload/.agents/newbin"; printf '#!/usr/bin/env bash\n' > "$kit/payload/.agents/newbin/extra.sh"
+printf '.agents/newbin/extra.sh\n' >> "$kit/bin/managed-core.txt"
+gq -C "$kit" add -A && gq -C "$kit" commit -qm "payload: add .agents/newbin/extra.sh"; release v1.1.0
+run "$case_dir/c1"; rc=$?
+check "new nested directory: the run succeeds and opens the sync" bash -c "[ $rc = 0 ] && [ -e '$GH_SHIM_LOG/1.args' ]"
+check "new nested directory: the file is carried" \
+  bash -c "git -C '$case_dir/c1' show 'chore/sync-managed-core-v1.1.0:.agents/newbin/extra.sh' >/dev/null"
+check "new nested directory: no 'could not open directory' warning" bash -c "! grep -q 'could not open directory' '$case_dir/run.log'"
+
 # 11. friday-lock itself comes from the pin: a commit that changes it mid-run
 #     does not change what a later consumer's lock records.
 new_case; new_consumer c1; new_consumer c2

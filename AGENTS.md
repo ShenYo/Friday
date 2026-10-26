@@ -91,6 +91,13 @@ Each step ends on the condition that says it is done.
   installation. Step 3 is the place to run it.
 - **Edit `README.md` and `README.zh-TW.md` in the same commit.** Nothing here
   checks their parity, so the second edit is yours to remember.
+- **A release's note lives in [`CHANGELOG.md`](CHANGELOG.md).** The release's
+  pull request moves the `Unreleased` entry under the new version; the
+  annotated tag's message is that entry (`git tag -a vX.Y.Z <commit> -F
+  <file>`), and the GitHub Release is created from the tag with
+  `gh release create vX.Y.Z --notes-from-tag`. Pushing the tag and creating
+  the release are each a checkpoint: do them only when the user names the tag
+  and its commit in the current turn.
 - **Everything Friday needs lives in this repository, and Friday depends on
   no other repository, the personal layer included.** Consumers receive copies
   through `install.sh` and `friday-propagate`, and Friday tracks them only

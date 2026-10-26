@@ -97,7 +97,7 @@ The user must name the operation and its exact target in the current turn.
 | Pushing directly to the default branch | A direct push bypasses the PR checkpoint above, so leaving it open would make that checkpoint optional in practice. Enforced by `pre-push`. |
 | Closing or reopening a pull request | It changes the state of a shared review artifact that others may be acting on. |
 | Changing branch protection, required checks, or repository settings | These define the checkpoints themselves. |
-| Pushing a tag | No agent may delete a tag, so a pushed tag is one the agent cannot take back, and a release tag is also the name consumers take a release by. An agent pushes a tag, including through `--tags`, `--follow-tags` or `push.followTags`, only when the user names the tag and the commit in the current turn; it never pushes one on its own judgement. Friday's guard and `pre-push` do not check this row: it is enforced by instruction. |
+| Pushing a tag, or publishing a GitHub Release | No agent may delete a tag, so a pushed tag is one the agent cannot take back, and a release tag is also the name consumers take a release by. A GitHub Release is published under that name for people to read, and an agent cannot delete one either. An agent pushes a tag, including through `--tags`, `--follow-tags` or `push.followTags`, only when the user names the tag and the commit in the current turn; it never pushes one on its own judgement. The same holds for publishing, editing or uploading to a GitHub Release (`gh release create`, `gh release edit`, `gh release upload`, or the same through the API): only when the user names the release and its tag in the current turn. Friday's guard and `pre-push` do not check this row: it is enforced by instruction. |
 
 **An agent must not approve a pull request containing its own work.** Approval
 is the review act; an author approving their own change satisfies the
@@ -121,7 +121,7 @@ target and command, then ask the user to run it directly.
 | Deleting refs | deleting a local or remote branch (`git branch -d`, `-D`, `git push --delete`, `git push <remote> :<ref>`); deleting a tag locally or remotely |
 | Deleting files | recursive deletion (`rm -r*`, `find -delete`); `git rm`; patch-based deletion, including Codex `apply_patch` deletion |
 | Detaching a remote | removing or rewriting a Git remote URL |
-| Destroying remote state | deleting a GitHub repository; a GitHub API `DELETE` request |
+| Destroying remote state | deleting a GitHub repository or a GitHub Release (`gh release delete`); a GitHub API `DELETE` request |
 
 Deleting a merged branch is routine housekeeping for a person and still sits
 here, because an agent cannot reliably tell a merged branch from one that only

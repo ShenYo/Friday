@@ -135,6 +135,24 @@ case "$codex_command_output" in
   *fatal:*) fail "unresolved Git root leaked Git diagnostics: $codex_command_output" ;;
 esac
 
+# Fixture cleanup. A single EXIT trap replaces any earlier one, so every
+# fixture registers its root here and one handler removes them all, including
+# when a fail() aborts partway. It is set up before the first fixture: set up
+# after them, it emptied the list and left the first two behind on every run. Files go individually with rm -f and
+# directories with rmdir, never recursively.
+fixture_roots=()
+cleanup_fixtures() {
+  local root file dir
+  for root in ${fixture_roots[@]+"${fixture_roots[@]}"}; do
+    [ -n "$root" ] || continue
+    while IFS= read -r file; do rm -f "$file"; done \
+      < <(find "$root" \( -type f -o -type l \) 2>/dev/null)
+    while IFS= read -r dir; do rmdir "$dir" 2>/dev/null || true; done \
+      < <(find "$root" -depth -type d 2>/dev/null)
+  done
+}
+trap cleanup_fixtures EXIT
+
 # The launcher appends the inherited PATH to its pinned list, so naming a
 # missing directory is only half the condition: the caller's PATH has to lack
 # the tool as well. Passing /bin for that worked on macOS, where /bin is
@@ -176,22 +194,6 @@ case "$codex_command_output" in
   *) fail "missing guard did not produce a concise BLOCKED message: $codex_command_output" ;;
 esac
 
-# Fixture cleanup. A single EXIT trap replaces any earlier one, so every
-# fixture registers its root here and one handler removes them all, including
-# when a fail() aborts partway. Files go individually with rm -f and
-# directories with rmdir, never recursively.
-fixture_roots=()
-cleanup_fixtures() {
-  local root file dir
-  for root in ${fixture_roots[@]+"${fixture_roots[@]}"}; do
-    [ -n "$root" ] || continue
-    while IFS= read -r file; do rm -f "$file"; done \
-      < <(find "$root" \( -type f -o -type l \) 2>/dev/null)
-    while IFS= read -r dir; do rmdir "$dir" 2>/dev/null || true; done \
-      < <(find "$root" -depth -type d 2>/dev/null)
-  done
-}
-trap cleanup_fixtures EXIT
 
 # --- Claude launcher: execute it, do not only match its text -----------------
 # Static wiring proved the launcher string. These probes prove the string the

@@ -163,7 +163,13 @@ seed_sum() { (cd "$1" && cat AGENTS.md CLAUDE.md .agents/AGENTS.md .gitignore .c
 payload_commit() { git -C "$kit" log -1 --format=%H "$1" -- payload/; }
 # Every line of the log is one the managed-only preview is allowed to print.
 only_identical_and_seed() { ! grep -v -e '^IDENTICAL ' -e '^SEED ' -e '^release: ' "$1" | grep -q .; }
-leftovers() { [ -z "$(ls -A "$tmp")" ]; }
+# What an install leaves in TMPDIR: its own export, and anything the payload's
+# self-check creates. The bare origins are this suite's own fixtures.
+leftovers() {
+  local l
+  l=$(ls -A "$tmp" | grep -vE '^origin(-[a-z]+)?\.git$')
+  [ -z "$l" ] || { echo "left in TMPDIR: $l" >&2; false; }
+}
 # The run failed and said <pattern>; the run succeeded and said it.
 refused_with() { rc_fails && has "$1" "$log"; }
 ok_with() { rc_is 0 && has "$1" "$log"; }

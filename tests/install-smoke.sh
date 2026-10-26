@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # Live-payload installer regression check; preserve outputs for inspection.
+# It installs this checkout's payload as it stands, so every install here is
+# --working-tree; the release install is proven by tests/install-release.sh.
 set -euo pipefail
 [ "$#" -eq 1 ] || { echo "usage: $0 retained-output-directory" >&2; exit 2; }
 source_root=$(cd "$(dirname "$BASH_SOURCE")/.." && pwd)
@@ -60,18 +62,18 @@ inventory_check() {
 }
 target() { git init -q "$run/$1"; }
 reject() {
-  if bash "$kit/install.sh" "$@" > "$run/rejection.log" 2>&1; then
+  if bash "$kit/install.sh" --working-tree "$@" > "$run/rejection.log" 2>&1; then
     echo "FAIL: unexpectedly accepted $*" >&2; exit 1
   fi
 }
 
 target fresh
-bash "$kit/install.sh" --check "$run/fresh" > "$run/preview.log"
+bash "$kit/install.sh" --working-tree --check "$run/fresh" > "$run/preview.log"
 # The Skill links setup.sh will make are previewed too, but are not payload files.
 inventory_check "the install preview" "$(sed -n 's/^NEW //p' "$run/preview.log" | grep -v '^\.claude/skills/')"
 for name in git-commit git-create-pr git-push; do grep -q "^NEW \.claude/skills/$name\$" "$run/preview.log"; done
 [ ! -e "$run/fresh/AGENTS.md" ] && [ ! -e "$run/fresh/.agents" ]
-bash "$kit/install.sh" "$run/fresh" > "$run/install.log"
+bash "$kit/install.sh" --working-tree "$run/fresh" > "$run/install.log"
 for rel in $expected; do cmp "$kit/payload/$rel" "$run/fresh/$rel"; done
 # The installed policy must still carry the three load-bearing parts of the
 # boundary: that ordinary commits are the agent's own call, that integrating a
@@ -225,10 +227,10 @@ printf 'local overlay\n' > "$run/fresh/local.txt"
 printf '# local hook\n' > "$run/fresh/.agents/hooks/local.sh"
 chmod 600 "$run/fresh/.agents/hooks/local.sh"
 chmod 600 "$run/fresh/.agents/hooks/guard-collaborative-git.sh"
-bash "$kit/install.sh" --check "$run/fresh" > "$run/second-preview.log"
+bash "$kit/install.sh" --working-tree --check "$run/fresh" > "$run/second-preview.log"
 for rel in $expected; do grep -q "^IDENTICAL $rel$" "$run/second-preview.log"; done
 [ ! -x "$run/fresh/.agents/hooks/guard-collaborative-git.sh" ]
-bash "$kit/install.sh" "$run/fresh" > "$run/reinstall.log"
+bash "$kit/install.sh" --working-tree "$run/fresh" > "$run/reinstall.log"
 [ -x "$run/fresh/.agents/hooks/guard-collaborative-git.sh" ]
 [ ! -x "$run/fresh/.agents/hooks/local.sh" ]
 [ "$(< "$run/fresh/local.txt")" = 'local overlay' ]
@@ -342,10 +344,10 @@ target skill-link-ok
 mkdir -p "$run/skill-link-ok/.claude/skills"
 ln -s ../../.agents/skills/git/push "$run/skill-link-ok/.claude/skills/git-push"
 ln -s ../../.agents/skills/old/commit "$run/skill-link-ok/.claude/skills/git-commit"
-bash "$kit/install.sh" --check "$run/skill-link-ok" > "$run/skill-link-ok-preview.log"
+bash "$kit/install.sh" --working-tree --check "$run/skill-link-ok" > "$run/skill-link-ok-preview.log"
 grep -q '^IDENTICAL .claude/skills/git-push$' "$run/skill-link-ok-preview.log"
 grep -q '^NEW .claude/skills/git-commit (replaces a dangling link' "$run/skill-link-ok-preview.log"
-bash "$kit/install.sh" "$run/skill-link-ok" > "$run/skill-link-ok.log"
+bash "$kit/install.sh" --working-tree "$run/skill-link-ok" > "$run/skill-link-ok.log"
 [ "$(readlink "$run/skill-link-ok/.claude/skills/git-push")" = ../../.agents/skills/git/push ]
 [ "$(readlink "$run/skill-link-ok/.claude/skills/git-commit")" = ../../.agents/skills/git/commit ]
 [ -f "$run/skill-link-ok/.claude/skills/git-push/SKILL.md" ]
@@ -442,7 +444,7 @@ reject "$run/outside"
 target missing-jq
 mkdir -p "$run/no-jq-bin"
 ln -s /usr/bin/dirname "$run/no-jq-bin/dirname"
-if PATH="$run/no-jq-bin" /bin/bash "$kit/install.sh" "$run/missing-jq" > "$run/missing-jq.log" 2>&1; then
+if PATH="$run/no-jq-bin" /bin/bash "$kit/install.sh" --working-tree "$run/missing-jq" > "$run/missing-jq.log" 2>&1; then
   echo 'FAIL: missing prerequisite accepted' >&2; exit 1
 fi
 grep -q "'jq' is required" "$run/missing-jq.log"
@@ -452,7 +454,7 @@ grep -q "'jq' is required" "$run/missing-jq.log"
 # implementations have passed a suite here before, each time because the suite
 # only ever checked that the right thing reported right.
 target lock
-/bin/bash "$kit/install.sh" "$run/lock" > "$run/lock.log" 2>&1
+/bin/bash "$kit/install.sh" --working-tree "$run/lock" > "$run/lock.log" 2>&1
 [ -f "$run/lock/.friday-lock.json" ] || { echo 'FAIL: install wrote no lock' >&2; exit 1; }
 jq -e . "$run/lock/.friday-lock.json" >/dev/null || { echo 'FAIL: lock is not valid JSON' >&2; exit 1; }
 /bin/bash "$kit/bin/friday-lock" check "$run/lock" | grep -q 'status: in sync' \

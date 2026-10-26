@@ -541,7 +541,7 @@ end
 begin "a fresh clone of an installed consumer gets the one thing it lacks"
 n=$((n + 1)); mkdir -p "$root/$n"
 git init -q "$root/$n/origin"
-bash "$source_root/install.sh" "$root/$n/origin" > "$root/$n/install.log" 2>&1
+bash "$source_root/install.sh" --working-tree "$root/$n/origin" > "$root/$n/install.log" 2>&1
 # Install wired core.hooksPath in the origin, as it would on the installing
 # machine; drop it to commit, so the payload's own message rules do not judge
 # this fixture. A clone never receives it either way.

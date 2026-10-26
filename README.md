@@ -29,24 +29,71 @@ describes the present.
 
 | Scenario | Friday's role | What to do |
 | --- | --- | --- |
-| Blank Git repository | Bootstrap the reviewed baseline | Preview, install, then preview again. |
-| Existing consumer | Reveal differences safely | Pin Friday, run `--check`, and reconcile every conflict in a reviewed consumer change. |
+| Blank Git repository | Bootstrap the reviewed baseline | Preview, install the newest release, then preview again. |
+| Existing project | Take the managed core, leave the project's own files | Run `--managed-only`, then reconcile the listed seeds by hand in a reviewed change. |
 | Personal skills or preferences | Keep personal scope personal | Keep them in your personal layer; do not promote them into Friday. |
 | Project-specific policy or checks | Preserve consumer ownership | Add a consumer overlay after reviewing the shared baseline. |
 
 ## Architecture
 
+Friday is a repository: the baseline. It holds the **payload** (`payload/`), the
+files a project receives; the tools that move it; and the tests that prove the
+tools. A project that took the payload is a **consumer**. The payload is copied
+into the consumer, never linked to Friday's checkout, so a consumer has no
+dependency on Friday's filesystem.
+
+### What the payload holds
+
+[`bin/managed-core.txt`](./bin/managed-core.txt) classifies every payload file,
+and a file it does not name fails the tools. There are three kinds of file:
+
+| Kind | Which files | Rule |
+| --- | --- | --- |
+| **Managed core** | fifteen files: the policy documents under `.agents/docs`, `.agents/bin/setup.sh`, the guard and its checker, the three Git hooks, the three Git Skills | Compared byte for byte. A consumer keeps them identical to a release; each change reaches it in a release. |
+| **Seeds** | `AGENTS.md`, `CLAUDE.md`, `.agents/AGENTS.md`, `.gitignore`, `.claude/settings.json`, `.codex/hooks.json` (the `!` entries of the list) | Copied once into a new project. From then on they are the project's: never compared, never carried. |
+| **The consumer's own overlays** | whatever else a project adds: its Skills, its documents, `.agents/hooks/check-project-agent-integration.sh` | Friday never touches them and never lists them. |
+
+The runtime hook links and the `.claude/skills/<name>` links are made in each
+clone by `setup.sh`; they are not payload files.
+
+### The tools, and when each runs
+
+| Tool | Runs | What it does |
+| --- | --- | --- |
+| [`install.sh`](./install.sh) | once per project, from a Friday checkout | Previews, refuses conflicts before writing, then puts a release into the project (or, with `--working-tree`, this checkout; or, with `--managed-only`, only the managed core), runs `setup.sh` (a release that ships one), writes the lock and runs the self-check. |
+| [`.agents/bin/setup.sh`](./payload/.agents/bin/setup.sh) | in the consumer, from v1.1.0 on: by the install, then after every clone and every Skill change | Nothing from Friday. The wiring a clone lacks: `core.hooksPath`, the runtime hook links, the root pointers when missing, the Skill links. |
+| [`bin/friday-lock`](./bin/friday-lock) | `write` by the install and by `friday-propagate`; `check` any time | Writes and reads the consumer's `.friday-lock.json`, and says whether the consumer is in sync, drifted or behind. |
+| [`bin/friday-propagate`](./bin/friday-propagate) | when the maintainer has a release to carry out | Copies a release's managed-core changes into each consumer that is behind, as a pull request. It never merges. |
+
+### Releases and the lock
+
+A **release** is an annotated tag `vMAJOR.MINOR.PATCH` on a reviewed commit on
+`main`, pushed to `origin` (see [Releases](#releases)). It is the only thing a
+consumer receives: `install.sh` and `friday-propagate` both take a release,
+never a branch and never whatever a checkout holds at the moment. The consumer's
+`.friday-lock.json` records the release's tag, the commit that last changed the
+payload, and the sha256 of each managed file as installed (see
+[Knowing where a consumer stands](#knowing-where-a-consumer-stands)).
+
 ```text
-Friday payload
-     |
-     v
-install.sh (closed allowlist + preflight)
-     |
-     v
-copied consumer baseline + runtime seed + consumer overlay
+  Friday checkout (~/.Friday)                 consumer project
+  +----------------------------+              +----------------------------+
+  | main  --o--o--o            |              | managed core   identical   |
+  |              \             |  install.sh  | seeds          yours       |
+  |           [v1.1.0] --------+------------> | overlays       yours       |
+  |                            |  (the tag's  | .friday-lock.json          |
+  | feature branch, edits      |   tree only) |   tag, commit, sha256      |
+  |   never installed, unless  |              +-------------^--------------+
+  |   --working-tree           |                            |
+  +-------------|--------------+          .agents/bin/setup.sh: hooks and
+                |                         links, in every clone (the install
+                v                         runs it too)
+  bin/friday-propagate: the tag's managed-core changes become a pull request
+  in each consumer that is behind; a person merges it.
+  bin/friday-lock: writes the lock at install and propagate; check compares a
+  consumer with its lock and with Friday.
 ```
 
-Payload content is copied into the consumer, not linked to the Friday checkout.
 The two generated runtime hook links point to the consumer's copied shared
 guard, so the adapters share one reviewed guard implementation without creating
 a dependency on Friday's filesystem.
@@ -58,19 +105,150 @@ Claude side in a consumer ([measurements](./docs/history.md#2026-10-22-runtime-b
 and remain unverified for Codex, which is a different adapter. Friday
 does not discover arbitrary skills or install a consumer's domain workflow.
 
+## Adopting Friday
+
+> **中文摘要**：`install.sh` 預設安裝最新的 release，不是這個 checkout 目前的內容；
+> 新專案用 `install.sh`，既有專案用 `--managed-only` 只拿 managed core、seeds 留給專案自己
+> 調和；clone 之後執行 `setup.sh`；之後由維護者用 `friday-propagate` 開 pull request。
+
+Prerequisites are Git, Bash and `jq`. `.agents/bin/setup.sh` and the `CLAUDE.md`
+seed ship from `v1.1.0`; a release before that (`v1.0.0`, `v1.0.1`) has neither,
+its installer wires the clone itself, and a project installed from one has no
+`setup.sh` to run after a clone (there, `git config core.hooksPath
+.agents/githooks` is the part a fresh clone lacks). The installer is a script in
+a local Friday checkout; if there is none yet, one line gets it:
+
+```sh
+git clone https://github.com/ShenYo/Friday.git ~/.Friday
+```
+
+That checkout is a development checkout, often on a feature branch or with
+uncommitted edits, so `install.sh` never installs what it holds. It installs a
+release: the newest annotated tag `vX.Y.Z`, chosen and checked the way
+`friday-propagate` does (on `origin` as the same tag object, reachable from
+`main`). It exports that release's tree and runs the release's own `install.sh`
+on it, so the lock records the release's commit and tag whatever the checkout
+looks like. When no release qualifies it refuses and says how to fetch or cut
+one. `--release vX.Y.Z` names one; `--working-tree` installs the checkout as it
+is, with a warning, for developing Friday itself.
+
+### A new project
+
+```sh
+git init <project>
+bash ~/.Friday/install.sh --check <project>   # preview; writes nothing
+bash ~/.Friday/install.sh <project>           # the newest release
+bash ~/.Friday/install.sh --check <project>   # every file line should read IDENTICAL
+```
+
+Pin a release with `bash ~/.Friday/install.sh --release vX.Y.Z <project>`. The
+install ends by running the payload's own self-check, so broken runtime wiring
+fails now rather than the first time someone relies on the boundary. The first
+line of the install output, `release: vX.Y.Z (commit ...)`, names the release;
+check the bytes against it:
+
+```sh
+FRIDAY_TREE=vX.Y.Z bash ~/.Friday/bin/friday-lock check <project>   # expect: status: in sync
+```
+
+`FRIDAY_TREE` makes `friday-lock` read the release itself. A plain `check` reads
+the checkout's working tree, which on a development checkout is ahead of the
+release, so it would say `behind` about a correct install. Review the resulting
+worktree diff, then decide separately whether and how to commit it under the
+project's own rules.
+
+### An existing project
+
+A project that already has its own `AGENTS.md`, `.gitignore` or runtime wiring
+takes only the managed core:
+
+```sh
+bash ~/.Friday/install.sh --managed-only --check <project>
+bash ~/.Friday/install.sh --managed-only <project>
+```
+
+The seeds stay the project's. Each is listed as `SEED <path> (yours; not
+touched)` (or `missing; not created`, `missing; setup.sh creates it from Friday's
+seed` for the two root pointers when the release ships `setup.sh`, or `identical
+to Friday's`), so the person
+sees what is left to reconcile by hand; [`ADOPTING.md`](./ADOPTING.md) has the
+decision tree for reading the preview. What the install does write keeps the
+refuse-before-writing preflight: a managed file that differs is a `CONFLICT`
+unless it is identical, and so are an existing `core.hooksPath`, hooks in
+`.git/hooks`, and a Skill link in the way. `--managed-only` works with the
+default release, with `--release`, and with `--working-tree`. The self-check
+still runs last, and fails until the seeds that carry the guard wiring
+(`.claude/settings.json`, `.codex/hooks.json`) are the project's own and wired.
+
+### After cloning a consumer, or changing its Skills
+
+```sh
+bash .agents/bin/setup.sh   # --check to preview; see below for what it does
+```
+
+`core.hooksPath` is local Git config, so a fresh clone runs none of the
+payload's Git hooks until this runs. What it does is under
+[What setup.sh does](#what-setupsh-does).
+
+### Staying current
+
+Friday's maintainer runs `bin/friday-propagate <consumer>...` after cutting a
+release. It opens a pull request in each consumer that is behind, with the
+managed-core files that moved; a person reviews and merges it. See
+[Carrying a change out to consumers](#carrying-a-change-out-to-consumers).
+
+### What the install checks and refuses
+
+`--check` reports `NEW`, `IDENTICAL` or `CONFLICT` (and, with `--managed-only`,
+`SEED`), exits nonzero on conflicts, and does not copy, chmod, create links, or
+run the self-check. Both modes validate prerequisites, every destination, and
+the target's existing hook setup (an effective `core.hooksPath`, from any config
+scope, that is not `.agents/githooks`, or hooks or hook symlinks in `.git/hooks`
+that wiring would bypass) before any target write. The target is the repository
+root, not an `.agents/` subdirectory, and has a `.git/` directory (a linked
+worktree is refused, because `core.hooksPath` is shared by every worktree of a
+repository and wiring it from one would leave the others running no hooks).
+They also check the `.claude/skills/<name>` links `setup.sh` will make, for the
+Skills as they will be once the copy is done (the target's own `.agents/skills`
+plus the payload's): a name two Skills share, a real file or directory in the
+way, a link elsewhere, and a dangling link that the copy would make live or that
+`setup.sh` did not write are all conflicts, so the install is refused rather
+than stopped halfway. Unexpected destination symlinks, including ancestor
+symlinks, conflict; the only links accepted are the two exact Claude and Codex
+hook links, a `.claude/skills/<name>` link that is already correct, and a
+dangling one into `.agents/skills/` that `setup.sh` will replace.
+
+Installation fills missing files and preserves identical content. It refuses
+different content rather than overwriting it, including `.claude/settings.json`.
+There is deliberately no force mode. Review and reconcile conflicts in the
+target project first, then preview again. Project-specific files alongside the
+payload remain local; only payload-owned hook scripts receive executable modes.
+Preview compares content and path types, not executable modes. Preflight is
+not a transaction: a later I/O or self-check failure can leave new files in
+place, and concurrent target changes are outside this guarantee. Inspect the
+result before retrying; never run concurrent installers against one target.
+Friday copies its closed payload into the target; it does not copy the whole
+Friday repository or link the target back to Friday.
+
+From `v1.1.0` the install wires the clone by running the payload's own
+[`.agents/bin/setup.sh`](./payload/.agents/bin/setup.sh) in the target; an earlier
+release has no `setup.sh`, and its installer does that wiring itself. The install
+ends by running the payload's own self-check.
+
 ## Status (2026-10-25)
 
-> **中文摘要**：managed core 現為十五檔，其中十四檔已以 v1.0.0（2026-10-25）發行，
-> `.agents/bin/setup.sh` 隨下一版發行；pet_care 與 Finance
-> 兩個 consumer 都已同步在 v1.0.0。待辦：指定 backup maintainer、真正的新機器 replay、
-> 第三個 consumer、external-runtime 收尾，以及 managed-core 更新 bot。
+> **中文摘要**：managed core 現為十五檔，其中十四檔已以 v1.0.0（2026-10-25）發行；
+> 下一版 v1.1.0 帶來 `.agents/bin/setup.sh`、`CLAUDE.md` seed 與以 release 為準的安裝。
+> pet_care 與 Finance 兩個 consumer 都已同步在 v1.0.0。待辦：指定 backup maintainer、
+> 真正的新機器 replay、第三個 consumer、external-runtime 收尾，以及 managed-core 更新 bot。
 
 In place:
 
 - The managed core: 15 files, listed in [`bin/managed-core.txt`](./bin/managed-core.txt).
   `v1.0.0` (2026-10-25) shipped the first 14; `.agents/bin/setup.sh` is the 15th.
-- Released as `v1.0.0` (2026-10-25). Consumers receive the managed core only as a
-  release (see [Releases](#releases)).
+- Released as `v1.0.0` (2026-10-25), and `v1.0.1` (2026-10-25, documentation
+  only, the same payload). Consumers receive the managed core only as a release
+  (see [Releases](#releases)).
 - Both consumers, `pet_care` and Finance, record `v1.0.0` and are `in sync`.
 - CI is required on `main`: the test suites on ubuntu and macos, shellcheck, and
   gitleaks ([`ci.yml`](./.github/workflows/ci.yml)).
@@ -81,11 +259,10 @@ Pending:
 - A real new-machine replay.
 - A third genuine consumer.
 - External-runtime closure: Codex and Gemini behaviour Friday does not verify.
-- The next payload release will add the two overlay files both consumers
-  already hold identically, `mcp.md` and `triage-labels.md`, to the managed core.
-- That release also carries `.agents/bin/setup.sh` and the `CLAUDE.md` seed, so
-  a consumer stops needing a project-local `setup-ai.sh` for the root pointer and
-  the Claude Code Skill links.
+- The next release, `v1.1.0`, brings `.agents/bin/setup.sh`, the `CLAUDE.md`
+  seed and release-based install (`install.sh` installs a release, not the
+  checkout), so a consumer stops needing a project-local `setup-ai.sh` for the
+  root pointer and the Claude Code Skill links.
 - The managed-core update bot, so that a Friday release opens the consumer pull
   requests itself: [ShenYo/Friday#7](https://github.com/ShenYo/Friday/issues/7).
 
@@ -127,100 +304,6 @@ in [`scratch-files.md`](./payload/.agents/docs/scratch-files.md); it neither
 installs nor copies vendor Skills and does not claim runtime invocation or
 precedence enforcement.
 
-## Quick start
-
-> Adopting an **existing** project, where `--check` reports CONFLICT lines?
-> [`ADOPTING.md`](./ADOPTING.md) has the decision tree for reading them —
-> which are expected overlays and which are real.
-
-
-> **中文摘要**：blank project 先在乾淨、固定 SHA 的 Friday checkout 上預覽，
-> 再 install、再預覽並檢查差異；這是 copy-based baseline，不是複製整個 Friday
-> repo 或把 consumer symlink 到它。既有 consumer 請走後面的 manual reconciliation。
-
-For a new blank repository, first obtain a separately reviewed Friday checkout
-at the commit of a release. Prerequisites are Git, Bash, and `jq`. Do not use a
-dirty Friday checkout as the example source: this creates a new checkout at
-the reviewed pin. Before running it, replace both absolute paths and the
-literal SHA placeholder. The commands do not create a commit, install a
-runtime, or configure credentials.
-
-`PIN` is the commit of a reviewed release. To find it, clone Friday once and run
-`git -C "$FRIDAY" rev-parse 'vX.Y.Z^{commit}'` there (the `^{commit}` matters:
-for an annotated tag, `rev-parse vX.Y.Z` prints the tag object, not the
-commit). The script keeps checking that the checkout's `HEAD` equals `PIN`.
-
-```sh
-(
-  set -eu
-  TARGET='/absolute/path/to/new-project'
-  FRIDAY='/absolute/path/to/new-Friday-checkout'
-  PIN='replace-with-the-commit-of-a-reviewed-Friday-release'
-
-  command -v git >/dev/null
-  command -v bash >/dev/null
-  command -v jq >/dev/null
-  test ! -e "$FRIDAY"
-  test ! -L "$FRIDAY"
-  git clone https://github.com/ShenYo/Friday.git "$FRIDAY"
-  git -C "$FRIDAY" checkout --detach "$PIN"
-  test "$(git -C "$FRIDAY" rev-parse HEAD)" = "$PIN"
-  test -z "$(git -C "$FRIDAY" status --porcelain)"
-  test ! -e "$TARGET"
-  test ! -L "$TARGET"
-  mkdir -p "$TARGET"
-  git -C "$TARGET" init
-  bash "$FRIDAY/install.sh" --check "$TARGET"
-  bash "$FRIDAY/install.sh" "$TARGET"
-  bash "$FRIDAY/install.sh" --check "$TARGET"
-  (cd "$TARGET" && bash .agents/hooks/check-collaborative-git.sh)
-  git -C "$TARGET" diff --check
-  git -C "$TARGET" status --short
-)
-```
-
-The first preview reports `NEW`, `IDENTICAL`, or `CONFLICT`; resolve every
-conflict in a reviewed change before retrying. Review the resulting worktree
-diff, then decide separately whether and how to commit it under the target
-repository's own rules. Friday copies its closed payload into the target; it
-does not copy the whole Friday repository or link the target back to Friday.
-
-Requires `jq` and a blank or compatible target with a `.git/` directory
-(a linked worktree is refused, because `core.hooksPath` is shared by every
-worktree of a repository and wiring it from one would leave the others running
-no hooks). The target is the repository root, not
-an `.agents/` subdirectory. `--check` reports `NEW`, `IDENTICAL`, or
-`CONFLICT`, exits nonzero on conflicts, and does not copy, chmod, create links,
-or run the self-check. Both modes validate prerequisites, every destination,
-and the target's existing hook setup (an effective `core.hooksPath`, from any
-config scope, that is not `.agents/githooks`, or hooks or hook symlinks in
-`.git/hooks` that wiring would bypass) before any target write. They also
-check the `.claude/skills/<name>` links `setup.sh` will make, for the Skills as
-they will be once the copy is done (the target's own `.agents/skills` plus the
-payload's): a name two Skills share, a real file or directory in the way, a
-link elsewhere, and a dangling link that the copy would make live or that
-`setup.sh` did not write are all conflicts, so the install is refused rather
-than stopped halfway. Unexpected destination symlinks, including ancestor
-symlinks, conflict; the only links accepted are the two exact Claude and Codex
-hook links, a `.claude/skills/<name>` link that is already correct, and a
-dangling one into `.agents/skills/` that `setup.sh` will replace.
-
-Installation fills missing files and preserves identical content. It refuses
-different content rather than overwriting it, including `.claude/settings.json`.
-There is deliberately no force mode. Review and reconcile conflicts in the
-target project first, then preview again. Project-specific files alongside the
-payload remain local; only payload-owned hook scripts receive executable modes.
-Preview compares content and path types, not executable modes. Preflight is
-not a transaction: a later I/O or self-check failure can leave new files in
-place, and concurrent target changes are outside this guarantee. Inspect the
-result before retrying; never run concurrent installers against one target.
-
-The install wires the clone by running the payload's own
-[`.agents/bin/setup.sh`](./payload/.agents/bin/setup.sh) in the target (see
-[After cloning](#after-cloning-a-consumer-or-changing-its-skills)), and ends by
-running the payload's own self-check, so broken runtime wiring fails now rather
-than the first time someone relies on the boundary.
-
 ## Starting an agent in a bootstrapped project
 
 > **中文摘要**：安裝會 seed root [`AGENTS.md`](./payload/AGENTS.md)、
@@ -254,7 +337,7 @@ runtime-specific evidence work. Gemini CLI and
 `agy` remain pending here, so this guide intentionally provides no speculative
 launch command for either.
 
-### After cloning a consumer, or changing its Skills
+### What setup.sh does
 
 Install runs once, on one machine, and some of what makes a consumer work is
 lost on every fresh clone: `core.hooksPath` is local Git config, so a clone has
@@ -369,27 +452,28 @@ list. There is no manifest or update engine in this MVP.
 
 ## Updating an existing consumer
 
-An existing consumer update is a reviewed reconciliation, not an installer
-upgrade. Pin the commit of a reviewed Friday release first (`git -C "$FRIDAY" rev-parse
-'vX.Y.Z^{commit}'` prints it); use a placeholder rather than a mutable branch
-name:
+An existing consumer is brought up to a release by `bin/friday-propagate`, which
+opens the pull request (see [Staying current](#staying-current)). Doing it by
+hand is a reviewed reconciliation, not an installer upgrade: `--managed-only`
+is for adopting the managed core, and a managed file that moved is a `CONFLICT`
+there, never overwritten. Preview which files differ, against the release you
+mean to take:
 
 ```sh
-PIN='replace-with-the-commit-of-a-reviewed-Friday-release'
-FRIDAY='/absolute/path/to/Friday'
+FRIDAY=~/.Friday
 TARGET='/absolute/path/to/consumer'
 
-test "$(git -C "$FRIDAY" rev-parse HEAD)" = "$PIN"
-test -z "$(git -C "$FRIDAY" status --porcelain)"
-bash "$FRIDAY/install.sh" --check "$TARGET"
+bash "$FRIDAY/install.sh" --managed-only --check --release vX.Y.Z "$TARGET"
 ```
 
 Read every `CONFLICT` and reconcile it in a reviewed consumer change. Sync
-only the fifteen managed-core paths listed above, then prove each has the exact
-bytes of `"$FRIDAY/payload/$rel"`. Preserve consumer seeds, runtime
+only the fifteen managed-core paths listed above, taking each from the release
+(`git -C "$FRIDAY" show "vX.Y.Z:payload/$rel" > "$TARGET/$rel"`, and keep the
+mode of the Git hooks and scripts). Preserve consumer seeds, runtime
 integration, and overlays; do not copy a whole `.agents/` directory. Then run
 `bash .agents/bin/setup.sh` in the consumer (`--check` first to preview) to wire
-the clone.
+the clone, and `bash "$FRIDAY/bin/friday-lock" write "$TARGET"` to refresh the
+lock.
 
 After reconciliation, verify the consumer rather than treating the installer
 as an update engine:
@@ -512,15 +596,17 @@ not decide whether a merge is safe.
 ## Design notes
 
 **Copy, not link.** Projects retain their own reviewed baseline and local
-overlays. Pin the commit of a reviewed Friday release before installation and record
-its SHA in the project's adoption record; a mutable branch is not a reproducible
-version. Git history provides rollback: revert the adoption commit or restore
-the selected pinned version in a reviewed change. `--check` detects content
-differences, not who authored them or whether an update is safe to merge.
+overlays. The install takes a release, so a project's lock names a tag and the
+commit behind it, and `--release vX.Y.Z` pins one; a mutable branch, or a
+checkout with edits, is not a reproducible version. Git history provides
+rollback: revert the adoption commit or restore the selected release in a
+reviewed change. `--check` detects content differences, not who authored them
+or whether an update is safe to merge.
 
 **Existing consumers reconcile manually.** The managed-core files are the
 only byte-identical comparison set. Seeds, runtime integration, and consumer
-overlays may differ by project and need manual reconciliation.
+overlays may differ by project and need manual reconciliation; `--managed-only`
+leaves them alone and lists the seeds.
 [`.gitignore`](./payload/.gitignore) is an ordinary allowlisted seed: a target
 with different content conflicts before any write. Friday's blank-repository
 MVP intentionally does not parse or merge `.gitignore` marker blocks.
@@ -548,8 +634,9 @@ when its tool is missing
 ## Knowing where a consumer stands
 
 `install.sh` writes `.friday-lock.json` into the target: the Friday commit it
-was installed from, the release tag that names that payload when there is one,
-and the sha256 of every managed-core file as installed.
+was installed from, the release tag that names that payload when there is one
+(always, for a release install; `null` when a `--working-tree` payload matches
+no release), and the sha256 of every managed-core file as installed.
 
 [`bin/friday-lock`](./bin/friday-lock) reads it back. Only a payload consumer
 has one. A repository that wants one of the payload's hooks without adopting
@@ -559,6 +646,12 @@ the payload keeps its own copy, and Friday does not track it.
 bin/friday-lock check <target>     # or run it from inside the consumer
 bin/friday-lock write <target>     # refresh after a reviewed reconciliation
 ```
+
+`check` compares the consumer with the Friday checkout it runs from, so on a
+checkout whose payload is ahead of the release the consumer took, it reads
+`behind`: Friday has moved on, not the install went wrong. To check a consumer
+against the release it took, name it: `FRIDAY_TREE=vX.Y.Z bin/friday-lock check
+<target>`.
 
 The states, and the distinction is the point:
 
@@ -657,6 +750,13 @@ git push origin vX.Y.Z
 bin/friday-propagate <consumer>...
 ```
 
+`install.sh` installs a release the same way: by default the newest, chosen and
+checked as below, or the one named with `--release vX.Y.Z`; it refuses, writing
+nothing, when none qualifies, and says to fetch tags or cut one. A release
+older than the one that added `--working-tree` has no such flag; its own
+installer runs under its old interface and installs its own tree, which is
+exactly the release.
+
 Pushing any tag is a checkpoint
 ([`safety-boundary.md`](./payload/.agents/docs/git-guideline/safety-boundary.md)):
 an agent pushes one, including through `--tags` or `--follow-tags`, only when
@@ -689,8 +789,16 @@ way the other checks decide the status.
 Run `bash` [`tests/install-smoke.sh`](./tests/install-smoke.sh)
 `/absolute/path/to/retained-test-output`.
 The check creates disposable Git fixtures, installs the repository's actual
-payload, and retains evidence for review. It never installs into an existing
-project. Cleanup is a separate, explicitly authorized operation.
+payload with `--working-tree`, and retains evidence for review. It never
+installs into an existing project. Cleanup is a separate, explicitly authorized
+operation.
+
+[`tests/install-release.sh`](./tests/install-release.sh) proves the release
+install and `--managed-only` in scratch Friday repositories with their own
+origin and tags: the newest release or a named one is installed whatever branch
+or edits the checkout holds, a tag `friday-propagate` would refuse is refused, a
+release older than the flags installs under its old interface, and the seeds of
+an existing project are left byte for byte alone. It prints `all N passed`.
 
 [`tests/setup.sh`](./tests/setup.sh) proves the setup script case by case, each
 in a scratch clone, and prints `all N passed`.

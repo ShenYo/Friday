@@ -35,7 +35,9 @@ Each step ends on the condition that says it is done.
    your branch has run the changed hook, and the hook is still mode 100755:
    `hooks-drift.yml` fails a payload hook that is not executable, because git
    skips such a hook without stopping the commit. A clone that has not set
-   `core.hooksPath` runs no hook at all. The README says how to set it.
+   `core.hooksPath` runs no hook at all.
+   [`docs/safety.md`](docs/safety.md#fridays-own-branch-protection-and-hooks)
+   says how to set it.
 
 3. **Prove it in a real install.** Run
    `bash tests/install-smoke.sh docs/temp/<purpose>/<date>`. Done when both

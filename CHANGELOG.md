@@ -10,10 +10,21 @@ How entries are written. A change that a release will carry is added under
 to `## vX.Y.Z (YYYY-MM-DD)`, the date being the tag's own date, so the entry is
 reviewed with the release. The annotated tag's message is that entry, and the
 GitHub Release is created from the tag with the same text (see
-[Releases](./README.md#releases)). A PATCH entry may be one line. A MINOR or
+[Releases](./docs/releases.md#releases)). A PATCH entry may be one line. A MINOR or
 MAJOR entry says what changed, why, and what a consumer must do.
 
 ## Unreleased
+
+Documentation only, and no payload file changes, so this is a PATCH.
+
+- The README is split into documents ([ShenYo/Friday#50](https://github.com/ShenYo/Friday/issues/50)).
+  `README.md` and `README.zh-TW.md` keep the introduction, when to use Friday,
+  the status, a quick start and a table of links. Adopting Friday, with the
+  setup script and starting an agent, moved into `ADOPTING.md` and
+  `ADOPTING.zh-TW.md`. Architecture and ownership, updating consumers, safety,
+  releases with the lifecycle governance, and verification are new English-only
+  documents under `docs/`, each opening with a Chinese summary, so
+  `README.zh-TW.md` no longer carries a translation of those sections.
 
 ## v1.1.1 (2026-10-26)
 

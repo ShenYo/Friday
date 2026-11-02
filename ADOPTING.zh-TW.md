@@ -1,12 +1,29 @@
 # 採用 Friday
 
+> **摘要**：`install.sh` 預設安裝最新的 release，不是這個 checkout 目前的內容；
+> 新專案用 `install.sh`，既有專案用 `--managed-only` 只拿 managed core、seeds 留給專案自己
+> 調和；clone 之後執行 `setup.sh`；之後由維護者用 `friday-propagate` 開 pull request。
+
 兩條路徑。空 repository 只要幾個指令；既有專案需要一次判斷，而這份文件之所以存在，
 就是因為那個判斷從來沒有被寫下來。
 
-`install.sh` 安裝的是 release：最新的 annotated tag `vX.Y.Z`，或你用 `--release` 指定的那一個。
-它絕不安裝 Friday checkout 剛好持有的內容，所以停在 feature branch、或有未提交修改的 checkout，
-不會把尚未發行的 payload 交給專案。`--working-tree` 會照原樣安裝 checkout，並附上警告；
-那是用來開發 Friday 的，不是給專案用的。
+## 先備條件
+
+先備條件是 Git、Bash 與 `jq`。`.agents/bin/setup.sh` 與 `CLAUDE.md` seed 從 `v1.1.0` 起才附帶；更早的 release
+（`v1.0.0`、`v1.0.1`）兩者都沒有，它的安裝程式自己為 clone 接線，從這類 release 安裝的專案也沒有 `setup.sh`
+可在 clone 之後執行（那裡全新 clone 缺少的是 `git config core.hooksPath .agents/githooks`）。安裝程式是本機
+Friday checkout 裡的一支腳本；還沒有的話，一行就能取得：
+
+```sh
+git clone https://github.com/ShenYo/Friday.git ~/.Friday
+```
+
+那個 checkout 是開發用 checkout，常常停在 feature branch 上或有未提交的修改，所以 `install.sh`
+絕不安裝它手上的內容。它安裝的是一個 release：最新的 annotated tag `vX.Y.Z`，挑選與檢查的方式與
+`friday-propagate` 相同（在 `origin` 上是同一個 tag object，且可從 `main` 到達）。它會匯出該 release
+的 tree，並在其上執行該 release 自己的 `install.sh`，因此不論 checkout 長什麼樣子，lock 記錄的都是
+release 的 commit 與 tag。`--working-tree` 則照原樣安裝這個 checkout，會附上警告，
+只供開發 Friday 本身使用。
 
 ## 空 repository
 
@@ -14,7 +31,6 @@
 FRIDAY=~/.Friday
 TARGET=<你的新 repo>
 
-git clone https://github.com/ShenYo/Friday.git "$FRIDAY"   # 只需一次，還沒有 checkout 時
 git -C "$TARGET" init
 
 bash "$FRIDAY/install.sh" --check "$TARGET"   # 預覽，不寫入任何東西
@@ -26,9 +42,8 @@ bash "$FRIDAY/install.sh" --check "$TARGET"   # 每個檔案行都應該是 IDEN
 （完全沒有，或最新的不是 annotated、不在 `origin` 上、或不在 `main` 上），安裝會拒絕，並說明怎麼 fetch
 或建立一個；它不會寫入任何東西。
 
-`.agents/bin/setup.sh` 與 `CLAUDE.md` seed 從 `v1.1.0` 起才附帶。更早的 release（`v1.0.0`、`v1.0.1`）兩者都沒有：
-它的安裝程式自己為 clone 接線，從這類 release 安裝的專案也沒有 `setup.sh` 可在 clone 之後執行（那裡全新 clone
-缺少的是 `git config core.hooksPath .agents/githooks`）。
+安裝最後會執行 payload 自己的 self-check，因此 runtime 接線出錯時會在當下就失敗，
+而不是等到有人真正依賴那個邊界時才出事。
 
 然後驗證，而不是假設。`FRIDAY_TREE` 讓 `friday-lock` 讀 release 本身，所以這是拿專案的位元組對照那個 release；
 單純的 `friday-lock check` 讀的是 Friday checkout 的 working tree，在開發用 checkout 上它比 release 新，
@@ -40,6 +55,8 @@ FRIDAY_TREE=vX.Y.Z bash "$FRIDAY/bin/friday-lock" check "$TARGET"   # 預期：s
 (cd "$TARGET" && bash .agents/hooks/check-collaborative-git.sh)
 git -C "$TARGET" status --short
 ```
+
+審查完產生的 worktree diff 之後，再依專案自己的規則，另外決定是否、以及如何 commit 它。
 
 ### 由 agent 執行安裝時
 
@@ -95,8 +112,13 @@ SEED .claude/settings.json (yours; not touched)
 SEED .codex/hooks.json (identical to Friday's; not touched)
 ```
 
+`SEED` 那一行也可能是 `(missing; not created)`；release 有附 `setup.sh` 時，兩個 root pointer
+會是 `(missing; setup.sh creates it from Friday's seed)`；或是 `(identical to Friday's; not touched)`。
+
 它可與預設的 release、`--release vX.Y.Z`、`--working-tree` 搭配。不加 `--managed-only` 時，同一個專案會被
 拒絕，每個內容不同的 seed 都是一行 `CONFLICT`：這對空 repository 是正確的解讀，對既有專案則是用錯工具。
+self-check 仍在最後執行，在帶有 guard 接線的 seeds（`.claude/settings.json`、`.codex/hooks.json`）
+成為專案自己的、並接好線之前，它會失敗。
 
 ### 判讀預覽
 
@@ -154,6 +176,29 @@ bash .agents/bin/setup.sh --check   # 有東西會被改變時結束碼為 1
 拒絕並把決定交還回去，是比較慢、比較無趣、但正確的行為 —— 見
 `payload/.agents/docs/git-guideline/safety-boundary.md`。
 
+## 安裝會檢查並拒絕什麼
+
+`--check` 會回報 `NEW`、`IDENTICAL` 或 `CONFLICT`（搭配 `--managed-only` 時還有 `SEED`），遇到衝突時以
+非零碼結束，且不會複製檔案、改變檔案權限、建立連結，也不會執行 self-check。兩種模式都會在對目標進行
+任何寫入之前，先驗證所有先備條件、每一個目的地，以及目標現有的 hook 設定（任何設定範圍中生效、且不是
+`.agents/githooks` 的 `core.hooksPath`，或接線後會被略過的 `.git/hooks` 裡的 hook 與 hook symlink）。
+目標是 repository 的根目錄，而不是某個 `.agents/` 子目錄，且具有 `.git/` 目錄（linked worktree 會被
+拒絕，因為 `core.hooksPath` 由同一個 repository 的所有 worktree 共用，從其中一個接線會讓其他 worktree
+不再執行任何 hook）。它們也會檢查 `setup.sh` 將建立的 `.claude/skills/<name>` 連結，依複製完成後的 Skills
+（目標自己的 `.agents/skills` 加上 payload 的）計算：兩個 Skill 同名、被真實檔案或目錄擋住、指向別處的連結、
+複製後會變成有效的斷鏈、或不是 `setup.sh` 寫的斷鏈，都是衝突，所以安裝會被拒絕，而不是做到一半才停下。
+任何非預期的目的地 symlink（包含祖先路徑上的 symlink）都視為衝突；只接受三種連結：那兩個精確指定的
+Claude 與 Codex hook 連結、已經正確的 `.claude/skills/<name>` 連結，以及指向 `.agents/skills/`、會由
+`setup.sh` 替換掉的斷鏈。
+
+安裝會補齊缺少的檔案，並保留內容相同的既有檔案。當內容不同時，它會拒絕覆寫，`.claude/settings.json`
+也包含在內。這裡刻意沒有提供強制（force）模式。請先在目標專案中審查並調和衝突，再重新預覽一次。與
+payload 並存的專案特定檔案維持本地狀態；只有 payload 自己擁有的 hook 腳本，才會被賦予可執行權限。
+Preview 比對的是內容與路徑型別，而不是可執行權限。Preflight 本身不是一個 transaction：之後發生的 I/O
+或 self-check 失敗，可能會讓新檔案已經留在原地，而並行發生的目標端變更，也不在這個保證範圍之內。請在
+重試之前先檢查結果；絕對不要對同一個目標同時執行多個安裝程序。Friday 複製的是它自己封閉的 payload 到
+目標專案；它不會複製整個 Friday repository，也不會把目標專案連結（link）回 Friday。
+
 ## 採用之後
 
 ```sh
@@ -163,7 +208,15 @@ bash "$TARGET/.agents/hooks/check-collaborative-git.sh"
 
 `bash "$FRIDAY/bin/friday-lock" check "$TARGET"` 拿消費端與它所在的 Friday checkout 比對，所以只有在
 那個 checkout 的 payload 就是消費端採用的 release 時，它才會顯示 `in sync`。Friday 往前走之後它會顯示
-`behind`；這時維護者的 `bin/friday-propagate` 會開 pull request，把消費端帶到下一個 release。
+`behind`，[持續保持最新](#持續保持最新)說明怎麼把消費端帶到下一個 release。
+
+## 持續保持最新
+
+Friday 的維護者在建立 release 之後，執行 `bin/friday-propagate <consumer>...`。它會在每個 behind 的
+消費端開一個 pull request，帶上有變動的 managed-core 檔案；由人審查並 merge。見
+[把變更帶到各個 consumer](./docs/updating-consumers.md#carrying-a-change-out-to-consumers)。
+
+## 每次 clone 之後
 
 `core.hooksPath` 是 per-clone 設定，永遠不會被 clone 帶走。重新 clone、CI
 checkout、或在安裝程式之外建立的 worktree，在有人再次設定之前都**不會執行任何
@@ -175,6 +228,65 @@ bash .agents/bin/setup.sh   # --check 可預覽；會拒絕 linked worktree
 
 這無法用 hook 修復。checker 會把它回報成 note 而不是失敗，因為 CI checkout
 永遠不會有它。
+
+### setup.sh 做什麼
+
+在 consumer 內的任何位置執行；clone 之後，以及新增、移除或改名 Skill 之後都要再執行。
+`--check` 只預覽，不寫入任何東西。
+
+它做四件事：
+
+- 把 `core.hooksPath` 設為 `.agents/githooks`（任何設定範圍中生效、且是別的值時，
+  回報為 `CONFLICT`，不會覆蓋它），並回報缺少或不可執行的 Git hook，以及接線後會被
+  略過的 `.git/hooks` 裡的 hook 與 hook symlink；
+- 把 `.claude/hooks/guard-collaborative-git.sh` 與
+  `.codex/hooks/guard-collaborative-git.sh` 連結到共用 guard；
+- root 的 `AGENTS.md` 與 `CLAUDE.md` 不存在時，從 seed 建立；已存在時不論內容為何
+  都不動它；
+- 把 `.agents/skills` 底下的每個 Skill（深度 1 或 2、含 `SKILL.md` 的目錄）連結為
+  `.claude/skills/<name>`，`<name>` 取自 Skill 的 `name:` frontmatter，沒有則用
+  目錄名，讓 Claude Code 看得到它們。`.claude/skills` 裡已斷掉、或對不上任何
+  Skill 的項目，會回報為 `STALE`，由人決定是否移除（以 `.` 開頭的名稱會被略過）。
+  本身是 symlink 的 Skill 目錄不會被跟隨：解析後落在 `.agents/skills` 之外的，
+  回報為 `SKIPPED`；落在其中的別名（如 `git-commit -> git/commit`）則靜默略過。
+
+它絕不覆寫、移動或刪除不是它自己建立的東西。唯一的例外是指向
+`../../.agents/skills/`（它自己寫入的唯一形式）的斷掉的 `.claude/skills/<name>`
+連結，它會替換；其他任何斷鏈都是 `CONFLICT`。擋在路上的項目會回報為
+`CONFLICT <path> (<reason>)` 並原封不動，其餘步驟照常執行，結束碼為 1；`--check`
+在有東西會被改變時，結束碼同樣是 1。再執行一次不會改變任何東西，並會印出
+`nothing to change`。安裝程式在目標中執行的就是這支腳本。它與 `install.sh` 一樣，
+基於相同的理由拒絕 linked worktree。
+
+## 在已完成 Bootstrap 的專案中啟動 Agent
+
+> **摘要**：安裝會 seed root [`AGENTS.md`](./payload/AGENTS.md)、
+> [`CLAUDE.md`](./payload/CLAUDE.md) 與 [`.agents/AGENTS.md`](./payload/.agents/AGENTS.md)；
+> 不會生成 `GEMINI.md` 或 `setup-ai.sh`。clone 一個 consumer 之後、以及新增／移除／
+> 改名 Skill 之後，執行 `bash .agents/bin/setup.sh`。先讀兩個 AGENTS，再選擇已安裝的
+> 單一 runtime 啟動；各 runtime 的 trust 與原生行為仍須各自驗證。
+
+在要求 agent 變更任何東西之前，請先從目標 repository 的根目錄，讀過那兩份
+已安裝的 instruction 進入點：
+
+```sh
+cd '/absolute/path/to/new-project'
+sed -n '1,240p' AGENTS.md
+sed -n '1,240p' .agents/AGENTS.md
+```
+
+如果已經安裝了 Claude Code，就從該根目錄用 `claude` 啟動它。如果已經安裝了
+Codex，就另外從該根目錄用 `codex` 啟動它；請依你實際要用的 runtime 來選擇，
+而不是把兩者當成一套自動化的連續流程。在第一個 prompt 裡，請要求它先讀過
+root 的 instructions，並回報它實際載入了哪些 instruction 文件，以及目前的
+branch、HEAD 與 working-tree 狀態，再開始進行任何編輯。
+
+Friday 會 seed 一個 import `.agents/AGENTS.md` 的 root `CLAUDE.md`，但不會生成
+`GEMINI.md` 或 `setup-ai.sh`。Claude session 是否真的載入了那個 import，屬於
+runtime 行為，本指南無法保證，所以請持續要求 agent 回報它實際載入了哪些
+instruction 文件。原生的 workspace trust、callback 傳遞、優先序，以及其他 runtime 行為，仍屬於各
+runtime 自己要補的證據工作。Gemini CLI 與 `agy` 在這裡仍是 pending，所以
+本指南刻意不為它們提供任何臆測性的啟動指令。
 
 ## 採用不會給你什麼
 

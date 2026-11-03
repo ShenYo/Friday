@@ -256,10 +256,82 @@ next release.
 
 ## Staying current
 
-Friday's maintainer runs `bin/friday-propagate <consumer>...` after cutting a
-release. It opens a pull request in each consumer that is behind, with the
-managed-core files that moved; a person reviews and merges it. See
+A new Friday release reaches a consumer as a pull request, and each machine then
+catches up its own clones. Find the situation that matches, and follow its
+steps. `$FRIDAY` is your Friday checkout (`~/.Friday` above), and `$CONSUMER` is a
+consumer repository's clone.
+
+| Situation | Who, where | Go to |
+| --- | --- | --- |
+| Friday cut a new release | the maintainer, on one machine | [1](#1-friday-cut-a-new-release) |
+| A propagate pull request merged in a consumer | every machine that has that consumer's clone | [2](#2-a-propagate-pull-request-merged) |
+| You are about to run `install.sh` or `friday-propagate` | the machine you run it on | [3](#3-before-running-friday-on-a-machine) |
+| You are not sure where a consumer stands | any machine | [4](#4-where-does-a-consumer-stand) |
+
+### 1. Friday cut a new release
+
+1. Bring the checkout up to date. Do step 3 first.
+2. Preview what would change in each consumer, then open the pull requests:
+
+   ```sh
+   bash "$FRIDAY/bin/friday-propagate" --dry-run ~/path/to/consumer ...
+   bash "$FRIDAY/bin/friday-propagate"           ~/path/to/consumer ...
+   ```
+
+   It opens one pull request in each consumer that is behind, carrying the
+   managed-core files that moved. A consumer that is already current is left
+   alone.
+3. Review and merge each pull request. A person does this. Then do step 2 on
+   every machine.
+
+Check: `bash "$FRIDAY/bin/friday-lock" check "$CONSUMER"` reports `in sync` after
+the merge. More detail is in
 [Carrying a change out to consumers](./docs/updating-consumers.md#carrying-a-change-out-to-consumers).
+
+### 2. A propagate pull request merged
+
+On every machine that has a clone of that consumer:
+
+1. Pull it:
+
+   ```sh
+   git -C "$CONSUMER" switch main && git -C "$CONSUMER" pull --ff-only
+   ```
+
+2. Re-run the wiring, because a release can change the hooks or the Skill links:
+
+   ```sh
+   (cd "$CONSUMER" && bash .agents/bin/setup.sh)
+   ```
+
+   Check: `(cd "$CONSUMER" && bash .agents/bin/setup.sh --check)` reports nothing
+   left to change.
+3. If the pull request changed `.codex/hooks.json`, Codex skips the project's
+   hooks until you trust them again: open the project in Codex, run `/hooks`, and
+   trust them. A change to the hook scripts alone needs no new trust.
+4. Start a new agent session in the project, so it loads the new files.
+
+### 3. Before running Friday on a machine
+
+`install.sh` and `friday-propagate` always use a release, not what this
+checkout holds, but they find releases through it. Fetch first:
+
+```sh
+git -C "$FRIDAY" fetch --tags origin && git -C "$FRIDAY" switch main && git -C "$FRIDAY" pull --ff-only
+```
+
+Check: `git -C "$FRIDAY" describe --tags --abbrev=0` names the newest release
+on [Releases](https://github.com/ShenYo/Friday/releases).
+
+### 4. Where does a consumer stand?
+
+```sh
+bash "$FRIDAY/bin/friday-lock" check "$CONSUMER"
+```
+
+`in sync` means current. Every other state, such as `behind` or `tag-moved`, and
+what to do about it, is in
+[Knowing where a consumer stands](./docs/updating-consumers.md#knowing-where-a-consumer-stands).
 
 ## After every clone
 

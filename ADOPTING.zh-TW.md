@@ -212,9 +212,67 @@ bash "$TARGET/.agents/hooks/check-collaborative-git.sh"
 
 ## 持續保持最新
 
-Friday 的維護者在建立 release 之後，執行 `bin/friday-propagate <consumer>...`。它會在每個 behind 的
-消費端開一個 pull request，帶上有變動的 managed-core 檔案；由人審查並 merge。見
-[把變更帶到各個 consumer](./docs/updating-consumers.md#carrying-a-change-out-to-consumers)。
+Friday 發了新 release 之後，會以 pull request 的形式送到每個 consumer，之後每台機器再各自更新自己的 clone。先找出符合你狀況的情境，再照它的步驟做。`$FRIDAY` 是你的 Friday checkout，也就是上面的 `~/.Friday`；`$CONSUMER` 是某個 consumer repository 的 clone。
+
+| 情境 | 誰、在哪裡 | 前往 |
+| --- | --- | --- |
+| Friday 發了新的 release | 維護者，在其中一台機器上 | [1](#1-friday-發了新的-release) |
+| 某個 consumer merge 了 propagate 的 pull request | 每一台有那個 consumer clone 的機器 | [2](#2-propagate-的-pull-request-merge-之後) |
+| 準備在某台機器上執行 `install.sh` 或 `friday-propagate` | 要執行的那台機器 | [3](#3-在機器上執行-friday-之前) |
+| 不確定某個 consumer 目前在什麼狀態 | 任何一台機器 | [4](#4-consumer-目前在什麼狀態) |
+
+### 1. Friday 發了新的 release
+
+1. 先把 checkout 更新到最新，做法見第 3 節。
+2. 先預覽每個 consumer 會改什麼，再開 pull request：
+
+   ```sh
+   bash "$FRIDAY/bin/friday-propagate" --dry-run ~/path/to/consumer ...
+   bash "$FRIDAY/bin/friday-propagate"           ~/path/to/consumer ...
+   ```
+
+   它會在每個落後的 consumer 開一個 pull request，帶上有變動的 managed-core 檔案。已經是最新的 consumer 不會被動到。
+3. 由人 review 並 merge 每個 pull request，然後在每台機器上做第 2 節。
+
+檢查：merge 之後，`bash "$FRIDAY/bin/friday-lock" check "$CONSUMER"` 會顯示 `in sync`。更多細節見[把變更帶到各個 consumer](./docs/updating-consumers.md#carrying-a-change-out-to-consumers)。
+
+### 2. propagate 的 pull request merge 之後
+
+在每一台有那個 consumer clone 的機器上：
+
+1. 拉下最新的內容：
+
+   ```sh
+   git -C "$CONSUMER" switch main && git -C "$CONSUMER" pull --ff-only
+   ```
+
+2. 重跑接線。release 可能改了 hook 或 Skill 的連結：
+
+   ```sh
+   (cd "$CONSUMER" && bash .agents/bin/setup.sh)
+   ```
+
+   檢查：`(cd "$CONSUMER" && bash .agents/bin/setup.sh --check)` 回報沒有需要變更的地方。
+3. 如果這個 pull request 改了 `.codex/hooks.json`，在你重新信任之前，Codex 會跳過這個專案的 hook：在 Codex 裡打開這個專案，執行 `/hooks` 並重新信任。如果只改了 hook 腳本本身，不需要重新信任。
+4. 在這個專案開一個新的 agent session，讓它載入新的檔案。
+
+### 3. 在機器上執行 Friday 之前
+
+`install.sh` 和 `friday-propagate` 用的一定是 release，不是這個 checkout 目前的內容，但它們要透過這個 checkout 才找得到 release。所以先 fetch：
+
+```sh
+git -C "$FRIDAY" fetch --tags origin && git -C "$FRIDAY" switch main && git -C "$FRIDAY" pull --ff-only
+```
+
+檢查：`git -C "$FRIDAY" describe --tags --abbrev=0` 印出的是 [Releases](https://github.com/ShenYo/Friday/releases) 上最新的版本。
+
+### 4. consumer 目前在什麼狀態？
+
+```sh
+bash "$FRIDAY/bin/friday-lock" check "$CONSUMER"
+```
+
+`in sync` 表示已經是最新的。其他狀態，例如 `behind` 或 `tag-moved`，以及各自該怎麼處理，見[查看 consumer 目前的狀態](./docs/updating-consumers.md#knowing-where-a-consumer-stands)。
 
 ## 每次 clone 之後
 

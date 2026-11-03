@@ -30,9 +30,11 @@ Two of those results shape the payload. Every handler declares
 `onFailure: "block"`, because a failing hook without it fails open silently,
 indistinguishable from no guard. And handlers under one matcher run
 concurrently, and when several block only one reason reaches the model, so no
-handler may assume it runs first or that it alone will be heard. Hook sources
-merge rather than override, so a permissive settings file cannot lift a guard:
-`claude --settings <empty>.json` is not a bypass.
+handler may assume it runs first or that it alone will be heard. On Claude Code, hook
+sources merge rather than override, so a permissive settings file cannot lift a guard:
+`claude --settings <empty>.json` is not a bypass. For Codex, whether a
+permissive project hook can lift a user-level refusal is unverified
+([F5](./codex-pending-action-items.md#f5-user-level-and-project-hooks-together)).
 
 The three Git skills are the other half.
 [`safety-boundary.md`](../payload/.agents/docs/git-guideline/safety-boundary.md) treats invoking

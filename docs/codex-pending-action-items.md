@@ -22,26 +22,45 @@ not measure is `UNVERIFIED`, with the reason; never infer one.
    which is ignored by Git. Never use the real consumers (`pet_care`, Finance).
    The fixture is a small Git repository with its own `.codex/hooks.json`,
    whose probe handlers append to a log file and exit as each item needs.
-3. **Owner:** Codex loads a project's hooks only when the project is trusted,
-   and runs a hook only after it is trusted in `/hooks`. Ask the owner to open
-   the fixture in Codex once, trust the project, and trust its hooks in
-   `/hooks`. Wait for them. Tell the owner that each change to a probe handler
-   needs a new trust, so plan the probes to need as few changes as possible.
+3. **Owner:** trusting a hook lets it run with the owner's local privileges,
+   so the owner reviews it first:
+   - Before asking for trust, show the owner the fixture's exact `.codex/hooks.json`
+     and every handler script.
+   - Each handler may only append one line to the fixture's log file, optionally
+     sleep, and then exit or print JSON, as its item needs. It must not touch the
+     network or any path outside the fixture.
+   - Once the owner has read them, ask them to open the fixture in Codex, trust
+     the project, and trust its hooks in `/hooks`. Wait for them.
+   - Each change to a probe handler needs a new review and a new trust, so plan
+     the probes to need as few changes as possible.
+
+   That a changed or new hook is skipped until it is trusted comes from
+   [OpenAI's Codex hooks documentation](https://developers.openai.com/codex/hooks).
+   F0 measures it for this fixture.
 4. Record the results in [`history.md`](./history.md) as a new dated section,
    `### <date> Runtime behaviour measured on the Codex side`, in the style of
    the Claude-side section. Include the Codex version and the exact commands.
    Then correct the "unverified for Codex" sentences in
    [`safety.md`](./safety.md) and [`architecture.md`](./architecture.md) to
    match.
-5. Update this file. Set each item's **Status** to its result, with the date,
-   your `codex --version` and the PR link. When an item passes, move it to
-   [Done](#done).
+5. Update this file. Set each item's **Status** to its result, with the date
+   and your `codex --version`. When an item passes, move it to [Done](#done).
 6. Commit following Friday's [`AGENTS.md`](../AGENTS.md), push, and open one pull
-   request. Ask the owner to **Approve as ShenYo** before merging.
+   request. Then add the PR's link to each Status you set, in a second commit on
+   the same branch. Ask the owner to **Approve as ShenYo** before merging.
 
 Stop and report instead of working around anything a guard refuses.
 
 ## Items
+
+### F0. An untrusted hook does not run
+
+- **Question:** is a project hook really skipped until it is trusted?
+- **Steps:** before the owner trusts the fixture's hooks, make one Bash call in
+  the fixture and read the probe's log. After the trust, make the call again.
+- **Done when:** the log is empty before the trust and has the entry after it.
+  Record whether Codex warned about the untrusted hook.
+- **Status:** open.
 
 ### F1. Callback delivery
 
@@ -62,10 +81,14 @@ Stop and report instead of working around anything a guard refuses.
   - exit 2 with a reason on stderr;
   - exit 1;
   - exit 127, as a command that is not found would give;
-  - a JSON `deny` on stdout with exit 0.
-- **Done when:** all four are recorded. The earlier user-level measurement
-  (Jarvis, codex-cli 0.164) found that a crash fails open. Confirm or correct
-  that for project hooks.
+  - a JSON `deny` on stdout with exit 0;
+  - a hook command that cannot be launched at all: its `command` names a file
+    that does not exist;
+  - a handler killed by a signal, `kill -9 $$`, rather than one that exits.
+- **Done when:** all six are recorded separately, so that a crash, a launch
+  failure and an exit code are not taken for one another. An earlier
+  measurement of a user-level Codex hook, on codex-cli 0.164, found that a crash
+  fails open. Confirm or correct that for project hooks.
 - **Status:** open.
 
 ### F3. Handler order and several handlers
@@ -93,28 +116,27 @@ Stop and report instead of working around anything a guard refuses.
 
 ### F5. User-level and project hooks together
 
-- **Question:** the owner's machine also has Jarvis's user-level Codex guard in
-  `~/.codex/hooks.json`. Do both it and the project's hook run? Can a
-  permissive project hook lift a user-level refusal?
+- **Question:** if this machine has a user-level Codex hook in
+  `~/.codex/hooks.json` that refuses some command, do both it and the project's
+  hook run? Can a permissive project hook lift the user-level refusal?
 - **Steps:**
-  1. In the fixture, run a command the user-level guard refuses but that
-     harms nothing:
-     `GH_TOKEN=x gh issue create --repo ShenYo/Friday --title probe --body probe`.
-     Under the agent identity, the user-level guard denies it.
-  2. Use a fixture hook that always allows and logs.
+  1. First, set the fixture's `PreToolUse` hook to one that always allows and
+     logs, and have it reviewed and trusted (step 3 above).
+  2. Then, in the fixture, run a command the user-level hook refuses, chosen so
+     that running it would be harmless and visible. Running
+     `git commit --allow-empty --no-verify -m probe` in the fixture, for
+     example, is refused by a guard that forbids `--no-verify`. If it ran, it
+     would add only an empty commit to the disposable fixture, which
+     `git log -1 --format=%s` shows.
+  3. If this machine has no such user-level hook, mark the item UNVERIFIED and
+     say so.
 - **Done when:**
-  - it is recorded whether both hooks ran;
-  - the call stayed denied.
-
-  If the command runs and creates an issue, stop and report at once.
+  - the transcript shows the user-level hook's refusal, not a command error;
+  - the fixture's `git log` has no new `probe` commit;
+  - the project hook's log records whether it ran too.
 - **Status:** open.
 
 ## Done
 
 Nothing yet.
 
-## Jarvis
-
-Jarvis's own Codex items, about Skill loading, the agent identity and the
-identity switch, are in Jarvis's list:
-[`ShenYo/Jarvis: docs/dispatch/codex-pending-action-items.md`](https://github.com/ShenYo/Jarvis/blob/main/docs/dispatch/codex-pending-action-items.md).

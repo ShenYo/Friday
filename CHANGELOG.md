@@ -22,6 +22,11 @@ Documentation only, and no payload file changes, so this is a PATCH.
   to measure in a disposable fixture: hook delivery for `Bash` and `apply_patch`, exit
   handling, handler order, timeouts, and user-level hooks alongside the project's.
   [`docs/safety.md`](./docs/safety.md) points at it.
+- **Staying current** in [`ADOPTING.md`](./ADOPTING.md) (and `ADOPTING.zh-TW.md`) now lists the
+  situations and the steps for each: cutting a release and propagating it, catching up every
+  machine's clone after a propagate pull request merges (pull, `setup.sh`, and a new `/hooks`
+  trust when `.codex/hooks.json` changed), fetching before running Friday, and checking where a
+  consumer stands.
 
 ## v1.1.2 (2026-11-03)
 

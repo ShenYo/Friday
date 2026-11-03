@@ -20,7 +20,8 @@ An agent that hits one is told to ask the user to run the command themselves.
 Claude Code Bash and Codex Bash/`apply_patch` receive static project wiring to
 the shared guard. Review the trusted project hook definition and pinned Friday
 hash before relying on Codex; for Codex, callback delivery, exit handling,
-handler order, and fail-closed behavior are not verified. Gemini remains
+handler order, and fail-closed behavior are not verified (they are listed for
+Codex to measure in [`codex-pending-action-items.md`](./codex-pending-action-items.md)). Gemini remains
 pending. All four were measured on the Claude side
 ([measurements](./history.md#2026-10-22-runtime-behaviour-measured-on-the-claude-side)).
 This setup is a guardrail, not a security boundary.

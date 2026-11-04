@@ -67,7 +67,7 @@ Stop and report instead of working around anything a guard refuses.
 - **Done when:** the outcome is recorded. If the call runs, the payload's
   guards fail open on a timeout in Codex. Say so plainly in
   [`safety.md`](./safety.md).
-- **Status:** FAIL for fail-closed behavior; measurement complete. A timeout of 2 seconds allowed the tool body to start after 2.185572 seconds, before the 5-second sleep could finish. (2026-11-05, codex-cli 0.166.0). See [measurements](./history.md#2026-11-05-runtime-behaviour-measured-on-the-codex-side).
+- **Status:** FAIL for fail-closed behavior; measurement complete. A timeout of 2 seconds allowed the tool body to start after 2.185572 seconds, before the 5-second sleep could finish. (2026-11-05, codex-cli 0.166.0). See [measurements](./history.md#2026-11-05-runtime-behaviour-measured-on-the-codex-side). [PR #55](https://github.com/ShenYo/Friday/pull/55).
 
 ## Done
 
@@ -78,7 +78,7 @@ Stop and report instead of working around anything a guard refuses.
   the fixture and read the probe's log. After the trust, make the call again.
 - **Done when:** the log is empty before the trust and has the entry after it.
   Record whether Codex warned about the untrusted hook.
-- **Status:** PASS; before hook trust no log existed, after trust the Bash marker logged; no untrusted-hook warning in captured CLI streams. (2026-11-05, codex-cli 0.166.0). See [measurements](./history.md#2026-11-05-runtime-behaviour-measured-on-the-codex-side).
+- **Status:** PASS; before hook trust no log existed, after trust the Bash marker logged; no untrusted-hook warning in captured CLI streams. (2026-11-05, codex-cli 0.166.0). See [measurements](./history.md#2026-11-05-runtime-behaviour-measured-on-the-codex-side). [PR #55](https://github.com/ShenYo/Friday/pull/55).
 
 ### F1. Callback delivery
 
@@ -90,7 +90,7 @@ Stop and report instead of working around anything a guard refuses.
   3. Read the probe's log.
 - **Done when:** the log has one entry per call, naming the tool. If either tool
   is missing from the log, the item is FAIL.
-- **Status:** PASS; exactly one Bash callback and one apply_patch callback were recorded, and the patch changed the target. (2026-11-05, codex-cli 0.166.0). See [measurements](./history.md#2026-11-05-runtime-behaviour-measured-on-the-codex-side).
+- **Status:** PASS; exactly one Bash callback and one apply_patch callback were recorded, and the patch changed the target. (2026-11-05, codex-cli 0.166.0). See [measurements](./history.md#2026-11-05-runtime-behaviour-measured-on-the-codex-side). [PR #55](https://github.com/ShenYo/Friday/pull/55).
 
 ### F2. Exit handling
 
@@ -107,7 +107,7 @@ Stop and report instead of working around anything a guard refuses.
   failure and an exit code are not taken for one another. An earlier
   measurement of a user-level Codex hook, on codex-cli 0.164, found that a crash
   fails open. Confirm or correct that for project hooks.
-- **Status:** PASS for complete measurement of all six cases; exit 2 and JSON deny block, while exit 1, exit 127, missing executable and SIGKILL fail open. (2026-11-05, codex-cli 0.166.0). See [measurements](./history.md#2026-11-05-runtime-behaviour-measured-on-the-codex-side).
+- **Status:** PASS for complete measurement of all six cases; exit 2 and JSON deny block, while exit 1, exit 127, missing executable and SIGKILL fail open. (2026-11-05, codex-cli 0.166.0). See [measurements](./history.md#2026-11-05-runtime-behaviour-measured-on-the-codex-side). [PR #55](https://github.com/ShenYo/Friday/pull/55).
 
 ### F3. Handler order and several handlers
 
@@ -118,7 +118,7 @@ Stop and report instead of working around anything a guard refuses.
   at once. Compare the timestamps. Repeat with both handlers blocking, each
   with a different reason.
 - **Done when:** order, completion and the delivered reason are recorded.
-- **Status:** PASS for complete measurement; handlers overlapped, both ran when primary blocked, and PRIMARY_BLOCK was the delivered reason when both blocked in this sample. (2026-11-05, codex-cli 0.166.0). See [measurements](./history.md#2026-11-05-runtime-behaviour-measured-on-the-codex-side).
+- **Status:** PASS for complete measurement; handlers overlapped, both ran when primary blocked, and PRIMARY_BLOCK was the delivered reason when both blocked in this sample. (2026-11-05, codex-cli 0.166.0). See [measurements](./history.md#2026-11-05-runtime-behaviour-measured-on-the-codex-side). [PR #55](https://github.com/ShenYo/Friday/pull/55).
 
 ### F5. User-level and project hooks together
 
@@ -140,4 +140,4 @@ Stop and report instead of working around anything a guard refuses.
   - the transcript shows the user-level hook's refusal, not a command error;
   - the fixture's `git log` has no new `probe` commit;
   - the project hook's log records whether it ran too.
-- **Status:** PASS; the user-level guard refused, the permissive project handler also ran, and the fixture HEAD remained unchanged with no probe commit. (2026-11-05, codex-cli 0.166.0). See [measurements](./history.md#2026-11-05-runtime-behaviour-measured-on-the-codex-side).
+- **Status:** PASS; the user-level guard refused, the permissive project handler also ran, and the fixture HEAD remained unchanged with no probe commit. (2026-11-05, codex-cli 0.166.0). See [measurements](./history.md#2026-11-05-runtime-behaviour-measured-on-the-codex-side). [PR #55](https://github.com/ShenYo/Friday/pull/55).

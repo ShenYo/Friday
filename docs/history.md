@@ -83,6 +83,142 @@ search works before it trusts "found nothing".
 
 ## Measured observations
 
+### 2026-11-05 Runtime behaviour measured on the Codex side
+
+Measured on **codex-cli 0.166.0** with fresh `codex exec --ephemeral -m gpt-6-luna`
+processes. F0–F5 used the same disposable synthetic project-hook fixture (`suite`),
+with the user-level guard active. Only the F2 missing-executable case used the
+separate `missing-launch` fixture. The owner reviewed and trusted the project and
+its hooks before the trusted probes. These probes measure Codex hook behavior, not a
+full Friday payload installation. Fixture paths below use `<FIXTURE>`.
+
+The runner invoked Codex with argv-based `subprocess.run` and one requested tool
+call per process. The common wrapper was:
+
+```sh
+codex exec --ephemeral -m gpt-6-luna -C <FIXTURE>/suite --json <one-call prompt>
+```
+
+The separate F2 launch-failure probe used `-C <FIXTURE>/missing-launch`. Each denied
+call had outer Codex CLI exit 0; the tool was denied before execution. The exit
+codes below distinguish the hook process from the requested Bash command.
+
+**F0 — trust gate.** Before hook trust, the Bash command
+
+```sh
+printf "FRIDAY_PROBE_F0_BASELINE\n"
+```
+
+ran with exit 0 and printed `FRIDAY_PROBE_F0_BASELINE`. The hook log remained empty,
+and captured stderr had no untrusted-hook warning. After the owner trusted the
+project hooks, the corresponding Bash marker call:
+
+```sh
+printf 'FRIDAY_PROBE_F0_AFTER\n'
+```
+
+ran with exit 0 and printed `FRIDAY_PROBE_F0_AFTER`; the hook log recorded
+`primary`, `Bash`, and that case. **Result: PASS.**
+
+**F1 — callback delivery.** The Bash call
+
+```sh
+printf 'FRIDAY_PROBE_F1_BASH\n' .
+```
+
+ran with exit 0 and printed `FRIDAY_PROBE_F1_BASH`; the hook log had one `primary` /
+`Bash` row. A single `apply_patch` call appended ` verified` to the
+`FRIDAY_PROBE_F1_APPLY_PATCH` line in `<FIXTURE>/suite/target.txt`, leaving
+`FRIDAY_PROBE_F1_APPLY_PATCH verified`; its log had one `primary` / `apply_patch`
+row. **Result: PASS; both requested tool types delivered one callback.**
+
+**F2 — hook exit and launch handling.** Each probe was one fresh Bash call. The
+recorded commands and results were:
+
+| Hook case | Exact Bash command | Hook result and observed tool outcome |
+| --- | --- | --- |
+| Exit 2 | `printf 'FRIDAY_PROBE_F2_EXIT2\n' .` | Handler wrote `PRIMARY_EXIT2` to stderr and exited 2. Codex blocked the tool call; router stderr: `Command blocked by PreToolUse hook: PRIMARY_EXIT2`. The model said it did not retry or make another call. Outer CLI exit 0. |
+| Exit 1 | `printf 'FRIDAY_PROBE_F2_EXIT1\n'` | Handler exited 1; Bash was allowed, printed `FRIDAY_PROBE_F2_EXIT1`, and exited 0. Outer CLI exit 0. |
+| Exit 127 | `printf 'FRIDAY_PROBE_F2_EXIT127\n' .` | Handler exited 127; Bash was allowed, printed `FRIDAY_PROBE_F2_EXIT127`, and exited 0. Outer CLI exit 0. |
+| JSON deny | `printf 'FRIDAY_PROBE_F2_DENY\n'` | Handler printed JSON `permissionDecision: deny`, reason `PRIMARY_JSON_DENY`, and exited 0. Codex blocked the call; router stderr: `Command blocked by PreToolUse hook: PRIMARY_JSON_DENY`. The model did not retry. Outer CLI exit 0. |
+| Missing executable | `printf "FRIDAY_PROBE_F2_MISSING_LAUNCH\n"` | The hook command named absent executable `<FIXTURE>/missing-launch/intentionally-absent-handler` (not a Python script). No hook launch warning or router rejection appeared. Bash was allowed, printed `FRIDAY_PROBE_F2_MISSING_LAUNCH`, and exited 0. Outer CLI exit 0. |
+| SIGKILL | `printf 'FRIDAY_PROBE_F2_SIGNAL\n' .` | Handler logged the case, then killed itself with SIGKILL. Bash was allowed, printed `FRIDAY_PROBE_F2_SIGNAL`, and exited 0. The log confirms the handler ran. Outer CLI exit 0. |
+
+In these probes, exit 2 and JSON deny blocked; exit 1, exit 127, a missing hook
+executable, and a signal-killed handler failed open. The hook's result is separate
+from the allowed Bash command's exit 0 and the outer CLI's exit 0. **F2 result: PASS
+for measuring and distinguishing all six cases.**
+
+**F3 — concurrent handlers.** Two active handlers shared the `^(Bash|apply_patch)$`
+matcher. The declared first (`primary`) slept two seconds before logging; the second
+(`secondary`) logged immediately. A third configured handler was a no-op for these
+cases. Exact calls:
+
+```sh
+printf 'FRIDAY_PROBE_F3_ORDER\n' .
+printf 'FRIDAY_PROBE_F3_FIRST_BLOCK\n' .
+printf 'FRIDAY_PROBE_F3_BOTH_BLOCK\n' .
+```
+
+In the order-only case, `secondary` logged at `1793808374312907000`, then `primary`
+at `1793808376321232000` (2.008325 s later); the command ran and printed its marker.
+In the first-block case, both handlers logged, with `secondary` 2.009728 s before
+`primary`; Codex blocked with `PRIMARY_BLOCK`. In the both-block case, both logged,
+with `secondary` 2.002461 s before `primary`; the reason delivered to the model was
+`PRIMARY_BLOCK`. The both-block result is this sample's observed reason and does not
+establish that primary always wins. **Result: PASS; handlers overlapped, both ran
+when primary blocked, and the sample's delivered reason is recorded.**
+
+**F4 — timeout.** A project handler logged the case and then slept for five
+seconds with `timeout: 2`. The initial call was:
+
+```sh
+printf 'FRIDAY_PROBE_F4_TIMEOUT\n' .
+```
+
+It ran and exited 0. A timing control then used the same reviewed handler,
+without changing any hook or trust setting:
+
+```sh
+python3 -c 'import time; print("FRIDAY_PROBE_F4_TIMEOUT", time.time_ns())'
+```
+
+Its Bash exit was 0 and its output was:
+
+```text
+FRIDAY_PROBE_F4_TIMEOUT 1793808654301753000
+```
+
+The timeout handler logged at `1793808652116181000`; the tool body therefore
+started 2.185572 seconds later, before the five-second sleep could naturally
+finish. This measures early tool execution after the two-second deadline, not
+whether the handler process was killed. **Result: FAIL for fail-closed behavior;
+the project hook timeout failed open.**
+
+**F5 — user-level and project hooks together.** The exact command was:
+
+```sh
+git commit --allow-empty --no-verify -m probe
+```
+
+The user-level guard denied it before execution with:
+
+```text
+Codex guard: git commit --no-verify skips Git hooks. This is permanently prohibited for agents, even when the user asks. State the exact command and its target, and ask the user to run it themselves.
+```
+
+The permissive project hook also ran and logged `primary` / `Bash` / `OBSERVE`.
+Fixture `HEAD` remained at baseline `9f6f60557705ba2a1f6d1215a90c96cdbe44f8eb`; no
+`probe` commit was created. **Result: PASS for this measured case: the project
+handler ran, but did not lift the user-level refusal.**
+
+The results establish only these runtime observations for codex-cli 0.166.0 and the
+reviewed synthetic fixtures. In particular, errors, launch failure, signal
+termination, and timeout were fail-open in the measured project-hook configuration;
+this does not establish the behavior of every Codex version or every consumer
+installation.
+
+
 ### 2026-10-22 Runtime behaviour measured on the Claude side
 
 Measured in a consumer on **Claude Code 2.1.306** (2026-10-22), in disposable

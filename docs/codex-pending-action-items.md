@@ -2,18 +2,20 @@
 
 > **中文摘要**：這份清單列出 Friday 中只有 Codex 本身才能驗證的項目，主要是 consumer 專案的 Codex hook 實際怎麼運作：會不會被呼叫、exit code 怎麼處理、多個 handler 的執行順序、逾時或出錯時會不會擋下。
 >
-> 這些行為目前只在 Claude Code 那邊量過。請 Codex 在新的 session 讀這份清單，在一次性的 fixture 裡逐項實測，把結果寫進 `docs/history.md`，並更新相關文件和本清單，最後開 PR。
+> 2026-11-05 已在 codex-cli 0.166.0 的一次性 fixture 完成 F0–F5 實測；callback 與明確拒絕有效，錯誤、crash、launch failure 與 timeout 則會放行。F4 的 fail-closed 結果為 FAIL，其餘完成項目在 Done。
 
 You are Codex, on the owner's machine, in this Friday checkout. Friday wires the
 shared guard into a consumer's Codex through the payload's `.codex/hooks.json`
 (`PreToolUse`, matcher `^(Bash|apply_patch)$`). Friday checks that wiring only
 statically.
 
-The runtime behaviour was measured on the Claude side only
-([measurements](./history.md#2026-10-22-runtime-behaviour-measured-on-the-claude-side)),
-and [`safety.md`](./safety.md) and [`architecture.md`](./architecture.md) say
-it is unverified for Codex. Measure it. Quote real output. A result you could
-not measure is `UNVERIFIED`, with the reason; never infer one.
+These items originally tracked behavior measured only on the Claude side
+([measurements](./history.md#2026-10-22-runtime-behaviour-measured-on-the-claude-side)).
+The 2026-11-05 Codex measurements are now recorded in
+[`history.md`](./history.md#2026-11-05-runtime-behaviour-measured-on-the-codex-side),
+and the current limits are reflected in [`safety.md`](./safety.md) and
+[`architecture.md`](./architecture.md). A result not measured remains
+`UNVERIFIED`, with a reason; never infer one.
 
 ## How to work
 
@@ -29,8 +31,10 @@ not measure is `UNVERIFIED`, with the reason; never infer one.
    - Each handler may only append one line to the fixture's log file, optionally
      sleep, and then exit or print JSON, as its item needs. It must not touch the
      network or any path outside the fixture.
-   - Once the owner has read them, ask them to open the fixture in Codex, trust
-     the project, and trust its hooks in `/hooks`. Wait for them.
+   - Once the owner has read them, ask them to open the fixture in Codex and
+     trust the project while leaving its hooks untrusted. Wait, then record
+     F0's baseline. Only afterward ask the owner to trust its hooks in `/hooks`
+     and wait again before the trusted probes.
    - Each change to a probe handler needs a new review and a new trust, so plan
      the probes to need as few changes as possible.
 
@@ -53,6 +57,20 @@ Stop and report instead of working around anything a guard refuses.
 
 ## Items
 
+### F4. Timeout and fail-closed
+
+- **Question:** when a handler overruns its `timeout`, does the call run or is
+  it blocked?
+- **Steps:**
+  1. Give a handler `timeout: 2` and a 5 s sleep.
+  2. Make one Bash call.
+- **Done when:** the outcome is recorded. If the call runs, the payload's
+  guards fail open on a timeout in Codex. Say so plainly in
+  [`safety.md`](./safety.md).
+- **Status:** FAIL for fail-closed behavior; measurement complete. A timeout of 2 seconds allowed the tool body to start after 2.185572 seconds, before the 5-second sleep could finish. (2026-11-05, codex-cli 0.166.0). See [measurements](./history.md#2026-11-05-runtime-behaviour-measured-on-the-codex-side).
+
+## Done
+
 ### F0. An untrusted hook does not run
 
 - **Question:** is a project hook really skipped until it is trusted?
@@ -60,7 +78,7 @@ Stop and report instead of working around anything a guard refuses.
   the fixture and read the probe's log. After the trust, make the call again.
 - **Done when:** the log is empty before the trust and has the entry after it.
   Record whether Codex warned about the untrusted hook.
-- **Status:** open.
+- **Status:** PASS; before hook trust no log existed, after trust the Bash marker logged; no untrusted-hook warning in captured CLI streams. (2026-11-05, codex-cli 0.166.0). See [measurements](./history.md#2026-11-05-runtime-behaviour-measured-on-the-codex-side).
 
 ### F1. Callback delivery
 
@@ -72,7 +90,7 @@ Stop and report instead of working around anything a guard refuses.
   3. Read the probe's log.
 - **Done when:** the log has one entry per call, naming the tool. If either tool
   is missing from the log, the item is FAIL.
-- **Status:** open.
+- **Status:** PASS; exactly one Bash callback and one apply_patch callback were recorded, and the patch changed the target. (2026-11-05, codex-cli 0.166.0). See [measurements](./history.md#2026-11-05-runtime-behaviour-measured-on-the-codex-side).
 
 ### F2. Exit handling
 
@@ -89,7 +107,7 @@ Stop and report instead of working around anything a guard refuses.
   failure and an exit code are not taken for one another. An earlier
   measurement of a user-level Codex hook, on codex-cli 0.164, found that a crash
   fails open. Confirm or correct that for project hooks.
-- **Status:** open.
+- **Status:** PASS for complete measurement of all six cases; exit 2 and JSON deny block, while exit 1, exit 127, missing executable and SIGKILL fail open. (2026-11-05, codex-cli 0.166.0). See [measurements](./history.md#2026-11-05-runtime-behaviour-measured-on-the-codex-side).
 
 ### F3. Handler order and several handlers
 
@@ -100,19 +118,7 @@ Stop and report instead of working around anything a guard refuses.
   at once. Compare the timestamps. Repeat with both handlers blocking, each
   with a different reason.
 - **Done when:** order, completion and the delivered reason are recorded.
-- **Status:** open.
-
-### F4. Timeout and fail-closed
-
-- **Question:** when a handler overruns its `timeout`, does the call run or is
-  it blocked?
-- **Steps:**
-  1. Give a handler `timeout: 2` and a 5 s sleep.
-  2. Make one Bash call.
-- **Done when:** the outcome is recorded. If the call runs, the payload's
-  guards fail open on a timeout in Codex. Say so plainly in
-  [`safety.md`](./safety.md).
-- **Status:** open.
+- **Status:** PASS for complete measurement; handlers overlapped, both ran when primary blocked, and PRIMARY_BLOCK was the delivered reason when both blocked in this sample. (2026-11-05, codex-cli 0.166.0). See [measurements](./history.md#2026-11-05-runtime-behaviour-measured-on-the-codex-side).
 
 ### F5. User-level and project hooks together
 
@@ -134,9 +140,4 @@ Stop and report instead of working around anything a guard refuses.
   - the transcript shows the user-level hook's refusal, not a command error;
   - the fixture's `git log` has no new `probe` commit;
   - the project hook's log records whether it ran too.
-- **Status:** open.
-
-## Done
-
-Nothing yet.
-
+- **Status:** PASS; the user-level guard refused, the permissive project handler also ran, and the fixture HEAD remained unchanged with no probe commit. (2026-11-05, codex-cli 0.166.0). See [measurements](./history.md#2026-11-05-runtime-behaviour-measured-on-the-codex-side).

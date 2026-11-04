@@ -18,23 +18,25 @@ runs before every Bash tool call and refuses:
 
 An agent that hits one is told to ask the user to run the command themselves.
 Claude Code Bash and Codex Bash/`apply_patch` receive static project wiring to
-the shared guard. Review the trusted project hook definition and pinned Friday
-hash before relying on Codex; for Codex, callback delivery, exit handling,
-handler order, and fail-closed behavior are not verified (they are listed for
-Codex to measure in [`codex-pending-action-items.md`](./codex-pending-action-items.md)). Gemini remains
-pending. All four were measured on the Claude side
-([measurements](./history.md#2026-10-22-runtime-behaviour-measured-on-the-claude-side)).
-This setup is a guardrail, not a security boundary.
+the shared guard. Codex runtime behavior was measured on codex-cli 0.166.0 in
+reviewed, disposable synthetic hook fixtures, not in a full payload installation
+([measurements](./history.md#2026-11-05-runtime-behaviour-measured-on-the-codex-side)).
+The probes delivered callbacks for Bash and `apply_patch`. Exit 2 and JSON
+deny blocked; exit 1, exit 127, a missing handler executable, a SIGKILLed
+handler, and a timed-out handler failed open. **A Codex hook timeout allowed
+the tool to run in this measurement; it did not fail closed.** Two handlers ran concurrently;
+when both denied, only `PRIMARY_BLOCK` reached the model in that sample. A
+permissive project handler ran alongside the user-level refusal in the measured
+F5 case and did not lift it. These are runtime observations, not a guarantee
+for every version or consumer installation. Gemini remains pending, and Windows
+behavior is unverified. This setup is a guardrail, not a security boundary.
 
-Two of those results shape the payload. Every handler declares
-`onFailure: "block"`, because a failing hook without it fails open silently,
-indistinguishable from no guard. And handlers under one matcher run
-concurrently, and when several block only one reason reaches the model, so no
-handler may assume it runs first or that it alone will be heard. On Claude Code, hook
-sources merge rather than override, so a permissive settings file cannot lift a guard:
-`claude --settings <empty>.json` is not a bypass. For Codex, whether a
-permissive project hook can lift a user-level refusal is unverified
-([F5](./codex-pending-action-items.md#f5-user-level-and-project-hooks-together)).
+The Claude Code hook definitions declare `onFailure: "block"`, because a
+failing Claude hook without it fails open silently. Claude handlers under one
+matcher also run concurrently, and when several block only one reason reaches
+the model; none may assume it runs first or that it alone will be heard. On
+Claude Code, hook sources merge rather than override, so a permissive settings
+file cannot lift a guard: `claude --settings <empty>.json` is not a bypass.
 
 The three Git skills are the other half.
 [`safety-boundary.md`](../payload/.agents/docs/git-guideline/safety-boundary.md) treats invoking

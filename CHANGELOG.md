@@ -13,7 +13,7 @@ GitHub Release is created from the tag with the same text (see
 [Releases](./docs/releases.md#releases)). A PATCH entry may be one line. A MINOR or
 MAJOR entry says what changed, why, and what a consumer must do.
 
-## Unreleased
+## v1.1.3 (2026-11-03)
 
 Documentation only, and no payload file changes, so this is a PATCH.
 

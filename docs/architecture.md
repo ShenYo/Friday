@@ -40,10 +40,15 @@ guard, so the adapters share one reviewed guard implementation without creating
 a dependency on Friday's filesystem.
 
 Friday is deliberately not a universal runtime manager. It checks static Codex
-wiring, not native callback behavior, exit handling, handler order, or
-fail-closed enforcement; Gemini is pending. Those four were measured on the
-Claude side in a consumer ([measurements](./history.md#2026-10-22-runtime-behaviour-measured-on-the-claude-side))
-and remain unverified for Codex, which is a different adapter. Friday
+wiring. Native Codex hook behavior was measured on codex-cli 0.166.0 in a
+reviewed disposable synthetic project fixture, not through a full Friday payload
+installation ([measurements](./history.md#2026-11-05-runtime-behaviour-measured-on-the-codex-side)).
+The measured runtime delivered Bash and `apply_patch` callbacks; exit 2 and JSON
+deny blocked, while exit 1, exit 127, launch failure, signal termination, and
+timeout failed open. Multiple handlers ran concurrently. A permissive project
+handler did not lift the user-level refusal in the single measured F5 case.
+These observations do not guarantee every consumer installation or Codex
+version; Gemini remains pending, and Windows behavior is unverified. Friday
 does not discover arbitrary skills or install a consumer's domain workflow.
 
 ## Ownership: managed core, seeds, and overlays

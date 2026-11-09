@@ -13,7 +13,7 @@ purpose-specific subdirectory, never at `docs/temp/` itself.
 
 | Artifact | Location |
 | --- | --- |
-| Handoff | `docs/temp/handoff/<worktree>/handoff.md` ([Handoff documents](#handoff-documents)) |
+| Handoff | `<main-root>/docs/temp/handoff/<worktree>/handoff.md` ([Handoff documents](#handoff-documents)) |
 | Session retrospective | `docs/temp/retro/<date-or-suffix>/` |
 | Pull-request visual evidence | `docs/temp/<branch-slug>/` |
 | Required pre-edit snapshot | `docs/temp/backup/<branch-slug>/` |
@@ -36,7 +36,9 @@ overwrite a prior artifact. A handoff is the exception, as
   project-scoped handoff output. That project policy wins for the location;
   compatible handoff-skill requirements still apply. Such a location replaces
   `<main-root>/docs/temp/handoff/` in [Handoff documents](#handoff-documents),
-  whose other rules still apply.
+  whose other rules still apply: a relative location is resolved against
+  `<main-root>`, and the ignore check and the sandbox fallback use it in place
+  of `docs/temp/handoff/`.
 
 ## Handoff documents
 
@@ -52,10 +54,10 @@ than duplicating them, and any section it asks for.
 1. **Folder.** `<main-root>/docs/temp/handoff/<worktree>/`, created if absent.
    `<main-root>` is the primary checkout, so every worktree writes to one
    place: take the output of
-   `git rev-parse --path-format=absolute --git-common-dir` (Git 2.31 or later),
-   which must end in `/.git`, and drop that suffix. Use
-   `git rev-parse --show-toplevel` as `<main-root>` instead when the output
-   does not end that way (a bare repository or a separate git directory), or
+   `git rev-parse --path-format=absolute --git-common-dir`, which must be a
+   single line ending in `/.git`, and drop that suffix. Use
+   `git rev-parse --show-toplevel` as `<main-root>` instead when it is not (a
+   bare repository, a separate git directory, or Git older than 2.31), or
    when `git -C <main-root> check-ignore -q docs/temp/handoff/<worktree>/handoff.md`
    fails (the result is not a checkout, or does not ignore `docs/temp/`).
    `<worktree>` is the basename of `git rev-parse --show-toplevel`, each
@@ -74,10 +76,14 @@ than duplicating them, and any section it asks for.
    ```
 
    A folder is this worktree's only if its `handoff.md` has a `Worktree:` line
-   equal to this worktree's path. Try `<worktree>`, then `<worktree>-2`,
-   `-3`, and so on: use the first folder that matches, and create the first one
-   that does not exist. Skip, and leave alone, any folder whose `handoff.md` is
-   missing, lacks that line, or names another path.
+   whose value inside the backticks is exactly the output of
+   `git rev-parse --show-toplevel`. Find it by reading that line in every
+   `*/handoff.md` under the handoff location, never by guessing from the folder
+   name. Leave alone every other folder, including one whose `handoff.md` is
+   missing or lacks that line. When none matches, create the first of
+   `<worktree>`, `<worktree>-2`, `-3`, and so on that does not exist, with a
+   plain `mkdir` (no `-p` on that folder); if it fails because the folder
+   appeared, search again.
 3. **Dated sections.** Each day is one `## <YYYY-MM-DD>` section, the date
    being the machine's local date (`date +%F`), newest first. Headings inside a
    section are level 3 or deeper. Every section is the complete current state;
@@ -86,10 +92,11 @@ than duplicating them, and any section it asks for.
    place, merging what another session added into the current state. Otherwise
    insert a new section before the first existing `## ` date heading, or at the
    end when there is none. Never change an earlier day's section.
-4. **Picking up.** Find the matching folder as item 2 says, under
-   `<main-root>` first and then under the worktree's own `docs/temp/handoff/`.
-   Read its `handoff.md` from the top section, and go further down only where
-   it points.
+4. **Picking up.** Find the matching folder as item 2 says, under both
+   `<main-root>` and the worktree's own `docs/temp/handoff/`. If it exists in
+   both, start from the file whose top date is newer, and when you next write
+   under `<main-root>`, carry over the sections it lacks from the other. Read
+   `handoff.md` from the top section, and go further down only where it points.
 5. **Older files.** Files and folders under `docs/temp/handoff/` from before
    this layout stay where they are, and are never matched by item 2.
 

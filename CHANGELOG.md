@@ -15,7 +15,8 @@ MAJOR entry says what changed, why, and what a consumer must do.
 
 ## Unreleased
 
-- **Handoffs** now go to one `docs/temp/handoff/<worktree>/handoff.md` per worktree, with a dated
+- **Handoffs** now go to one `docs/temp/handoff/<worktree>/handoff.md` per worktree, under the
+  primary checkout, with a dated
   section per day (the same day revises it, a new day adds one), in
   [`scratch-files.md`](./payload/.agents/docs/scratch-files.md#handoff-documents). It changes a
   managed-core document only, so this is a PATCH.

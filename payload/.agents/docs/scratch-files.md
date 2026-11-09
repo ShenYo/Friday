@@ -34,7 +34,9 @@ overwrite a prior artifact. A handoff is the exception, as
   deliberately.
 - A consumer repository may designate a more specific project location for
   project-scoped handoff output. That project policy wins for the location;
-  compatible handoff-skill requirements still apply.
+  compatible handoff-skill requirements still apply. Such a location replaces
+  `<main-root>/docs/temp/handoff/` in [Handoff documents](#handoff-documents),
+  whose other rules still apply.
 
 ## Handoff documents
 
@@ -50,40 +52,46 @@ than duplicating them, and any section it asks for.
 1. **Folder.** `<main-root>/docs/temp/handoff/<worktree>/`, created if absent.
    `<main-root>` is the primary checkout, so every worktree writes to one
    place: take the output of
-   `git rev-parse --path-format=absolute --git-common-dir`, which must end in
-   `/.git`, and drop that suffix. If it does not end that way (a bare
-   repository or a separate git directory), use `git rev-parse --show-toplevel`
-   instead. `<worktree>` is the basename of `git rev-parse --show-toplevel`,
-   each Unicode code point outside `[A-Za-z0-9._-]` replaced by `-`. If writing
-   under `<main-root>` is refused, for example by a sandbox, write under the
-   current worktree's own `docs/temp/handoff/<worktree>/` and report the path.
+   `git rev-parse --path-format=absolute --git-common-dir` (Git 2.31 or later),
+   which must end in `/.git`, and drop that suffix. Use
+   `git rev-parse --show-toplevel` as `<main-root>` instead when the output
+   does not end that way (a bare repository or a separate git directory), or
+   when `git -C <main-root> check-ignore -q docs/temp/handoff/<worktree>/handoff.md`
+   fails (the result is not a checkout, or does not ignore `docs/temp/`).
+   `<worktree>` is the basename of `git rev-parse --show-toplevel`, each
+   Unicode code point outside `[A-Za-z0-9._-]` replaced by `-`, with `_`
+   prepended if the result starts with `-`. If writing under `<main-root>` is
+   refused, for example by a sandbox, write under the current worktree's own
+   `docs/temp/handoff/<worktree>/` and report the path.
 2. **One file.** The folder holds only `handoff.md`, created if absent:
 
    ```markdown
    # Handoff: <worktree>
 
-   Worktree: `<absolute path of this worktree>`
+   Worktree: `<output of git rev-parse --show-toplevel>`
 
    ## <YYYY-MM-DD>
    ```
 
-   If an existing file's `Worktree:` path is not this worktree's, another
-   checkout shares the name: leave it alone and use `<worktree>-2`, then `-3`,
-   for the folder. A restarted session picks up from the folder whose
-   `Worktree:` path is its own.
+   A folder is this worktree's only if its `handoff.md` has a `Worktree:` line
+   equal to this worktree's path. Try `<worktree>`, then `<worktree>-2`,
+   `-3`, and so on: use the first folder that matches, and create the first one
+   that does not exist. Skip, and leave alone, any folder whose `handoff.md` is
+   missing, lacks that line, or names another path.
 3. **Dated sections.** Each day is one `## <YYYY-MM-DD>` section, the date
-   being the machine's local date (`date +%F`), newest first directly after the
-   `Worktree:` line. Headings inside a section are level 3 or deeper. Every
-   section is the complete current state; it may point to an earlier section by
-   date rather than copy it. Re-read the file immediately before writing. If
-   today's section exists, revise it in place and keep content another session
-   added; otherwise insert a new section before the first existing `## ` date
-   heading, or at the end when there is none. Never change an earlier day's
-   section.
-4. **Picking up.** Read the matching `handoff.md` from the top section, and go
-   further down only where it points.
-5. **Older files.** Files directly under `docs/temp/handoff/` from before this
-   layout stay where they are.
+   being the machine's local date (`date +%F`), newest first. Headings inside a
+   section are level 3 or deeper. Every section is the complete current state;
+   it may point to an earlier section by date rather than copy it. Re-read the
+   file immediately before writing. If today's section exists, revise it in
+   place, merging what another session added into the current state. Otherwise
+   insert a new section before the first existing `## ` date heading, or at the
+   end when there is none. Never change an earlier day's section.
+4. **Picking up.** Find the matching folder as item 2 says, under
+   `<main-root>` first and then under the worktree's own `docs/temp/handoff/`.
+   Read its `handoff.md` from the top section, and go further down only where
+   it points.
+5. **Older files.** Files and folders under `docs/temp/handoff/` from before
+   this layout stay where they are, and are never matched by item 2.
 
 ## Optional external workflow trackers
 

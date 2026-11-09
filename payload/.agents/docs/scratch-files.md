@@ -51,9 +51,10 @@ location, such as an OS temporary directory. The Skill's other requirements
 still apply: redacting sensitive information, referring to artifacts rather
 than duplicating them, and any section it asks for.
 
-1. **Folder.** `<main-root>/docs/temp/handoff/<worktree>/`, created if absent.
-   `<main-root>` is the primary checkout, so every worktree writes to one
-   place: take the output of
+1. **Location.** The handoff location is `<main-root>/docs/temp/handoff/`, or
+   a consumer's designated location. Its folder for this worktree is found or
+   claimed as item 2 says. `<main-root>` is the primary checkout, so every
+   worktree writes to one place: take the output of
    `git rev-parse --path-format=absolute --git-common-dir`, which must be a
    single line ending in `/.git`, and drop that suffix. Use
    `git rev-parse --show-toplevel` as `<main-root>` instead when it is not (a
@@ -62,9 +63,10 @@ than duplicating them, and any section it asks for.
    fails (the result is not a checkout, or does not ignore `docs/temp/`).
    `<worktree>` is the basename of `git rev-parse --show-toplevel`, each
    Unicode code point outside `[A-Za-z0-9._-]` replaced by `-`, with `_`
-   prepended if the result starts with `-`. If writing under `<main-root>` is
-   refused, for example by a sandbox, write under the current worktree's own
-   `docs/temp/handoff/<worktree>/` and report the path.
+   prepended if the result starts with `-` or `.`. If writing under
+   `<main-root>` is refused, for example by a sandbox, use the current
+   worktree's own copy of that location (`docs/temp/handoff/` by default) as
+   the handoff location, the fallback location, and report the path.
 2. **One file.** The folder holds only `handoff.md`, created if absent:
 
    ```markdown
@@ -82,8 +84,9 @@ than duplicating them, and any section it asks for.
    name. Leave alone every other folder, including one whose `handoff.md` is
    missing or lacks that line. When none matches, create the first of
    `<worktree>`, `<worktree>-2`, `-3`, and so on that does not exist, with a
-   plain `mkdir` (no `-p` on that folder); if it fails because the folder
-   appeared, search again.
+   plain `mkdir` (no `-p` on that folder), and write `handoff.md` at once; if
+   `mkdir` fails because the folder appeared, search again. If more than one
+   folder matches, use the one whose top date is newest.
 3. **Dated sections.** Each day is one `## <YYYY-MM-DD>` section, the date
    being the machine's local date (`date +%F`), newest first. Headings inside a
    section are level 3 or deeper. Every section is the complete current state;
@@ -92,11 +95,13 @@ than duplicating them, and any section it asks for.
    place, merging what another session added into the current state. Otherwise
    insert a new section before the first existing `## ` date heading, or at the
    end when there is none. Never change an earlier day's section.
-4. **Picking up.** Find the matching folder as item 2 says, under both
-   `<main-root>` and the worktree's own `docs/temp/handoff/`. If it exists in
-   both, start from the file whose top date is newer, and when you next write
-   under `<main-root>`, carry over the sections it lacks from the other. Read
-   `handoff.md` from the top section, and go further down only where it points.
+4. **Picking up.** Find the matching folder as item 2 says, in both the
+   handoff location and the worktree's own fallback location. If it exists in
+   both, start from the file whose top date is newer (the fallback file on a
+   tie). When you next write under the handoff location, carry over the
+   sections it lacks from the other, and merge a section both hold for the same
+   date as item 3 merges another session's additions. Read `handoff.md` from
+   the top section, and go further down only where it points.
 5. **Older files.** Files and folders under `docs/temp/handoff/` from before
    this layout stay where they are, and are never matched by item 2.
 

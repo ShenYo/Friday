@@ -13,6 +13,13 @@ GitHub Release is created from the tag with the same text (see
 [Releases](./docs/releases.md#releases)). A PATCH entry may be one line. A MINOR or
 MAJOR entry says what changed, why, and what a consumer must do.
 
+## Unreleased
+
+- **Handoffs** now go to one `docs/temp/handoff/<worktree>/handoff.md` per worktree, with a dated
+  section per day (the same day revises it, a new day adds one), in
+  [`scratch-files.md`](./payload/.agents/docs/scratch-files.md#handoff-documents). It changes a
+  managed-core document only, so this is a PATCH.
+
 ## v1.1.3 (2026-11-03)
 
 Documentation only, and no payload file changes, so this is a PATCH.

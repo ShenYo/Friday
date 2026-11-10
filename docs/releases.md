@@ -46,11 +46,12 @@ anything to take, and `friday-propagate` leaves the others alone.
   scripts.
 - **MAJOR** for a large structural change.
 
-The release note is the entry for the release in [`CHANGELOG.md`](../CHANGELOG.md):
-what changed, and what a consumer must do. The release's pull request adds the
-entry, so it is reviewed with the change. The entry's heading carries no
-date; the tag's date is the record. The annotated tag's message is that
-entry, and after the tag is pushed the GitHub Release is created from the tag,
+The release note is the entry for the release, in the file for its major version
+under [`docs/changelog/`](./changelog/), which [`CHANGELOG.md`](../CHANGELOG.md)
+links: what changed, and what a consumer must do. The release's pull request adds
+the entry, so it is reviewed with the change. The entry's heading is `## vX.Y.Z
+(YYYY-MM-DD)`, the date being the tag's own date in Taipei time (UTC+8). The
+annotated tag's message is that entry, and after the tag is pushed the GitHub Release is created from the tag,
 with the same text.
 
 ```sh

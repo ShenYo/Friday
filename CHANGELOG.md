@@ -9,19 +9,20 @@
 Friday's release notes are kept one file per major version, so no single file grows
 too long to read. This page holds the rules and links to each file.
 
-| Major | File | Releases | About |
-| --- | --- | --- | --- |
-| v1 | [`docs/changelog/v1.md`](./docs/changelog/v1.md) | v1.0.0 (2026-10-25) to v1.1.4 (2026-11-10) | The first major version: the managed core, `install.sh`, the lock file and `friday-propagate`, then `.agents/bin/setup.sh`, release-based install, and the per-worktree handoff rule. |
+| Major | File | About |
+| --- | --- | --- |
+| v1 | [`docs/changelog/v1.md`](./docs/changelog/v1.md) | The first major version: the managed core, `install.sh`, the lock file and `friday-propagate`, then `.agents/bin/setup.sh`, release-based install, and the per-worktree handoff rule. |
 
 How entries are written:
 
 - A change that a release will carry is added under `## Unreleased` as it merges, at the
   top of the newest major's file. The release's pull request renames that section to
   `## vX.Y.Z (YYYY-MM-DD)`, so the entry is reviewed with the release. The date is the
-  tag's own date in Taipei time (UTC+8).
+  tag's own date in Taipei time (UTC+8). Tag on the Taipei day the heading names; if the tag lands on another day, correct the heading in a follow-up pull request.
 - The annotated tag's message is that entry, and the GitHub Release is created from the
   tag with the same text (see [Releases](./docs/releases.md#releases)).
 - A PATCH entry may be one line. A MINOR or MAJOR entry says what changed, why, and what
   a consumer must do.
-- A release that starts a new major version adds `docs/changelog/vN.md` and a row to the
-  table above in its pull request; the older files are not edited again.
+- A release that starts a new major version moves `## Unreleased` out of the old file to the
+  top of the new `docs/changelog/vN.md`, and adds a row for it to the table above, in the
+  same pull request. That is the last edit to the old file.

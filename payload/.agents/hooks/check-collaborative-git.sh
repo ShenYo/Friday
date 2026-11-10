@@ -95,6 +95,14 @@ jq -e '
 ' --arg prefix "$claude_path_prefix" --slurpfile settings .claude/settings.json -n >/dev/null \
   || fail "Claude protected-paths guard is not wired under both the Bash and the Write|Edit|MultiEdit|NotebookEdit matchers"
 
+jq -e '
+  [ .hooks.PreToolUse[]
+    | select(.matcher == "Bash" or .matcher == "Write|Edit|MultiEdit|NotebookEdit")
+    | .hooks[] | select(.statusMessage == "Checking protected paths") | .command ]
+  | length == 2 and .[0] == .[1]
+' .claude/settings.json >/dev/null \
+  || fail "Claude protected-paths launcher differs between the Bash and the Write|Edit|MultiEdit|NotebookEdit matchers"
+
 codex_hook=.codex/hooks/guard-collaborative-git.sh
 test -L "$codex_hook" || fail "Codex guard link missing"
 [ "$(readlink "$codex_hook")" = ../../.agents/hooks/guard-collaborative-git.sh ] \

@@ -143,7 +143,7 @@ managed core，最終必須 byte-identical。已經完全相同的 managed 檔�
 
 ### 真衝突
 
-CONFLICT 出現在十五個 managed-core 檔案之一，代表你的副本與 Friday 的已經分歧。
+CONFLICT 出現在十六個 managed-core 檔案之一，代表你的副本與 Friday 的已經分歧。
 請逐檔對照你要採用的 release 調和，並放在一次經審查的 commit 裡：
 
 ```sh

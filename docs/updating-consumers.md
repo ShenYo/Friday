@@ -30,6 +30,13 @@ integration, and overlays; do not copy a whole `.agents/` directory. Then run
 the clone, and `bash "$FRIDAY/bin/friday-lock" write "$TARGET"` to refresh the
 lock.
 
+A release that adds a seed needs a hand edit the sync does not make. The protected-paths
+guard (Unreleased) needs `.claude/settings.json` to carry the two protected-paths launcher hooks
+(under `Bash` and under `Write|Edit|MultiEdit|NotebookEdit`, copied from the payload) and
+`.agents/protected-paths.conf` to exist (the seed, or the consumer's own list), then
+`bash .agents/bin/setup.sh`. `check-collaborative-git.sh` fails until they do, as intended, so
+the propagate PR's verification fails unless that reconciliation is in the same PR.
+
 After reconciliation, verify the consumer rather than treating the installer
 as an update engine:
 

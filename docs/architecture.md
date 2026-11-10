@@ -18,7 +18,7 @@ and a file it does not name fails the tools. There are three kinds of file:
 | Kind | Which files | Rule |
 | --- | --- | --- |
 | **Managed core** | sixteen files: the policy documents under `.agents/docs`, `.agents/bin/setup.sh`, the two guards and the checker, the three Git hooks, the three Git Skills | Compared byte for byte. A consumer keeps them identical to a release; each change reaches it in a release. |
-| **Seeds** | `AGENTS.md`, `CLAUDE.md`, `.agents/AGENTS.md`, `.gitignore`, `.claude/settings.json`, `.codex/hooks.json` (the `!` entries of the list) | Copied once into a new project. From then on they are the project's: never compared, never carried. |
+| **Seeds** | `AGENTS.md`, `CLAUDE.md`, `.agents/AGENTS.md`, `.agents/protected-paths.conf`, `.gitignore`, `.claude/settings.json`, `.codex/hooks.json` (the `!` entries of the list) | Copied once into a new project. From then on they are the project's: never compared, never carried. |
 | **The consumer's own overlays** | whatever else a project adds: its Skills, its documents, `.agents/hooks/check-project-agent-integration.sh` | Friday never touches them and never lists them. |
 
 The runtime hook links and the `.claude/skills/<name>` links are made in each

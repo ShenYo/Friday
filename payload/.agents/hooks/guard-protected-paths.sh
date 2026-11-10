@@ -21,10 +21,9 @@
 #
 #   That last case narrows what this guard can claim. It stops the plain forms,
 #   which is most of them, but "carelessness always uses the plain forms" is
-#   not true. Note that these paths remain prohibited by
-#   `.agents/docs/git-guideline/safety-boundary.md` regardless: the policy binds whether
-#   or not this hook can see the write. The tool-level matchers for Write and
-#   Edit have no such gap, because they receive the resolved path.
+#   not true. The list itself is the policy; the hook cannot see every write
+#   that breaks it. The tool-level matchers for Write and Edit have no such
+#   gap, because they receive the resolved path.
 #
 #   False alarms. The Bash scan reads the command as text, so a protected path
 #   written after a `>` inside a heredoc or a quoted string looks like a
@@ -85,6 +84,7 @@ case "$tool_name" in
     done <<< "$target_paths"
     ;;
   apply_patch)
+    # Serves Codex, which Friday does not wire for this guard yet.
     patch=$(printf '%s' "$input" | jq -er '
       if (.tool_input | type) == "object" and (.tool_input.command | type) == "string"
       then .tool_input.command else error("invalid apply_patch payload") end
@@ -151,6 +151,7 @@ esac
 # resolves its own governing project below.
 [ ${#targets[@]} -eq 0 ] && exit 0
 
+# (Serves Codex, which Friday does not wire for this guard yet.)
 # Codex supplies an absolute event cwd when it can. A relative cwd is not a
 # stable base, so reject it rather than accidentally interpreting it through
 # the hook's own process cwd. Older callers have no .cwd; their inherited PWD
@@ -262,6 +263,7 @@ judge_target() {
 
   conf="$root/.agents/protected-paths.conf"
   [ -f "$conf" ] || return 0
+  [ -r "$conf" ] || block "$label exists but is not readable; refusing rather than treating the project as unprotected."
 
   if [ "$absolute" = "$root" ]; then rel=.; else rel=${absolute#"$root"/}; fi
 
@@ -281,14 +283,16 @@ judge_target() {
       "append-only "*) append_only=1; pattern=${pattern#append-only } ;;
     esac
 
-    # shellcheck disable=SC2053 -- pattern is a glob on purpose; * spans '/'.
-    if [[ "$rel" == $pattern ]]; then
-      if [ "$append_only" -eq 1 ]; then
-        [ -e "$root/$rel" ] || continue
-        block "'$rel' already exists and is append-only ($label, matched 'append-only $pattern'). Snapshots are immutable — write a new file instead of changing this one."
-      fi
-      block "'$rel' is on $whose ($label, matched '$pattern'). Ask the user to make this change, or to remove the entry if the rule no longer applies."
-    fi
+    # The pattern is a glob on purpose; in `case`, * spans '/'.
+    case $rel in
+      $pattern)
+        if [ "$append_only" -eq 1 ]; then
+          [ -e "$root/$rel" ] || continue
+          block "'$rel' already exists and is append-only ($label, matched 'append-only $pattern'). Snapshots are immutable — write a new file instead of changing this one."
+        fi
+        block "'$rel' is on $whose ($label, matched '$pattern'). Ask the user to make this change, or to remove the entry if the rule no longer applies."
+        ;;
+    esac
   done
   return 0
 }

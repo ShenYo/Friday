@@ -75,8 +75,8 @@ reject() {
 target fresh
 bash "$kit/install.sh" --working-tree --check "$run/fresh" > "$run/preview.log"
 # The Skill links setup.sh will make are previewed too, but are not payload files.
-# The preview lists the runtime links install.sh knows of; the protected-paths
-# link is made by setup.sh alone, so it is added here to match `links`.
+# The preview lists the runtime links install.sh knows of, the protected-paths
+# link included (install.sh previews and preflights it; setup.sh makes it).
 inventory_check "the install preview" "$(sed -n 's/^NEW //p' "$run/preview.log" | grep -v '^\.claude/skills/')"
 for name in git-commit git-create-pr git-push; do grep -q "^NEW \.claude/skills/$name\$" "$run/preview.log"; done
 [ ! -e "$run/fresh/AGENTS.md" ] && [ ! -e "$run/fresh/.agents" ]
@@ -211,16 +211,12 @@ case "$launcher_output" in
   *'required guard unavailable'*) ;;
   *) echo "FAIL: pre-guard linked worktree did not report the missing guard: $launcher_output" >&2; exit 1 ;;
 esac
-# CDPATH comes from the user's shell. A relative cd that consults it resolves the
-# wrong common dir, and the pre-guard worktree then falls back.
-for cdpath in "$run" ".:$run"; do
-  set +e
-  launcher_output=$(cd "$run/wt-linked" && printf '%s' '{"tool_name":"Bash","tool_input":{"command":"git status"}}' \
-    | env CLAUDE_PROJECT_DIR="$session" CDPATH="$cdpath" /bin/sh -c "$protected_launcher" 2>&1)
-  launcher_exit=$?
-  set -e
-  [ "$launcher_exit" -eq 2 ] || { echo "FAIL: pre-guard linked worktree with CDPATH=$cdpath returned $launcher_exit, expected 2: $launcher_output" >&2; exit 1; }
-done
+# From a subdirectory of the unrelated repository: a relative common dir would
+# not resolve there, and "required guard unavailable" would return. (The
+# launcher's `CDPATH=` has no probe: with absolute paths cd never reads it.)
+mkdir -p "$other/sub"
+run_launcher "$other/sub" "$run/fresh" "$other/sub/note.md"
+[ "$launcher_exit" -eq 0 ] || { echo "FAIL: launcher in a subdirectory of another repository returned $launcher_exit, expected 0: $launcher_output" >&2; exit 1; }
 # A session project that is not a repository, or that has no guard, gives
 # nothing to compare or run: fail closed rather than fall back.
 for session_dir in "$run/session-not-git" "$run/session-no-guard"; do
@@ -232,6 +228,77 @@ for session_dir in "$run/session-not-git" "$run/session-no-guard"; do
     *) echo "FAIL: session project $session_dir returned $launcher_exit, expected 2 and a missing guard: $launcher_output" >&2; exit 1 ;;
   esac
 done
+# The Bash-matcher launcher is a separate copy of the command: run it too.
+bash_launcher=$(jq -r '
+  .hooks.PreToolUse[] | select(.matcher == "Bash")
+  | .hooks[] | select(.statusMessage == "Checking protected paths") | .command
+' "$run/fresh/.claude/settings.json")
+[ -n "$bash_launcher" ] || { echo "FAIL: Bash protected-paths launcher not found in the fresh settings" >&2; exit 1; }
+# run_bash_launcher <cwd> <session project> <command>: sets launcher_output, launcher_exit.
+run_bash_launcher() {
+  set +e
+  launcher_output=$(cd "$1" && jq -n --arg c "$3" '{tool_name:"Bash",tool_input:{command:$c}}' \
+    | env CLAUDE_PROJECT_DIR="$2" /bin/sh -c "$bash_launcher" 2>&1)
+  launcher_exit=$?
+  set -e
+}
+run_bash_launcher "$other" "$run/fresh" "echo x > $other/note.md"
+[ "$launcher_exit" -eq 0 ] || { echo "FAIL: Bash launcher in another repository returned $launcher_exit, expected 0: $launcher_output" >&2; exit 1; }
+run_bash_launcher "$run/wt-linked" "$session" "echo x > $run/wt-linked/note.md"
+[ "$launcher_exit" -eq 2 ] || { echo "FAIL: Bash launcher in a pre-guard linked worktree returned $launcher_exit, expected 2: $launcher_output" >&2; exit 1; }
+case "$launcher_output" in
+  *'required guard unavailable'*) ;;
+  *) echo "FAIL: Bash launcher in a pre-guard worktree did not report the missing guard: $launcher_output" >&2; exit 1 ;;
+esac
+# Each target is judged by the nearest ancestor holding .git, against that
+# project's own list. Run the installed guard directly, from the fresh install.
+fr=$(cd -P "$run/fresh" && pwd -P)
+conf="$fr/.agents/protected-paths.conf"
+run_guard() { # <payload>: sets guard_output, guard_exit
+  set +e
+  guard_output=$(cd "$fr" && printf '%s' "$1" | "$fr/.agents/hooks/guard-protected-paths.sh" 2>&1)
+  guard_exit=$?
+  set -e
+}
+expect_guard() { # <exit> <what> <payload>
+  run_guard "$3"
+  [ "$guard_exit" -eq "$1" ] || { echo "FAIL: $2 returned $guard_exit, expected $1: $guard_output" >&2; exit 1; }
+}
+write_payload() { printf '{"tool_name":"Write","cwd":"%s","tool_input":{"file_path":"%s","content":"x"}}' "$fr" "$1"; }
+printf '%s\n' CLAUDE.md '*only-outer.md' >> "$conf"
+# An own-project refusal keeps its documented wording.
+expect_guard 2 "own-project CLAUDE.md" "$(write_payload "$fr/CLAUDE.md")"
+case "$guard_output" in
+  *"is on this project's protected-paths list"*) ;;
+  *) echo "FAIL: own-project refusal lost its wording: $guard_output" >&2; exit 1 ;;
+esac
+# A linked worktree nested in the install is its own project, with its own list.
+nest_src="$run/nest-src"
+git init -q "$nest_src"
+git -C "$nest_src" -c user.name=smoke -c user.email=smoke@example.invalid commit -q --allow-empty -m base
+git -C "$nest_src" worktree add -q "$fr/nested-wt" HEAD
+[ -f "$fr/nested-wt/.git" ] || { echo "FAIL: nested worktree has no .git file" >&2; exit 1; }
+mkdir -p "$fr/nested-wt/.agents"
+printf '%s\n' only-nested.md > "$fr/nested-wt/.agents/protected-paths.conf"
+expect_guard 2 "target listed only in the nested conf" "$(write_payload "$fr/nested-wt/only-nested.md")"
+case "$guard_output" in
+  *"the protected-paths list of the project at $fr/nested-wt"*) ;;
+  *) echo "FAIL: nested refusal did not name the nested project: $guard_output" >&2; exit 1 ;;
+esac
+expect_guard 0 "target listed only in the outer conf but inside the nested repo" "$(write_payload "$fr/nested-wt/only-outer.md")"
+# A first target in a project without a list must not end the run.
+expect_guard 2 "MultiEdit with an unprotected first target" \
+  '{"tool_name":"MultiEdit","cwd":"'"$fr"'","tool_input":{"file_path":"'"$other"'/a.md","edits":[{"file_path":"'"$fr"'/CLAUDE.md"}]}}'
+# A list the guard cannot read is a refusal, not an unprotected project.
+if [ -r "$conf" ]; then
+  chmod 000 "$conf"
+  if [ ! -r "$conf" ]; then
+    expect_guard 2 "unreadable conf" "$(write_payload "$fr/notes.md")"
+    case "$guard_output" in *protected-paths.conf*) ;; *) chmod 644 "$conf"; echo "FAIL: unreadable-conf refusal did not name the conf: $guard_output" >&2; exit 1 ;; esac
+  fi
+  chmod 644 "$conf"
+fi
+cp "$run/protected-paths.conf.before" "$conf"
 cp "$run/fresh/AGENTS.md" "$run/consumer-seed.before"
 printf '%s\n' '# Agent Instructions' 'Consumer-specific routing lives here.' > "$run/fresh/AGENTS.md"
 (cd "$run/fresh" && bash .agents/hooks/check-collaborative-git.sh)

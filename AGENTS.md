@@ -78,6 +78,10 @@ Each step ends on the condition that says it is done.
 
 ## What the files will not tell you
 
+- **Codex changes are paused while the agents' GitHub machine account is
+  suspended.** Do not change the Codex hooks or `.codex/` payload, and answer a
+  review finding about Codex by deferring it. Write the follow-up down instead;
+  when the account is restored, align Codex with what Claude Code does.
 - **Consumer-owned files reach new installs only.** Propagation carries managed
   core and skips every `!` entry, because a consumer reconciles its seeds by
   hand. To change one of those files (the `!` entries in

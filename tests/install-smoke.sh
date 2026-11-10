@@ -36,6 +36,7 @@ CLAUDE.md
 .agents/githooks/pre-push
 .agents/skills/git/commit/SKILL.md
 .agents/skills/git/create-pr/SKILL.md
+.agents/skills/git/github-pr-verify/SKILL.md
 .agents/skills/git/push/SKILL.md
 .gitignore
 .claude/settings.json

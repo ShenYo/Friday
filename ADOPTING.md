@@ -173,7 +173,7 @@ file that is already identical is not a conflict; it reads `IDENTICAL`.
 
 ### A real conflict
 
-A CONFLICT on one of the sixteen managed-core files means your copy and
+A CONFLICT on one of the seventeen managed-core files means your copy and
 Friday's have diverged. Reconcile it file by file, in a reviewed commit, against
 the release you are taking:
 

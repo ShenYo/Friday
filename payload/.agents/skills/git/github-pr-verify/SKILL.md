@@ -42,11 +42,12 @@ commit, push, merge, or alter unrelated PR-description text.
    ```
 
    When the repository keeps an avoid-list at `.agents/avoid-terms.grep`, grep
-   the added lines of the application-code paths its rules name (not prose,
-   which may legitimately document the terms):
+   the added lines of the application-code paths its rules name, with any
+   exclusions they name (not prose, which may legitimately document the
+   terms):
 
    ```sh
-   git diff "origin/<base>...origin/<head>" -- <application-code paths> \
+   git diff "origin/<base>...origin/<head>" -- <application-code paths> <exclusions> \
      | grep '^+' \
      | grep -inE -f <(grep -v '^ *#' .agents/avoid-terms.grep)
    ```
@@ -64,7 +65,9 @@ commit, push, merge, or alter unrelated PR-description text.
    judgement is mechanically verified unless a relevant check actually proves
    it.
 7. Report a concise table: Definition-of-Done criterion, status (`verified`,
-   `action required`, or `unverified`), and evidence. Keep
+   `action required`, or `unverified`), and evidence. When neither the PR
+   template nor the routed rules define a Definition of Done, the criteria are
+   the checks of steps 4–6 plus fresh-context verification. Keep
    fresh-context verification as `action required`: the authoring agent must
    not self-certify it. State the focused manual-review items for the user or
    an independently authorised reviewer.
@@ -77,7 +80,9 @@ After every invocation:
    Stop on any mismatch.
 2. Update only the `## Definition of done` section and, if needed, a
    `## Verification evidence` section immediately after it. Preserve the
-   summary, visual evidence, and every other section verbatim.
+   summary, visual evidence, and every other section verbatim. When the body
+   has no `## Definition of done` section, append a `## Verification evidence`
+   section at the end of the body instead, and change nothing else.
 3. Check a box only when the just-completed verification has evidence. Leave
    manual or independently verified work unchecked, and state each remaining
    action item in `## Verification evidence`.

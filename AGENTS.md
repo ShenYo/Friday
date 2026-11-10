@@ -93,8 +93,10 @@ Each step ends on the condition that says it is done.
   installation. Step 3 is the place to run it.
 - **Edit `README.md` and `README.zh-TW.md` in the same commit.** Nothing here
   checks their parity, so the second edit is yours to remember.
-- **A release's note lives in [`CHANGELOG.md`](CHANGELOG.md).** The release's
-  pull request moves the `Unreleased` entry under the new version; the
+- **A release's note lives under [`docs/changelog/`](docs/changelog/)**, one file
+  per major version, linked from [`CHANGELOG.md`](CHANGELOG.md). The release's
+  pull request moves the `Unreleased` entry under the new version and its date
+  (the tag's, in Taipei time); the
   annotated tag's message is that entry (`git tag -a vX.Y.Z <commit> -F
   <file>`), and the GitHub Release is created from the tag with
   `gh release create vX.Y.Z --notes-from-tag`. Pushing the tag and creating

@@ -36,7 +36,7 @@ describes the present.
 
 ## Status (2026-11-10)
 
-> **中文摘要**：managed core 現為十五檔，最新 release 是 v1.1.4（2026-11-10），最近加入
+> **中文摘要**：managed core 現為十六檔，最新 release 是 v1.1.4（2026-11-10），最近加入
 > 每個 worktree 一份、依日期分節的 handoff 規則。
 > pet_care 與 Finance 兩個 consumer 都已同步在 v1.1.4。待辦：指定 backup maintainer、
 > 真正的新機器 replay、第三個 consumer、external-runtime 收尾，以及 managed-core 更新 bot。

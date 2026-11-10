@@ -267,7 +267,7 @@ judge_target() {
 
   if [ "$absolute" = "$root" ]; then rel=.; else rel=${absolute#"$root"/}; fi
 
-  while IFS= read -r line; do
+  while IFS= read -r line || [ -n "$line" ]; do
     line=${line%%#*}
     line=$(printf '%s' "$line" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
     [ -n "$line" ] && pats+=("$line")

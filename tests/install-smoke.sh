@@ -289,6 +289,44 @@ expect_guard 0 "target listed only in the outer conf but inside the nested repo"
 # A first target in a project without a list must not end the run.
 expect_guard 2 "MultiEdit with an unprotected first target" \
   '{"tool_name":"MultiEdit","cwd":"'"$fr"'","tool_input":{"file_path":"'"$other"'/a.md","edits":[{"file_path":"'"$fr"'/CLAUDE.md"}]}}'
+# A pattern with * spans '/', so it matches a nested file.
+printf '%s\n' 'docs/backup/*' > "$conf"
+expect_guard 2 "glob pattern against a nested file" "$(write_payload "$fr/docs/backup/a/b.md")"
+# A conf whose last line has no trailing newline still applies that line.
+printf 'CLAUDE.md' > "$conf"
+expect_guard 2 "conf without a trailing newline" "$(write_payload "$fr/CLAUDE.md")"
+printf '%s\n' CLAUDE.md '*only-outer.md' > "$conf"
+# Bash with several targets: an earlier target that needs no judgement must not
+# end the run before a protected one.
+bash_payload() { jq -n --arg c "$1" --arg d "$fr" '{tool_name:"Bash",cwd:$d,tool_input:{command:$c}}'; }
+seed_repo="$run/seed-repo"
+git init -q "$seed_repo"
+mkdir -p "$seed_repo/.agents"
+cp "$run/protected-paths.conf.before" "$seed_repo/.agents/protected-paths.conf"
+expect_guard 2 "Bash: first target in a repository with only the seed conf" \
+  "$(bash_payload "echo x > $seed_repo/a.md; echo y > $fr/CLAUDE.md")"
+nonrepo=$(mktemp -d)
+expect_guard 2 "Bash: first target outside any repository" \
+  "$(bash_payload "echo x > $nonrepo/a.md; echo y > $fr/CLAUDE.md")"
+rmdir "$nonrepo"
+# append-only: an existing file is refused, a new one is allowed, and a skipped
+# (new-file) append-only entry must not hide a later entry that matches it.
+mkdir -p "$fr/docs/snap"
+: > "$fr/docs/snap/old.md"
+printf '%s\n' 'append-only docs/snap/*' > "$conf"
+expect_guard 2 "append-only glob, existing file" "$(write_payload "$fr/docs/snap/old.md")"
+expect_guard 0 "append-only glob, new file" "$(write_payload "$fr/docs/snap/fresh.md")"
+printf '%s\n' 'append-only docs/snap/*' 'docs/snap/new.md' > "$conf"
+expect_guard 2 "new file matched by a later literal entry" "$(write_payload "$fr/docs/snap/new.md")"
+printf '%s\n' CLAUDE.md '*only-outer.md' > "$conf"
+# The launcher with neither a repository nor CLAUDE_PROJECT_DIR refuses.
+nonrepo=$(mktemp -d)
+run_launcher "$nonrepo" "" "$nonrepo/note.md"
+rmdir "$nonrepo"
+case "$launcher_exit:$launcher_output" in
+  2:*'unable to resolve the Git repository root'*) ;;
+  *) echo "FAIL: launcher without a repository or project dir returned $launcher_exit: $launcher_output" >&2; exit 1 ;;
+esac
 # A list the guard cannot read is a refusal, not an unprotected project.
 if [ -r "$conf" ]; then
   chmod 000 "$conf"

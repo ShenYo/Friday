@@ -20,6 +20,7 @@ expected='
 AGENTS.md
 CLAUDE.md
 .agents/AGENTS.md
+.agents/protected-paths.conf
 .agents/bin/setup.sh
 .agents/docs/agent-rules.md
 .agents/docs/testing.md
@@ -29,6 +30,7 @@ CLAUDE.md
 .agents/docs/git-guideline/safety-boundary.md
 .agents/hooks/check-collaborative-git.sh
 .agents/hooks/guard-collaborative-git.sh
+.agents/hooks/guard-protected-paths.sh
 .agents/githooks/pre-commit
 .agents/githooks/commit-msg
 .agents/githooks/pre-push
@@ -38,7 +40,7 @@ CLAUDE.md
 .gitignore
 .claude/settings.json
 .codex/hooks.json'
-links='.claude/hooks/guard-collaborative-git.sh .codex/hooks/guard-collaborative-git.sh'
+links='.claude/hooks/guard-collaborative-git.sh .claude/hooks/guard-protected-paths.sh .codex/hooks/guard-collaborative-git.sh'
 
 # Compare `expected` with what the installer actually listed or wrote, and say
 # which way it differs. Under set -e a bare comparison or a grep -q loop exits
@@ -73,6 +75,8 @@ reject() {
 target fresh
 bash "$kit/install.sh" --working-tree --check "$run/fresh" > "$run/preview.log"
 # The Skill links setup.sh will make are previewed too, but are not payload files.
+# The preview lists the runtime links install.sh knows of; the protected-paths
+# link is made by setup.sh alone, so it is added here to match `links`.
 inventory_check "the install preview" "$(sed -n 's/^NEW //p' "$run/preview.log" | grep -v '^\.claude/skills/')"
 for name in git-commit git-create-pr git-push; do grep -q "^NEW \.claude/skills/$name\$" "$run/preview.log"; done
 [ ! -e "$run/fresh/AGENTS.md" ] && [ ! -e "$run/fresh/.agents" ]
@@ -90,6 +94,7 @@ grep -Fq '| Pushing directly to the default branch |' "$boundary"
 grep -Fq 'must not approve a pull request containing its own work' "$boundary"
 grep -Fq '| Deleting refs |' "$boundary"
 [ "$(readlink "$run/fresh/.claude/hooks/guard-collaborative-git.sh")" = ../../.agents/hooks/guard-collaborative-git.sh ]
+[ "$(readlink "$run/fresh/.claude/hooks/guard-protected-paths.sh")" = ../../.agents/hooks/guard-protected-paths.sh ]
 [ -L "$run/fresh/.codex/hooks/guard-collaborative-git.sh" ]
 [ "$(readlink "$run/fresh/.codex/hooks/guard-collaborative-git.sh")" = ../../.agents/hooks/guard-collaborative-git.sh ]
 run_installed_guard() {
@@ -146,6 +151,87 @@ jq -e '
   )
 ' "$run/fresh/.codex/hooks.json" >/dev/null
 ! grep -Fq 'guard-protected-paths' "$kit/payload/.codex/hooks.json"
+# The installed protected-paths guard: the seed conf has no active entries, so
+# CLAUDE.md is protected only once the consumer adds it.
+run_protected() {
+  printf '%s' "$1" | "$run/fresh/.agents/hooks/guard-protected-paths.sh" >/dev/null 2>&1
+}
+cp "$run/fresh/.agents/protected-paths.conf" "$run/protected-paths.conf.before"
+printf '%s\n' CLAUDE.md >> "$run/fresh/.agents/protected-paths.conf"
+set +e
+run_protected '{"tool_name":"Write","cwd":"'"$run/fresh"'","tool_input":{"file_path":"'"$run/fresh"'/CLAUDE.md","content":"x"}}'
+protected_exit=$?
+run_protected '{"tool_name":"Write","cwd":"'"$run/fresh"'","tool_input":{"file_path":"'"$run/fresh"'/notes.md","content":"x"}}'
+unprotected_exit=$?
+set -e
+cp "$run/protected-paths.conf.before" "$run/fresh/.agents/protected-paths.conf"
+[ "$protected_exit" -eq 2 ] || { echo "FAIL: installed protected-paths guard returned $protected_exit for CLAUDE.md, expected 2" >&2; exit 1; }
+[ "$unprotected_exit" -eq 0 ] || { echo "FAIL: installed protected-paths guard returned $unprotected_exit for notes.md, expected 0" >&2; exit 1; }
+# Regression: a session started in one project whose cwd moved into an
+# UNRELATED repository that does not ship the guard. The launcher must fall back
+# to CLAUDE_PROJECT_DIR instead of refusing with "required guard unavailable".
+other="$run/other-repo"
+git init -q "$other"
+protected_launcher=$(jq -r '
+  .hooks.PreToolUse[] | select(.matcher == "Write|Edit|MultiEdit|NotebookEdit")
+  | .hooks[] | select(.statusMessage == "Checking protected paths") | .command
+' "$run/fresh/.claude/settings.json")
+[ -n "$protected_launcher" ] || { echo "FAIL: protected-paths launcher not found in the fresh settings" >&2; exit 1; }
+# run_launcher <cwd> <session project> <file>: sets launcher_output, launcher_exit.
+run_launcher() {
+  set +e
+  launcher_output=$(cd "$1" && printf '%s' '{"tool_name":"Write","cwd":"'"$1"'","tool_input":{"file_path":"'"$3"'","content":"x"}}' \
+    | env CLAUDE_PROJECT_DIR="$2" /bin/sh -c "$protected_launcher" 2>&1)
+  launcher_exit=$?
+  set -e
+}
+run_launcher "$other" "$run/fresh" "$other/note.md"
+case "$launcher_output" in
+  *'required guard unavailable'*) echo "FAIL: launcher in another repository could not find the guard: $launcher_output" >&2; exit 1 ;;
+esac
+[ "$launcher_exit" -eq 0 ] || { echo "FAIL: launcher in another repository returned $launcher_exit, expected 0: $launcher_output" >&2; exit 1; }
+# From that unrelated cwd the session project's own list still applies to its files.
+printf '%s\n' CLAUDE.md >> "$run/fresh/.agents/protected-paths.conf"
+run_launcher "$other" "$run/fresh" "$run/fresh/CLAUDE.md"
+cp "$run/protected-paths.conf.before" "$run/fresh/.agents/protected-paths.conf"
+[ "$launcher_exit" -eq 2 ] || { echo "FAIL: launcher from another repository returned $launcher_exit for the session project's CLAUDE.md, expected 2: $launcher_output" >&2; exit 1; }
+# A linked worktree of the SAME repository on a commit that predates the guard
+# must still fail closed. The session project is a scratch repository that holds
+# the guard uncommitted, so the worktree (cut from the bare commit) lacks it.
+session="$run/wt-session"
+git init -q "$session"
+git -C "$session" -c user.name=smoke -c user.email=smoke@example.invalid commit -q --allow-empty -m base
+git -C "$session" worktree add -q "$run/wt-linked" HEAD
+mkdir -p "$session/.claude/hooks" "$session/.agents/hooks"
+cp "$run/fresh/.agents/hooks/guard-protected-paths.sh" "$session/.agents/hooks/"
+ln -s ../../.agents/hooks/guard-protected-paths.sh "$session/.claude/hooks/guard-protected-paths.sh"
+run_launcher "$run/wt-linked" "$session" "$run/wt-linked/note.md"
+[ "$launcher_exit" -eq 2 ] || { echo "FAIL: pre-guard linked worktree returned $launcher_exit, expected 2: $launcher_output" >&2; exit 1; }
+case "$launcher_output" in
+  *'required guard unavailable'*) ;;
+  *) echo "FAIL: pre-guard linked worktree did not report the missing guard: $launcher_output" >&2; exit 1 ;;
+esac
+# CDPATH comes from the user's shell. A relative cd that consults it resolves the
+# wrong common dir, and the pre-guard worktree then falls back.
+for cdpath in "$run" ".:$run"; do
+  set +e
+  launcher_output=$(cd "$run/wt-linked" && printf '%s' '{"tool_name":"Bash","tool_input":{"command":"git status"}}' \
+    | env CLAUDE_PROJECT_DIR="$session" CDPATH="$cdpath" /bin/sh -c "$protected_launcher" 2>&1)
+  launcher_exit=$?
+  set -e
+  [ "$launcher_exit" -eq 2 ] || { echo "FAIL: pre-guard linked worktree with CDPATH=$cdpath returned $launcher_exit, expected 2: $launcher_output" >&2; exit 1; }
+done
+# A session project that is not a repository, or that has no guard, gives
+# nothing to compare or run: fail closed rather than fall back.
+for session_dir in "$run/session-not-git" "$run/session-no-guard"; do
+  mkdir -p "$session_dir"
+  case "$session_dir" in *no-guard) git init -q "$session_dir" ;; esac
+  run_launcher "$other" "$session_dir" "$other/note.md"
+  case "$launcher_exit:$launcher_output" in
+    2:*'required guard unavailable'*) ;;
+    *) echo "FAIL: session project $session_dir returned $launcher_exit, expected 2 and a missing guard: $launcher_output" >&2; exit 1 ;;
+  esac
+done
 cp "$run/fresh/AGENTS.md" "$run/consumer-seed.before"
 printf '%s\n' '# Agent Instructions' 'Consumer-specific routing lives here.' > "$run/fresh/AGENTS.md"
 (cd "$run/fresh" && bash .agents/hooks/check-collaborative-git.sh)

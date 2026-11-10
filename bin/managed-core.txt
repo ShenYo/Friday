@@ -13,6 +13,7 @@
 .agents/bin/setup.sh
 .agents/hooks/check-collaborative-git.sh
 .agents/hooks/guard-collaborative-git.sh
+.agents/hooks/guard-protected-paths.sh
 .agents/githooks/pre-commit
 .agents/githooks/commit-msg
 .agents/githooks/pre-push
@@ -26,6 +27,7 @@
 !AGENTS.md
 !CLAUDE.md
 !.agents/AGENTS.md
+!.agents/protected-paths.conf
 !.gitignore
 !.claude/settings.json
 !.codex/hooks.json

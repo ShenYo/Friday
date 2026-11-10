@@ -10,7 +10,8 @@
 # the clone itself, with no copy of Friday at hand:
 #
 #   1. core.hooksPath -> .agents/githooks, so the Git hooks run
-#   2. the Claude and Codex runtime hook links to the shared guard
+#   2. the Claude and Codex runtime hook links to the shared guard, and the
+#      Claude link to the protected-paths guard
 #   3. the root AGENTS.md and CLAUDE.md pointers, when missing
 #   4. .claude/skills/<name> links to .agents/skills, for Claude Code
 #
@@ -158,6 +159,15 @@ for rel in .claude/hooks/guard-collaborative-git.sh .codex/hooks/guard-collabora
     ensure_link "$rel" "../../$guard" no
   fi
 done
+
+# The protected-paths guard is wired for Claude only.
+pguard=.agents/hooks/guard-protected-paths.sh
+prel=.claude/hooks/guard-protected-paths.sh
+if [ ! -L "$prel" ] && [ ! -e "$prel" ] && [ ! -f "$pguard" ]; then
+  conflict "$prel" "cannot link to $pguard, which is missing"
+else
+  ensure_link "$prel" "../../$pguard" no
+fi
 
 # --- 3. Root pointers ---------------------------------------------------------
 # Seeds, owned by the consumer from the moment they exist: created when missing,

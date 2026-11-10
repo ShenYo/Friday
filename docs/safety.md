@@ -44,6 +44,26 @@ The three Git skills are the other half.
 one action in that one turn — so committing and pushing stay deliberate acts
 rather than something an agent drifts into.
 
+### The protected-paths guard
+
+[`guard-protected-paths.sh`](../payload/.agents/hooks/guard-protected-paths.sh)
+refuses agent writes to paths a project lists in `.agents/protected-paths.conf`
+(one shell glob per line; `append-only ` allows creating a path but never
+changing it). The seed ships with no entries, so nothing is protected until the
+consumer adds some. It runs for Claude Code only, before Bash and before
+`Write`, `Edit`, `MultiEdit` and `NotebookEdit`. Each target is judged by the
+project that owns it, the nearest ancestor holding a `.git`, so a session whose
+working directory moved into another repository still applies the right list.
+Its launcher falls back to the session project (`CLAUDE_PROJECT_DIR`) only when
+the working directory is an unrelated repository; a linked worktree of the same
+repository on a branch without the guard still fails closed, and so does a
+session project that is not a repository or has no guard. The Write-class
+tools hand the guard the resolved path, so that check is exact. The Bash scan is
+literal text: a target that is not spelled out in the command (a variable, a
+language runtime, an encoded command) escapes it, and a protected path quoted in
+a heredoc can raise a false alarm. It is a guardrail against carelessness, not a
+security boundary.
+
 ### Why the self-check matters
 
 [`check-collaborative-git.sh`](../payload/.agents/hooks/check-collaborative-git.sh)

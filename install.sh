@@ -326,6 +326,7 @@ done < <(find "$PAYLOAD" \( -type f -o -type l \) -print)
 # whatever stands in their way before anything is written.
 links=(
   '.claude/hooks/guard-collaborative-git.sh:../../.agents/hooks/guard-collaborative-git.sh'
+  '.claude/hooks/guard-protected-paths.sh:../../.agents/hooks/guard-protected-paths.sh'
   '.codex/hooks/guard-collaborative-git.sh:../../.agents/hooks/guard-collaborative-git.sh'
 )
 conflicts=0

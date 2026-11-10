@@ -40,13 +40,11 @@ jq -e '
     # the payload cwd follow Claude Code into a worktree. Assert the literal
     # order, because a substring set alone passes on either order.
     #
-    # The fallback to the environment root is safe HERE and only here: this
-    # guard judges the requested command and ignores the repository root, so
-    # either root yields the same verdict, and keeping the fallback means a
-    # checkout that does not carry the guard still gets the boundary instead of
-    # refusing every command. A root-SENSITIVE guard must not use this shape --
-    # see the protected-paths launcher, which takes the repository of the
-    # working directory as its only source.
+    # The collaborative-git guard ignores the repository root, so it falls
+    # back to the session root freely. The protected-paths guard falls back
+    # only for an unrelated repository (see its launcher check below): a
+    # worktree of the same repository on a pre-guard branch must still fail
+    # closed.
     (.command | contains("for candidate_root in \"$git_root\" \"$env_root\"")) and
     (.command | contains("BLOCKED: unable to resolve the Git repository root.")) and
     (.command | contains("guard_rel=\".claude/hooks/guard-collaborative-git.sh\"")) and
@@ -62,6 +60,40 @@ jq -e '
   || fail "Claude PreToolUse guard is not wired (note: the onFailure=block
 assertion certifies configuration only; Claude Code below v2.1.295 ignores
 that field, so a residual non-2 exit or a timeout would not block there)"
+
+protected_hook=.claude/hooks/guard-protected-paths.sh
+test -L "$protected_hook" || fail "Claude protected-paths guard link missing"
+[ "$(readlink "$protected_hook")" = ../../.agents/hooks/guard-protected-paths.sh ] \
+  || fail "Claude protected-paths guard link target is wrong"
+jq -e '
+  def protected_guard:
+    type == "object" and
+    .type == "command" and
+    (.command | startswith($prefix)) and
+    (.command | contains("command -v \"$required\"")) and
+    (.command | contains("git_root=\"$(git rev-parse --show-toplevel 2>/dev/null)\"")) and
+    (.command | contains("env_root=\"${CLAUDE_PROJECT_DIR:-}\"")) and
+    (.command | contains("guard_rel=\".claude/hooks/guard-protected-paths.sh\"")) and
+    (.command | contains("if [ -n \"$git_root\" ]; then guard_root=\"$git_root\"; else guard_root=\"$env_root\"; fi")) and
+    (.command | contains("BLOCKED: unable to resolve the Git repository root.")) and
+    (.command | contains("guard_path=\"$guard_root/$guard_rel\"")) and
+    # The common dirs are compared only when both resolved: an empty side
+    # would compare as "different" and open the fallback for a pre-guard
+    # worktree. Absolute paths and a cleared CDPATH keep an inherited CDPATH
+    # from sending cd elsewhere.
+    (.command | contains("rev-parse --path-format=absolute --git-common-dir")) and
+    (.command | contains("CDPATH= cd -P -- \"$common\"")) and
+    (.command | contains("if [ -n \"$here_common\" ] && [ -n \"$session_common\" ] && [ \"$here_common\" != \"$session_common\" ]; then")) and
+    (.command | contains("guard_path=\"$env_root/$guard_rel\"")) and
+    (.command | contains("[ ! -f \"$guard_path\" ] || [ ! -r \"$guard_path\" ]")) and
+    ((.command | contains("for candidate_root")) | not) and
+    (.command | contains("exec bash \"$guard_path\"")) and
+    .timeout == 30 and
+    .onFailure == "block";
+  all("Bash", "Write|Edit|MultiEdit|NotebookEdit";
+    . as $m | any($settings[0].hooks.PreToolUse[]; .matcher == $m and any(.hooks[]; protected_guard)))
+' --arg prefix "$claude_path_prefix" --slurpfile settings .claude/settings.json -n >/dev/null \
+  || fail "Claude protected-paths guard is not wired under both the Bash and the Write|Edit|MultiEdit|NotebookEdit matchers"
 
 codex_hook=.codex/hooks/guard-collaborative-git.sh
 test -L "$codex_hook" || fail "Codex guard link missing"

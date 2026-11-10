@@ -21,7 +21,7 @@ bash "$FRIDAY/install.sh" --managed-only --check --release vX.Y.Z "$TARGET"
 ```
 
 Read every `CONFLICT` and reconcile it in a reviewed consumer change. Sync
-only the fifteen managed-core paths listed under
+only the sixteen managed-core paths listed under
 [Ownership](./architecture.md#ownership-managed-core-seeds-and-overlays), taking each from the release
 (`git -C "$FRIDAY" show "vX.Y.Z:payload/$rel" > "$TARGET/$rel"`, and keep the
 mode of the Git hooks and scripts). Preserve consumer seeds, runtime

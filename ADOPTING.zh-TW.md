@@ -298,7 +298,8 @@ bash .agents/bin/setup.sh   # --check 可預覽；會拒絕 linked worktree
   回報為 `CONFLICT`，不會覆蓋它），並回報缺少或不可執行的 Git hook，以及接線後會被
   略過的 `.git/hooks` 裡的 hook 與 hook symlink；
 - 把 `.claude/hooks/guard-collaborative-git.sh` 與
-  `.codex/hooks/guard-collaborative-git.sh` 連結到共用 guard；
+  `.codex/hooks/guard-collaborative-git.sh` 連結到共用 guard，並把
+  `.claude/hooks/guard-protected-paths.sh` 連結到 protected-paths guard（僅 Claude）；
 - root 的 `AGENTS.md` 與 `CLAUDE.md` 不存在時，從 seed 建立；已存在時不論內容為何
   都不動它；
 - 把 `.agents/skills` 底下的每個 Skill（深度 1 或 2、含 `SKILL.md` 的目錄）連結為

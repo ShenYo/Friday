@@ -171,7 +171,7 @@ file that is already identical is not a conflict; it reads `IDENTICAL`.
 
 ### A real conflict
 
-A CONFLICT on one of the fifteen managed-core files means your copy and
+A CONFLICT on one of the sixteen managed-core files means your copy and
 Friday's have diverged. Reconcile it file by file, in a reviewed commit, against
 the release you are taking:
 
@@ -359,7 +359,8 @@ It does four things:
   reports Git hooks that are missing or not executable, and hooks or hook
   symlinks in `.git/hooks` that it would bypass;
 - links `.claude/hooks/guard-collaborative-git.sh` and
-  `.codex/hooks/guard-collaborative-git.sh` to the shared guard;
+  `.codex/hooks/guard-collaborative-git.sh` to the shared guard, and
+  `.claude/hooks/guard-protected-paths.sh` to the protected-paths guard (Claude only);
 - creates the root `AGENTS.md` and `CLAUDE.md` from the seeds when they are
   missing, and leaves them alone whatever they say when they are present;
 - links every Skill under `.agents/skills` (a directory holding `SKILL.md`, at

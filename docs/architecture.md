@@ -17,7 +17,7 @@ and a file it does not name fails the tools. There are three kinds of file:
 
 | Kind | Which files | Rule |
 | --- | --- | --- |
-| **Managed core** | fifteen files: the policy documents under `.agents/docs`, `.agents/bin/setup.sh`, the guard and its checker, the three Git hooks, the three Git Skills | Compared byte for byte. A consumer keeps them identical to a release; each change reaches it in a release. |
+| **Managed core** | sixteen files: the policy documents under `.agents/docs`, `.agents/bin/setup.sh`, the two guards and the checker, the three Git hooks, the three Git Skills | Compared byte for byte. A consumer keeps them identical to a release; each change reaches it in a release. |
 | **Seeds** | `AGENTS.md`, `CLAUDE.md`, `.agents/AGENTS.md`, `.gitignore`, `.claude/settings.json`, `.codex/hooks.json` (the `!` entries of the list) | Copied once into a new project. From then on they are the project's: never compared, never carried. |
 | **The consumer's own overlays** | whatever else a project adds: its Skills, its documents, `.agents/hooks/check-project-agent-integration.sh` | Friday never touches them and never lists them. |
 
@@ -53,7 +53,7 @@ does not discover arbitrary skills or install a consumer's domain workflow.
 
 ## Ownership: managed core, seeds, and overlays
 
-The managed core is exact: existing consumers compare these fifteen files
+The managed core is exact: existing consumers compare these sixteen files
 byte-for-byte with their reviewed Friday version.
 
 ```
@@ -66,6 +66,7 @@ byte-for-byte with their reviewed Friday version.
 .agents/bin/setup.sh
 .agents/hooks/check-collaborative-git.sh
 .agents/hooks/guard-collaborative-git.sh
+.agents/hooks/guard-protected-paths.sh
 .agents/githooks/pre-commit
 .agents/githooks/commit-msg
 .agents/githooks/pre-push
@@ -97,9 +98,11 @@ managed core. Existing consumers reconcile them manually:
 AGENTS.md                                    root pointer
 CLAUDE.md                                    root pointer for Claude Code
 .agents/AGENTS.md                            shared policy router
+.agents/protected-paths.conf                 protected-paths list (empty seed)
 .gitignore                                   temporary-file ignore rule
 .claude/settings.json                        Claude PreToolUse wiring
 .claude/hooks/guard-collaborative-git.sh     generated symlink to the guard
+.claude/hooks/guard-protected-paths.sh       generated symlink to the protected-paths guard
 .claude/skills/<name>                        generated symlinks to .agents/skills
 .codex/hooks.json                            Codex PreToolUse runtime seed
 .codex/hooks/guard-collaborative-git.sh      generated symlink to the guard
@@ -113,6 +116,14 @@ project-local guard is readable, then executes it. It does not include a
 consumer protected-path handler. The core checker permits consumer handlers
 alongside that single shared handler, but requires the shared handler exactly
 once.
+
+The Claude seed also wires the protected-paths guard under `Bash` and
+`Write|Edit|MultiEdit|NotebookEdit`. Its launcher resolves the guard from the
+Git root of the working directory, and falls back to the session project
+(`CLAUDE_PROJECT_DIR`) only when the working directory is an unrelated
+repository, so a worktree of the same repository on a branch without the guard
+still fails closed. When either repository's Git common dir cannot be resolved,
+it does not fall back.
 
 Consumer overlays remain outside both lists. A consumer may add an executable
 regular-file `.agents/hooks/check-project-agent-integration.sh`; when present,

@@ -34,11 +34,11 @@ describes the present.
 | Personal skills or preferences | Keep personal scope personal | Keep them in your personal layer; do not promote them into Friday. |
 | Project-specific policy or checks | Preserve consumer ownership | Add a consumer overlay after reviewing the shared baseline. |
 
-## Status (2026-11-02)
+## Status (2026-11-10)
 
-> **中文摘要**：managed core 現為十五檔，最新 release 是 v1.1.1（2026-10-26），包含
-> `.agents/bin/setup.sh`、`CLAUDE.md` seed 與以 release 為準的安裝。
-> pet_care 與 Finance 兩個 consumer 都已同步在 v1.1.1。待辦：指定 backup maintainer、
+> **中文摘要**：managed core 現為十五檔，最新 release 是 v1.1.4（2026-11-10），最近加入
+> 每個 worktree 一份、依日期分節的 handoff 規則。
+> pet_care 與 Finance 兩個 consumer 都已同步在 v1.1.4。待辦：指定 backup maintainer、
 > 真正的新機器 replay、第三個 consumer、external-runtime 收尾，以及 managed-core 更新 bot。
 
 In place:
@@ -46,10 +46,10 @@ In place:
 - The managed core: 15 files, listed in [`bin/managed-core.txt`](./bin/managed-core.txt).
   `v1.0.0` (2026-10-25) shipped the first 14; `.agents/bin/setup.sh` is the 15th.
 - Released as `v1.0.0` and `v1.0.1` (2026-10-25), then `v1.1.0` and `v1.1.1`
-  (2026-10-26): `v1.1.0` brought `.agents/bin/setup.sh`, the `CLAUDE.md` seed and
+  (2026-10-26), `v1.1.2` and `v1.1.3` (2026-11-03), and `v1.1.4` (2026-11-10): `v1.1.0` brought `.agents/bin/setup.sh`, the `CLAUDE.md` seed and
   release-based install (`install.sh` installs a release, not the checkout). Consumers receive the managed core only as a release
   (see [Releases](./docs/releases.md#releases)).
-- Both consumers, `pet_care` and Finance, record `v1.1.1` and are `in sync`.
+- Both consumers, `pet_care` and Finance, record `v1.1.4` and are `in sync`.
 - CI is required on `main`: the test suites on ubuntu and macos, shellcheck, and
   gitleaks ([`ci.yml`](./.github/workflows/ci.yml)).
 

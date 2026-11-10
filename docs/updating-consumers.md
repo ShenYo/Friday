@@ -34,8 +34,9 @@ A release that adds a seed needs a hand edit the sync does not make. The protect
 guard (Unreleased) needs `.claude/settings.json` to carry the two protected-paths launcher hooks
 (under `Bash` and under `Write|Edit|MultiEdit|NotebookEdit`, copied from the payload) and
 `.agents/protected-paths.conf` to exist (the seed, or the consumer's own list), then
-`bash .agents/bin/setup.sh`. `check-collaborative-git.sh` fails until they do, as intended, so
-the propagate PR's verification fails unless that reconciliation is in the same PR.
+`bash .agents/bin/setup.sh`. `check-collaborative-git.sh` fails until the hooks and the link are
+in place, as intended, so the propagate PR's verification fails unless that reconciliation is in
+the same PR. It does not require the conf: without one the guard protects nothing.
 
 After reconciliation, verify the consumer rather than treating the installer
 as an update engine:

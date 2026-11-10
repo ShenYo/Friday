@@ -7,20 +7,21 @@
 
 How entries are written. A change that a release will carry is added under
 `## Unreleased` as it merges. The release's pull request renames that section
-to `## vX.Y.Z (YYYY-MM-DD)`, the date being the tag's own date, so the entry is
-reviewed with the release. The annotated tag's message is that entry, and the
+to `## vX.Y.Z`, so the entry is reviewed with the release. The heading carries
+no date: the tag's own date, on the release page and in `git for-each-ref`,
+is the record. The annotated tag's message is that entry, and the
 GitHub Release is created from the tag with the same text (see
 [Releases](./docs/releases.md#releases)). A PATCH entry may be one line. A MINOR or
 MAJOR entry says what changed, why, and what a consumer must do.
 
-## v1.1.4 (2026-11-09)
+## v1.1.4
 
 - **Handoffs** now go to one `docs/temp/handoff/<worktree>/handoff.md` per worktree, under the
   primary checkout, with a dated section per day (the same day revises it, a new day adds one),
   in [`scratch-files.md`](./payload/.agents/docs/scratch-files.md#handoff-documents). It changes
   a managed-core document only, so this is a PATCH.
 
-## v1.1.3 (2026-11-03)
+## v1.1.3
 
 Documentation only, and no payload file changes, so this is a PATCH.
 
@@ -35,7 +36,7 @@ Documentation only, and no payload file changes, so this is a PATCH.
   trust when `.codex/hooks.json` changed), fetching before running Friday, and checking where a
   consumer stands.
 
-## v1.1.2 (2026-11-03)
+## v1.1.2
 
 Documentation only, and no payload file changes, so this is a PATCH.
 
@@ -48,7 +49,7 @@ Documentation only, and no payload file changes, so this is a PATCH.
   documents under `docs/`, each opening with a Chinese summary, so
   `README.zh-TW.md` no longer carries a translation of those sections.
 
-## v1.1.1 (2026-10-26)
+## v1.1.1
 
 The payload changes only in documentation, so this is a PATCH.
 
@@ -69,7 +70,7 @@ The payload changes only in documentation, so this is a PATCH.
 
 Merge the sync pull request friday-propagate opens; nothing else.
 
-## v1.1.0 (2026-10-26)
+## v1.1.0
 
 Friday v1.1.0: consumer setup, and installing from a release
 
@@ -94,7 +95,7 @@ What runs changed, so this is a MINOR release.
 Merge the sync pull request friday-propagate opens; then run
 `bash .agents/bin/setup.sh` once in each clone.
 
-## v1.0.1 (2026-10-25)
+## v1.0.1
 
 Friday v1.0.1: documentation
 
@@ -108,7 +109,7 @@ No payload change; consumers have nothing to take.
   for what runs (Skills, Git hooks, guard scripts), MAJOR for a large
   structural change.
 
-## v1.0.0 (2026-10-25)
+## v1.0.0
 
 Friday v1.0.0: the first tagged payload release
 

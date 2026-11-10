@@ -48,7 +48,8 @@ anything to take, and `friday-propagate` leaves the others alone.
 
 The release note is the entry for the release in [`CHANGELOG.md`](../CHANGELOG.md):
 what changed, and what a consumer must do. The release's pull request adds the
-entry, so it is reviewed with the change. The annotated tag's message is that
+entry, so it is reviewed with the change. The entry's heading carries no
+date; the tag's date is the record. The annotated tag's message is that
 entry, and after the tag is pushed the GitHub Release is created from the tag,
 with the same text.
 

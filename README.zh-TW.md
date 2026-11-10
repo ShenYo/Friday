@@ -29,21 +29,22 @@ Friday 是怎麼走到現在的，記錄在 [`docs/history.md`](./docs/history.m
 | 個人 Skills 或偏好 | 讓個人範圍維持個人 | 留在你的個人層；不要把它推進 Friday。 |
 | 專案特有的政策或檢查 | 保留消費端的所有權 | 在審查過共享 baseline 之後，再新增消費端 overlay。 |
 
-## 現況（2026-11-02）
+## 現況（2026-11-10）
 
-> **摘要**：managed core 現為十五檔，最新 release 是 v1.1.1（2026-10-26），包含
-> `.agents/bin/setup.sh`、`CLAUDE.md` seed 與以 release 為準的安裝。
-> pet_care 與 Finance 兩個 consumer 都已同步在 v1.1.1。待辦：指定 backup maintainer、
+> **摘要**：managed core 現為十五檔，最新 release 是 v1.1.4（2026-11-10），最近加入
+> 每個 worktree 一份、依日期分節的 handoff 規則。
+> pet_care 與 Finance 兩個 consumer 都已同步在 v1.1.4。待辦：指定 backup maintainer、
 > 真正的新機器 replay、第三個 consumer、external-runtime 收尾，以及 managed-core 更新 bot。
 
 已就位：
 
 - managed core：15 個檔案，列在 [`bin/managed-core.txt`](./bin/managed-core.txt)。
   `v1.0.0`（2026-10-25）發行了前 14 個，`.agents/bin/setup.sh` 是第 15 個。
-- 已發行 `v1.0.0` 與 `v1.0.1`（2026-10-25），以及 `v1.1.0` 與 `v1.1.1`（2026-10-26）：
+- 已發行 `v1.0.0` 與 `v1.0.1`（2026-10-25），`v1.1.0` 與 `v1.1.1`（2026-10-26）、`v1.1.2`（2026-11-03）、`v1.1.3`（2026-11-04），
+  以及 `v1.1.4`（2026-11-10）：
   `v1.1.0` 帶來 `.agents/bin/setup.sh`、`CLAUDE.md` seed 與以 release 為準的安裝（`install.sh` 安裝 release，而不是 checkout）。
   consumer 只以 release 接收 managed core（見 [發行版本（Releases）](./docs/releases.md#releases)）。
-- 兩個 consumer，`pet_care` 與 Finance，都記錄 `v1.1.1`，狀態為 `in sync`。
+- 兩個 consumer，`pet_care` 與 Finance，都記錄 `v1.1.4`，狀態為 `in sync`。
 - `main` 上要求 CI：ubuntu 與 macos 的測試、shellcheck 與 gitleaks
   （[`ci.yml`](./.github/workflows/ci.yml)）。
 

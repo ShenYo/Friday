@@ -40,7 +40,8 @@ Friday 是怎麼走到現在的，記錄在 [`docs/history.md`](./docs/history.m
 
 - managed core：15 個檔案，列在 [`bin/managed-core.txt`](./bin/managed-core.txt)。
   `v1.0.0`（2026-10-25）發行了前 14 個，`.agents/bin/setup.sh` 是第 15 個。
-- 已發行 `v1.0.0` 與 `v1.0.1`（2026-10-25），`v1.1.0` 與 `v1.1.1`（2026-10-26）、`v1.1.2` 與 `v1.1.3`（2026-11-03），以及 `v1.1.4`（2026-11-10）：
+- 已發行 `v1.0.0` 與 `v1.0.1`（2026-10-25），`v1.1.0` 與 `v1.1.1`（2026-10-26）、`v1.1.2`（2026-11-03）、`v1.1.3`（2026-11-04），
+  以及 `v1.1.4`（2026-11-10）：
   `v1.1.0` 帶來 `.agents/bin/setup.sh`、`CLAUDE.md` seed 與以 release 為準的安裝（`install.sh` 安裝 release，而不是 checkout）。
   consumer 只以 release 接收 managed core（見 [發行版本（Releases）](./docs/releases.md#releases)）。
 - 兩個 consumer，`pet_care` 與 Finance，都記錄 `v1.1.4`，狀態為 `in sync`。

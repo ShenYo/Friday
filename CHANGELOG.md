@@ -7,8 +7,9 @@
 
 How entries are written. A change that a release will carry is added under
 `## Unreleased` as it merges. The release's pull request renames that section
-to `## vX.Y.Z`, so the entry is reviewed with the release. The heading carries no date: the
-tag's own date, on the release page and in `git for-each-ref`, is the record. The annotated tag's message is that entry, and the
+to `## vX.Y.Z`, so the entry is reviewed with the release. The heading carries
+no date: the tag's own date, on the release page and in `git for-each-ref`,
+is the record. The annotated tag's message is that entry, and the
 GitHub Release is created from the tag with the same text (see
 [Releases](./docs/releases.md#releases)). A PATCH entry may be one line. A MINOR or
 MAJOR entry says what changed, why, and what a consumer must do.

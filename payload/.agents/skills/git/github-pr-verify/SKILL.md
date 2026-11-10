@@ -82,7 +82,8 @@ After every invocation:
    `## Verification evidence` section immediately after it. Preserve the
    summary, visual evidence, and every other section verbatim. When the body
    has no `## Definition of done` section, append a `## Verification evidence`
-   section at the end of the body instead, and change nothing else.
+   section at the end of the body instead, or replace the one an earlier run
+   appended there, and change nothing else.
 3. Check a box only when the just-completed verification has evidence. Leave
    manual or independently verified work unchecked, and state each remaining
    action item in `## Verification evidence`.

@@ -8,7 +8,7 @@ source_root=$(cd "$(dirname "$BASH_SOURCE")/.." && pwd)
 mkdir -p "$1"
 # Absolute: GIT_CONFIG_GLOBAL below is read by git -C <target>, which resolves
 # a relative path against the target, not against this directory.
-out=$(cd "$1" && pwd)
+out=$(CDPATH= cd "$1" && pwd)
 run=$(mktemp -d "$out/run.XXXXXX")
 kit="$source_root"
 # A core.hooksPath in the global config of the machine running this would count

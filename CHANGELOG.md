@@ -16,7 +16,8 @@ too long to read. This page holds the rules and links to each file.
 How entries are written:
 
 - A change that a release will carry is added under `## Unreleased` as it merges, at the
-  top of the newest major's file. The release's pull request renames that section to
+  top of the file for the major it will be released in (the newest, unless it is a
+  maintenance release of an older major). The release's pull request renames that section to
   `## vX.Y.Z (YYYY-MM-DD)`, so the entry is reviewed with the release. The date is the
   tag's own date in Taipei time (UTC+8). Tag on the Taipei day the heading names; if the tag lands on another day, correct the heading in a follow-up pull request.
 - The annotated tag's message is that entry, and the GitHub Release is created from the
@@ -25,4 +26,4 @@ How entries are written:
   a consumer must do.
 - A release that starts a new major version moves `## Unreleased` out of the old file to the
   top of the new `docs/changelog/vN.md`, and adds a row for it to the table above, in the
-  same pull request. That is the last edit to the old file.
+  same pull request. Apart from a later maintenance release of that major, that is the last edit to the old file.

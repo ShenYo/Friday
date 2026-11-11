@@ -107,6 +107,7 @@ NEW .agents/docs/agent-rules.md
 SEED AGENTS.md (yours; not touched)
 SEED CLAUDE.md (missing; setup.sh creates it from Friday's seed)
 SEED .agents/AGENTS.md (yours; not touched)
+SEED .agents/protected-paths.conf (missing; not created)
 SEED .gitignore (yours; not touched)
 SEED .claude/settings.json (yours; not touched)
 SEED .codex/hooks.json (identical to Friday's; not touched)
@@ -130,6 +131,7 @@ self-check 仍在最後執行，在帶有 guard 接線的 seeds（`.claude/setti
 | `SEED AGENTS.md` | 你的 root pointer | **預期** —— 保留你的；它只需要指向 `.agents/AGENTS.md` |
 | `SEED CLAUDE.md` | 你給 Claude Code 的 root pointer | **預期** —— 保留你的；它只需要 import `.agents/AGENTS.md`。缺少時由 `setup.sh`（v1.1.0 起）從 seed 建立 |
 | `SEED .agents/AGENTS.md` | 你的路由表 | **預期** —— 保留你的；把 Friday 的路由列加進去 |
+| `SEED .agents/protected-paths.conf` | 你的 protected-paths 清單 | **預期** —— 保留你的；缺少時在你加上之前什麼都不受保護（先放一份空的 seed 即可） |
 | `SEED .gitignore` | 你的 | **預期** —— 把 Friday 的條目附加上去 |
 | `SEED .claude/settings.json` | 你的 runtime 接線 | **預期** —— 把 Friday 的 handler 加進你的 `hooks` 陣列，不要替換整個檔案；缺少時，在你加上之前安裝的 self-check 會失敗 |
 | `SEED .codex/hooks.json` | 你的 Codex 接線 | **預期** —— 同上 |
@@ -138,12 +140,12 @@ self-check 仍在最後執行，在帶有 guard 接線的 seeds（`.claude/setti
 | `CONFLICT .claude/skills/<name>` | `setup.sh` 要建立的 Skill 連結被擋住，或兩個 Skill 同名 | **先決定** —— 改名或移除擋路的那一個 |
 | **其他任何檔案的 `CONFLICT`** | **managed core** | **真衝突** —— 見下 |
 
-這六個是 Friday 只負責 seed、之後就交給你的全部檔案。它發出的其他東西都是
+這七個是 Friday 只負責 seed、之後就交給你的全部檔案。它發出的其他東西都是
 managed core，最終必須 byte-identical。已經完全相同的 managed 檔案不是衝突，會顯示為 `IDENTICAL`。
 
 ### 真衝突
 
-CONFLICT 出現在十五個 managed-core 檔案之一，代表你的副本與 Friday 的已經分歧。
+CONFLICT 出現在十六個 managed-core 檔案之一，代表你的副本與 Friday 的已經分歧。
 請逐檔對照你要採用的 release 調和，並放在一次經審查的 commit 裡：
 
 ```sh
@@ -187,8 +189,8 @@ bash .agents/bin/setup.sh --check   # 有東西會被改變時結束碼為 1
 不再執行任何 hook）。它們也會檢查 `setup.sh` 將建立的 `.claude/skills/<name>` 連結，依複製完成後的 Skills
 （目標自己的 `.agents/skills` 加上 payload 的）計算：兩個 Skill 同名、被真實檔案或目錄擋住、指向別處的連結、
 複製後會變成有效的斷鏈、或不是 `setup.sh` 寫的斷鏈，都是衝突，所以安裝會被拒絕，而不是做到一半才停下。
-任何非預期的目的地 symlink（包含祖先路徑上的 symlink）都視為衝突；只接受三種連結：那兩個精確指定的
-Claude 與 Codex hook 連結、已經正確的 `.claude/skills/<name>` 連結，以及指向 `.agents/skills/`、會由
+任何非預期的目的地 symlink（包含祖先路徑上的 symlink）都視為衝突；只接受三種連結：那三個精確指定的
+hook 連結（Claude 的 collaborative-Git 與 protected-paths 連結，以及 Codex 的那一個）、已經正確的 `.claude/skills/<name>` 連結，以及指向 `.agents/skills/`、會由
 `setup.sh` 替換掉的斷鏈。
 
 安裝會補齊缺少的檔案，並保留內容相同的既有檔案。當內容不同時，它會拒絕覆寫，`.claude/settings.json`
@@ -298,7 +300,8 @@ bash .agents/bin/setup.sh   # --check 可預覽；會拒絕 linked worktree
   回報為 `CONFLICT`，不會覆蓋它），並回報缺少或不可執行的 Git hook，以及接線後會被
   略過的 `.git/hooks` 裡的 hook 與 hook symlink；
 - 把 `.claude/hooks/guard-collaborative-git.sh` 與
-  `.codex/hooks/guard-collaborative-git.sh` 連結到共用 guard；
+  `.codex/hooks/guard-collaborative-git.sh` 連結到共用 guard，並把
+  `.claude/hooks/guard-protected-paths.sh` 連結到 protected-paths guard（僅 Claude）；
 - root 的 `AGENTS.md` 與 `CLAUDE.md` 不存在時，從 seed 建立；已存在時不論內容為何
   都不動它；
 - 把 `.agents/skills` 底下的每個 Skill（深度 1 或 2、含 `SKILL.md` 的目錄）連結為

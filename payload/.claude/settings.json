@@ -10,6 +10,25 @@
             "timeout": 30,
             "onFailure": "block",
             "statusMessage": "Checking collaborative Git safety boundary"
+          },
+          {
+            "type": "command",
+            "command": "PATH=\"/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin${PATH:+:$PATH}\"; export PATH; for required in git bash; do if ! command -v \"$required\" >/dev/null 2>&1; then echo \"BLOCKED: required executable unavailable: $required\" >&2; exit 2; fi; done; guard_rel=\".claude/hooks/guard-protected-paths.sh\"; git_root=\"$(git rev-parse --show-toplevel 2>/dev/null)\"; env_root=\"${CLAUDE_PROJECT_DIR:-}\"; if [ -n \"$git_root\" ]; then guard_root=\"$git_root\"; else guard_root=\"$env_root\"; fi; if [ -z \"$guard_root\" ]; then echo \"BLOCKED: unable to resolve the Git repository root.\" >&2; exit 2; fi; guard_path=\"$guard_root/$guard_rel\"; if [ ! -f \"$guard_path\" ] && [ -n \"$git_root\" ] && [ -n \"$env_root\" ]; then here_common=\"\"; session_common=\"\"; common=\"$(git -C \"$git_root\" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)\" && [ -n \"$common\" ] && here_common=\"$(CDPATH= cd -P -- \"$common\" 2>/dev/null && pwd -P)\"; common=\"$(git -C \"$env_root\" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)\" && [ -n \"$common\" ] && session_common=\"$(CDPATH= cd -P -- \"$common\" 2>/dev/null && pwd -P)\"; if [ -n \"$here_common\" ] && [ -n \"$session_common\" ] && [ \"$here_common\" != \"$session_common\" ]; then guard_path=\"$env_root/$guard_rel\"; fi; fi; if [ ! -f \"$guard_path\" ] || [ ! -r \"$guard_path\" ]; then echo \"BLOCKED: required guard unavailable: $guard_rel\" >&2; exit 2; fi; exec bash \"$guard_path\"",
+            "timeout": 30,
+            "onFailure": "block",
+            "statusMessage": "Checking protected paths"
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "PATH=\"/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin${PATH:+:$PATH}\"; export PATH; for required in git bash; do if ! command -v \"$required\" >/dev/null 2>&1; then echo \"BLOCKED: required executable unavailable: $required\" >&2; exit 2; fi; done; guard_rel=\".claude/hooks/guard-protected-paths.sh\"; git_root=\"$(git rev-parse --show-toplevel 2>/dev/null)\"; env_root=\"${CLAUDE_PROJECT_DIR:-}\"; if [ -n \"$git_root\" ]; then guard_root=\"$git_root\"; else guard_root=\"$env_root\"; fi; if [ -z \"$guard_root\" ]; then echo \"BLOCKED: unable to resolve the Git repository root.\" >&2; exit 2; fi; guard_path=\"$guard_root/$guard_rel\"; if [ ! -f \"$guard_path\" ] && [ -n \"$git_root\" ] && [ -n \"$env_root\" ]; then here_common=\"\"; session_common=\"\"; common=\"$(git -C \"$git_root\" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)\" && [ -n \"$common\" ] && here_common=\"$(CDPATH= cd -P -- \"$common\" 2>/dev/null && pwd -P)\"; common=\"$(git -C \"$env_root\" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)\" && [ -n \"$common\" ] && session_common=\"$(CDPATH= cd -P -- \"$common\" 2>/dev/null && pwd -P)\"; if [ -n \"$here_common\" ] && [ -n \"$session_common\" ] && [ \"$here_common\" != \"$session_common\" ]; then guard_path=\"$env_root/$guard_rel\"; fi; fi; if [ ! -f \"$guard_path\" ] || [ ! -r \"$guard_path\" ]; then echo \"BLOCKED: required guard unavailable: $guard_rel\" >&2; exit 2; fi; exec bash \"$guard_path\"",
+            "timeout": 30,
+            "onFailure": "block",
+            "statusMessage": "Checking protected paths"
           }
         ]
       }

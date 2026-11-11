@@ -64,7 +64,7 @@ language runtime, an encoded command) escapes it, and a protected path quoted in
 a heredoc can raise a false alarm. A `cd` or `pushd` in the command is followed
 when its destination is literal: a relative target is judged from the working
 directory and from each destination. When the command anywhere contains a
-destination the scan cannot read (`cd "$X"`, `cd -`), even in a heredoc body,
+destination the scan cannot read (`cd "$X"`, `cd -`, `cd a\ b`), even in a heredoc body,
 every relative target is refused. It is a guardrail against carelessness, not a
 security boundary.
 

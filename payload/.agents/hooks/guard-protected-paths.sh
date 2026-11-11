@@ -133,23 +133,30 @@ case "$tool_name" in
     # `set -e` with pipefail that would abort this subshell before the later
     # extractions ran — so a command using only `tee` was never inspected at
     # all, because the redirection grep above it found nothing first.
+    #
+    # Parentheses are not clause breaks for the last-argument forms: a
+    # command substitution or a sed group would cut the clause before its
+    # target. A subshell's closing parenthesis is dropped from the last field
+    # instead. (No comment inside the process substitution below: bash 3.2
+    # misparses one that holds a parenthesis.)
     done < <(
       {
         printf '%s\n' "$command" \
           | grep -oE ">>?[[:space:]]*(\"[^\"]*\"|'[^']*'|[^[:space:];|&<>()]+)" \
           | sed -E 's/^>>?[[:space:]]*//' || true
         printf '%s\n' "$command" \
-          | tr ';|&()' '\n' \
-          | grep -E '(^|[[:space:]])(tee|cp|mv|install|sed[[:space:]]+-i)([[:space:]]|$)' \
+          | tr ';|&' '\n' \
+          | grep -E '(^|[[:space:](])(tee|cp|mv|install|sed[[:space:]]+-i)([[:space:]]|$)' \
           | sed -E 's/[[:space:]]*$//' \
-          | awk '{print $NF}' || true
+          | awk '{ f = $NF; if (f !~ /\(/) sub(/\)+$/, "", f); print f }' || true
       } | sed -E "s/^[\"'](.*)[\"']$/\\1/"
     )
     # A `cd` or `pushd` in the command moves the shell, so a relative target
     # after it does not land under the hook's cwd. Collect each literal
     # destination; every relative target is then judged from the hook's cwd
-    # and from each of them. Order and subshells are not tracked, because
-    # judging from too many places can only add refusals. A destination that
+    # and from each of them (how each is resolved is set out where the list
+    # is built). Judging from too many places can only add refusals. A
+    # destination that
     # cannot be read literally ($VAR, `cd -`, a glob) anywhere in the command
     # leaves every relative target unjudgeable, so it is refused.
     cd_word='^[[:space:]]*("[^"]*"|'\''[^'\'']*'\''|[^[:space:]]+)'
@@ -167,6 +174,9 @@ case "$tool_name" in
           *) word=${BASH_REMATCH[1]}${rest%%[[:space:]]*}; break ;;
         esac
       done
+      # A redirection glued to the destination (cd X>/dev/null) is not part
+      # of it.
+      case "$word" in \"* | \'*) ;; *) word=${word%%[<>]*} ;; esac
       dest=
       case "$word" in
         '') [ "$verb" = cd ] && dest=${HOME-} ;; # a bare pushd swaps the stack
@@ -355,26 +365,34 @@ judge_target() {
 }
 
 # The places a relative Bash target may be relative to: the hook's cwd, and
-# every literal `cd` destination. A relative destination is resolved from the
-# one before it, as a sequence of cds runs, and from the hook's cwd, where a
-# subshell's cd starts. Resolving it from every known place instead doubles
-# the list with each cd. Duplicates are dropped, and past a cap a relative
-# target is refused rather than judged slowly enough to hit the hook timeout.
+# every literal `cd` destination. Each destination has a primary place: where
+# it lands if the cds before it all ran in sequence. A relative destination is
+# resolved from the previous primary, from the hook's cwd and from every
+# earlier primary, since a subshell may have undone any of the cds between.
+# Resolving it from every known place instead would double the list with each
+# cd. Duplicates are dropped, and past a cap a relative target is refused
+# rather than judged slowly enough to hit the hook timeout.
 max_bases=64
 bases=("$event_cwd")
+prims=("$event_cwd")
 prev=$event_cwd
 for dest in ${cd_dests[@]+"${cd_dests[@]}"}; do
   [ -z "$cd_unknown" ] || break
   if [[ $dest == /* ]]; then
     from=(/)
   else
-    from=("$prev" "$event_cwd")
+    from=("$prev" "${prims[@]}")
   fi
   first=1
   for base in "${from[@]}"; do
     resolved=$(normalize_target "$dest" "$base") \
       || { cd_unknown="the command moves with 'cd $dest', which cannot be resolved"; break; }
-    [ "$first" -eq 0 ] || prev=$resolved
+    if [ "$first" -eq 1 ]; then
+      prev=$resolved
+      known=0
+      for b in "${prims[@]}"; do [ "$b" != "$resolved" ] || known=1; done
+      [ "$known" -eq 1 ] || prims+=("$resolved")
+    fi
     first=0
     known=0
     for b in "${bases[@]}"; do [ "$b" != "$resolved" ] || known=1; done

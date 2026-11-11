@@ -331,10 +331,21 @@ expect_guard 2 "Bash: cd into a subdirectory, then a write to ../" \
 # A long chain of relative cds stays fast (one base per cd, not a doubling).
 chain="cd sub"
 for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do chain="$chain && cd .. && cd sub"; done
-chain_start=$(date +%s)
-expect_guard 0 "Bash: a long chain of relative cds, then an unprotected write" \
-  "$(other_payload "$chain && printf x > notes.md" "$fr")"
-[ $(( $(date +%s) - chain_start )) -lt 10 ] || { echo "FAIL: a long cd chain took 10s or more" >&2; exit 1; }
+# The alarm turns a regression into a FAIL rather than a hang.
+set +e
+chain_output=$(other_payload "$chain && printf x > notes.md" "$fr" \
+  | (cd "$fr" && perl -e 'alarm 10; exec @ARGV' "$fr/.agents/hooks/guard-protected-paths.sh") 2>&1)
+chain_exit=$?
+set -e
+[ "$chain_exit" -eq 0 ] || { echo "FAIL: a long chain of relative cds returned $chain_exit (142 is the 10s alarm): $chain_output" >&2; exit 1; }
+# A cd after a subshell's cd may still start from the outer destination.
+expect_guard 2 "Bash: cd after a subshell's cd, then a relative write" \
+  "$(other_payload "cd $fr/sub && (cd x) && cd .. && printf x > CLAUDE.md" "$seed_repo")"
+# Parentheses in an argument do not hide the target of cp or sed -i.
+expect_guard 2 "Bash: sed -i with a regex group" \
+  "$(bash_payload "sed -i -E 's/(a)/b/' CLAUDE.md")"
+expect_guard 2 "Bash: cp from a command substitution" \
+  "$(bash_payload "cp \"\$(pwd)/x\" CLAUDE.md")"
 # A destination that is not literal leaves a relative target unjudgeable.
 expect_guard 2 "Bash: a relative write after cd to a variable" \
   "$(other_payload 'cd "$X" && printf x > notes.md' "$seed_repo")"

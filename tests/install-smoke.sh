@@ -360,6 +360,11 @@ sib_output=$(bash_payload "$sib" \
 sib_exit=$?
 set -e
 [ "$sib_exit" -eq 0 ] || { echo "FAIL: ten subshell builds returned $sib_exit (142 is the 10s alarm): $sib_output" >&2; exit 1; }
+# The eleventh sibling crosses the cap, which docs/safety.md states; a
+# relative target is then refused rather than judged slowly.
+expect_guard 2 "Bash: eleven subshell builds cross the cd cap" \
+  "$(bash_payload "$sib (cd pkg11 && npm test > out.log);")"
+case "$guard_output" in *'more cd destinations than the guard follows'*) ;; *) echo "FAIL: cap refusal did not say why: $guard_output" >&2; exit 1 ;; esac
 # A destination that is not literal leaves a relative target unjudgeable.
 expect_guard 2 "Bash: a relative write after cd to a variable" \
   "$(other_payload 'cd "$X" && printf x > notes.md' "$seed_repo")"

@@ -130,6 +130,7 @@ NEW .agents/docs/agent-rules.md
 SEED AGENTS.md (yours; not touched)
 SEED CLAUDE.md (missing; setup.sh creates it from Friday's seed)
 SEED .agents/AGENTS.md (yours; not touched)
+SEED .agents/protected-paths.conf (missing; not created)
 SEED .gitignore (yours; not touched)
 SEED .claude/settings.json (yours; not touched)
 SEED .codex/hooks.json (identical to Friday's; not touched)
@@ -157,6 +158,7 @@ nothing is written. Look only at the path on each `SEED` or `CONFLICT` line.
 | `SEED AGENTS.md` | your root pointer | **expected** — keep yours; it only has to point at `.agents/AGENTS.md` |
 | `SEED CLAUDE.md` | your root pointer for Claude Code | **expected** — keep yours; it only has to import `.agents/AGENTS.md`. If it is missing, `setup.sh` (v1.1.0 on) creates it from the seed |
 | `SEED .agents/AGENTS.md` | your routing table | **expected** — keep yours; add Friday's routing rows to it |
+| `SEED .agents/protected-paths.conf` | your protected-paths list | **expected** — keep yours; if it is missing, nothing is protected until you add one (an empty copy of the seed is enough to start) |
 | `SEED .gitignore` | yours | **expected** — append Friday's entries |
 | `SEED .claude/settings.json` | your runtime wiring | **expected** — add Friday's handler to your `hooks` array, do not replace the file; if it is missing the install's self-check fails until you do |
 | `SEED .codex/hooks.json` | your Codex wiring | **expected** — same |
@@ -165,7 +167,7 @@ nothing is written. Look only at the path on each `SEED` or `CONFLICT` line.
 | `CONFLICT .claude/skills/<name>` | a Skill link `setup.sh` would make is blocked, or two Skills share a name | **decide first** — rename or remove the one in the way |
 | **`CONFLICT` on anything else** | **the managed core** | **a real conflict** — see below |
 
-Those six are the only files Friday seeds and then leaves to you. Everything
+Those seven are the only files Friday seeds and then leaves to you. Everything
 else it ships is the managed core, which must end up byte-identical. A managed
 file that is already identical is not a conflict; it reads `IDENTICAL`.
 
@@ -225,8 +227,8 @@ plus the payload's): a name two Skills share, a real file or directory in the
 way, a link elsewhere, and a dangling link that the copy would make live or that
 `setup.sh` did not write are all conflicts, so the install is refused rather
 than stopped halfway. Unexpected destination symlinks, including ancestor
-symlinks, conflict; the only links accepted are the two exact Claude and Codex
-hook links, a `.claude/skills/<name>` link that is already correct, and a
+symlinks, conflict; the only links accepted are the three exact hook links (the
+Claude collaborative-Git and protected-paths links, and the Codex one), a `.claude/skills/<name>` link that is already correct, and a
 dangling one into `.agents/skills/` that `setup.sh` will replace.
 
 Installation fills missing files and preserves identical content. It refuses

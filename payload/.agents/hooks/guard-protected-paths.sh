@@ -262,7 +262,10 @@ judge_target() {
   fi
 
   conf="$root/.agents/protected-paths.conf"
-  [ -f "$conf" ] || return 0
+  # Only an absent list means unprotected. A directory, FIFO or dangling link
+  # in its place is a broken policy, refused like an unreadable one.
+  [ -e "$conf" ] || [ -L "$conf" ] || return 0
+  [ -f "$conf" ] || block "$label exists but is not a regular file; refusing rather than treating the project as unprotected."
   [ -r "$conf" ] || block "$label exists but is not readable; refusing rather than treating the project as unprotected."
 
   if [ "$absolute" = "$root" ]; then rel=.; else rel=${absolute#"$root"/}; fi

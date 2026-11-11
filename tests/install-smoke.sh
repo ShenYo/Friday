@@ -319,6 +319,13 @@ expect_guard 0 "append-only glob, new file" "$(write_payload "$fr/docs/snap/fres
 printf '%s\n' 'append-only docs/snap/*' 'docs/snap/new.md' > "$conf"
 expect_guard 2 "new file matched by a later literal entry" "$(write_payload "$fr/docs/snap/new.md")"
 printf '%s\n' CLAUDE.md '*only-outer.md' > "$conf"
+# The Bash launcher's fallback must still judge a protected target: from an
+# unrelated repository, a write to the session project's listed file is refused.
+run_bash_launcher "$other" "$run/fresh" "echo y > $fr/CLAUDE.md"
+case "$launcher_exit:$launcher_output" in
+  2:*"is on this project's protected-paths list"*) ;;
+  *) echo "FAIL: Bash launcher fallback let a protected write through ($launcher_exit): $launcher_output" >&2; exit 1 ;;
+esac
 # The launcher with neither a repository nor CLAUDE_PROJECT_DIR refuses.
 nonrepo=$(mktemp -d)
 run_launcher "$nonrepo" "" "$nonrepo/note.md"
@@ -336,6 +343,13 @@ if [ -r "$conf" ]; then
   fi
   chmod 644 "$conf"
 fi
+# A list replaced by something that is not a regular file is a refusal too.
+mv "$conf" "$run/conf.before-dir"
+mkdir "$conf"
+expect_guard 2 "conf that is a directory" "$(write_payload "$fr/notes.md")"
+case "$guard_output" in *'not a regular file'*) ;; *) echo "FAIL: directory conf refusal did not say why: $guard_output" >&2; exit 1 ;; esac
+rmdir "$conf"
+mv "$run/conf.before-dir" "$conf"
 cp "$run/protected-paths.conf.before" "$conf"
 cp "$run/fresh/AGENTS.md" "$run/consumer-seed.before"
 printf '%s\n' '# Agent Instructions' 'Consumer-specific routing lives here.' > "$run/fresh/AGENTS.md"

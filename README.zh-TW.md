@@ -31,15 +31,15 @@ Friday 是怎麼走到現在的，記錄在 [`docs/history.md`](./docs/history.m
 
 ## 現況（2026-11-10）
 
-> **摘要**：managed core 現為十六檔，最新 release 是 v1.1.4（2026-11-10），最近加入
+> **摘要**：managed core 現為十七檔，最新 release 是 v1.1.4（2026-11-10），最近加入
 > 每個 worktree 一份、依日期分節的 handoff 規則。
 > pet_care 與 Finance 兩個 consumer 都已同步在 v1.1.4。待辦：指定 backup maintainer、
 > 真正的新機器 replay、第三個 consumer、external-runtime 收尾，以及 managed-core 更新 bot。
 
 已就位：
 
-- managed core：16 個檔案，列在 [`bin/managed-core.txt`](./bin/managed-core.txt)。
-  `v1.0.0`（2026-10-25）發行了前 14 個，`.agents/bin/setup.sh` 是第 15 個，`.agents/hooks/guard-protected-paths.sh` 是第 16 個。
+- managed core：17 個檔案，列在 [`bin/managed-core.txt`](./bin/managed-core.txt)。
+  `v1.0.0`（2026-10-25）發行了前 14 個，`.agents/bin/setup.sh` 是第 15 個，`.agents/hooks/guard-protected-paths.sh` 是第 16 個，`github-pr-verify` 是第 17 個。
 - 已發行 `v1.0.0` 與 `v1.0.1`（2026-10-25），`v1.1.0` 與 `v1.1.1`（2026-10-26）、`v1.1.2`（2026-11-03）、`v1.1.3`（2026-11-04），
   以及 `v1.1.4`（2026-11-10）：
   `v1.1.0` 帶來 `.agents/bin/setup.sh`、`CLAUDE.md` seed 與以 release 為準的安裝（`install.sh` 安裝 release，而不是 checkout）。

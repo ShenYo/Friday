@@ -17,7 +17,7 @@ and a file it does not name fails the tools. There are three kinds of file:
 
 | Kind | Which files | Rule |
 | --- | --- | --- |
-| **Managed core** | sixteen files: the policy documents under `.agents/docs`, `.agents/bin/setup.sh`, the two guards and the checker, the three Git hooks, the three Git Skills | Compared byte for byte. A consumer keeps them identical to a release; each change reaches it in a release. |
+| **Managed core** | seventeen files: the policy documents under `.agents/docs`, `.agents/bin/setup.sh`, the two guards and the checker, the three Git hooks, the four Git Skills | Compared byte for byte. A consumer keeps them identical to a release; each change reaches it in a release. |
 | **Seeds** | `AGENTS.md`, `CLAUDE.md`, `.agents/AGENTS.md`, `.agents/protected-paths.conf`, `.gitignore`, `.claude/settings.json`, `.codex/hooks.json` (the `!` entries of the list) | Copied once into a new project. From then on they are the project's: never compared, never carried. |
 | **The consumer's own overlays** | whatever else a project adds: its Skills, its documents, `.agents/hooks/check-project-agent-integration.sh` | Friday never touches them and never lists them. |
 
@@ -53,7 +53,7 @@ does not discover arbitrary skills or install a consumer's domain workflow.
 
 ## Ownership: managed core, seeds, and overlays
 
-The managed core is exact: existing consumers compare these sixteen files
+The managed core is exact: existing consumers compare these seventeen files
 byte-for-byte with their reviewed Friday version.
 
 ```
@@ -72,6 +72,7 @@ byte-for-byte with their reviewed Friday version.
 .agents/githooks/pre-push
 .agents/skills/git/commit/SKILL.md
 .agents/skills/git/create-pr/SKILL.md
+.agents/skills/git/github-pr-verify/SKILL.md
 .agents/skills/git/push/SKILL.md
 ```
 

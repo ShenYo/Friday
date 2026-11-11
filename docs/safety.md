@@ -38,7 +38,7 @@ the model; none may assume it runs first or that it alone will be heard. On
 Claude Code, hook sources merge rather than override, so a permissive settings
 file cannot lift a guard: `claude --settings <empty>.json` is not a bypass.
 
-The three Git skills are the other half.
+The three Git skills that commit, push and open a pull request are the other half.
 [`safety-boundary.md`](../payload/.agents/docs/git-guideline/safety-boundary.md) treats invoking
 `$git-commit`, `$git-push` or `$git-create-pr` as the authorisation for that
 one action in that one turn — so committing and pushing stay deliberate acts

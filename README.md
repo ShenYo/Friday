@@ -34,11 +34,12 @@ describes the present.
 | Personal skills or preferences | Keep personal scope personal | Keep them in your personal layer; do not promote them into Friday. |
 | Project-specific policy or checks | Preserve consumer ownership | Add a consumer overlay after reviewing the shared baseline. |
 
-## Status (2026-11-10)
+## Status (2026-11-11)
 
-> **中文摘要**：managed core 現為十七檔，最新 release 是 v1.1.4（2026-11-10），最近加入
-> 每個 worktree 一份、依日期分節的 handoff 規則。
-> pet_care 與 Finance 兩個 consumer 都已同步在 v1.1.4。待辦：指定 backup maintainer、
+> **中文摘要**：managed core 現為十七檔，最新 release 是 v1.2.0（2026-11-11），最近加入
+> protected-paths guard 與 `github-pr-verify`。
+> pet_care 與 Finance 兩個 consumer 記錄的是 v1.1.4，
+> 要手動 reconcile 後才跟上 v1.2.0。待辦：指定 backup maintainer、
 > 真正的新機器 replay、第三個 consumer、external-runtime 收尾，以及 managed-core 更新 bot。
 
 In place:
@@ -47,11 +48,13 @@ In place:
   `v1.0.0` (2026-10-25) shipped the first 14; `.agents/bin/setup.sh` is the 15th,
   `.agents/hooks/guard-protected-paths.sh` the 16th, and `github-pr-verify` the 17th.
 - Released as `v1.0.0` and `v1.0.1` (2026-10-25), then `v1.1.0` and `v1.1.1`
-  (2026-10-26), `v1.1.2` (2026-11-03), `v1.1.3` (2026-11-04) and `v1.1.4`
-  (2026-11-10): `v1.1.0` brought `.agents/bin/setup.sh`, the `CLAUDE.md` seed and
+  (2026-10-26), `v1.1.2` (2026-11-03), `v1.1.3` (2026-11-04), `v1.1.4`
+  (2026-11-10) and `v1.2.0` (2026-11-11): `v1.1.0` brought `.agents/bin/setup.sh`, the `CLAUDE.md` seed and
   release-based install (`install.sh` installs a release, not the checkout). Consumers receive the managed core only as a release
-  (see [Releases](./docs/releases.md#releases)).
-- Both consumers, `pet_care` and Finance, record `v1.1.4` and are `in sync`.
+  (see [Releases](./docs/releases.md#releases)). `v1.2.0` brought the
+  protected-paths guard and `github-pr-verify` into the managed core.
+- Both consumers, `pet_care` and Finance, record `v1.1.4`. Each must reconcile
+  `v1.2.0` by hand (see the [v1.2.0 note](./docs/changelog/v1.md#v120-2026-11-11)).
 - CI is required on `main`: the test suites on ubuntu and macos, shellcheck, and
   gitleaks ([`ci.yml`](./.github/workflows/ci.yml)).
 

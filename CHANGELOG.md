@@ -11,7 +11,7 @@ too long to read. This page holds the rules and links to each file.
 
 | Major | File | About |
 | --- | --- | --- |
-| v1 | [`docs/changelog/v1.md`](./docs/changelog/v1.md) | The first major version: the managed core, `install.sh`, the lock file and `friday-propagate`, then `.agents/bin/setup.sh`, release-based install, and the per-worktree handoff rule. |
+| v1 | [`docs/changelog/v1.md`](./docs/changelog/v1.md) | The first major version: the managed core, `install.sh`, the lock file and `friday-propagate`, then `.agents/bin/setup.sh`, release-based install, the per-worktree handoff rule, then the protected-paths guard and `github-pr-verify`. |
 
 How entries are written:
 

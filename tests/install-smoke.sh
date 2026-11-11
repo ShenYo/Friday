@@ -322,10 +322,25 @@ expect_guard 2 "Bash: a relative write after cd inside a subshell" \
   "$(other_payload "(cd $fr && printf x > CLAUDE.md)" "$seed_repo")"
 expect_guard 0 "Bash: cd into the install, then an unprotected relative write" \
   "$(other_payload "cd $fr && printf x > notes.md" "$seed_repo")"
+expect_guard 2 "Bash: if cd into the install, then a relative write" \
+  "$(other_payload "if cd '$fr'; then printf x > CLAUDE.md; fi" "$seed_repo")"
+expect_guard 2 "Bash: pushd into the install, then a relative write" \
+  "$(other_payload "pushd $fr >/dev/null && printf x > CLAUDE.md" "$seed_repo")"
+expect_guard 2 "Bash: cd into a subdirectory, then a write to ../" \
+  "$(other_payload "cd $fr/sub && printf x > ../CLAUDE.md" "$seed_repo")"
+# A long chain of relative cds stays fast (one base per cd, not a doubling).
+chain="cd sub"
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do chain="$chain && cd .. && cd sub"; done
+chain_start=$(date +%s)
+expect_guard 0 "Bash: a long chain of relative cds, then an unprotected write" \
+  "$(other_payload "$chain && printf x > notes.md" "$fr")"
+[ $(( $(date +%s) - chain_start )) -lt 10 ] || { echo "FAIL: a long cd chain took 10s or more" >&2; exit 1; }
 # A destination that is not literal leaves a relative target unjudgeable.
 expect_guard 2 "Bash: a relative write after cd to a variable" \
   "$(other_payload 'cd "$X" && printf x > notes.md' "$seed_repo")"
 case "$guard_output" in *'cannot be read literally'*) ;; *) echo "FAIL: non-literal cd refusal did not say why: $guard_output" >&2; exit 1 ;; esac
+expect_guard 2 "Bash: a relative write after cd -" \
+  "$(other_payload "cd - && printf x > notes.md" "$seed_repo")"
 expect_guard 0 "Bash: cd to a variable, then no write" \
   "$(other_payload 'cd "$X" && git status' "$seed_repo")"
 rmdir "$fr/sub"

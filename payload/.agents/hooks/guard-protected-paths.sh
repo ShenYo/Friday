@@ -23,16 +23,16 @@
 #   which is most of them, but "carelessness always uses the plain forms" is
 #   not true. The list itself is the policy; the hook cannot see every write
 #   that breaks it. The tool-level matchers for Write and Edit have no such
-#   gap, because they receive the resolved path.
-#
-#   A `cd` or `pushd` in the command is followed when its destination is
-#   literal; when it is not, a relative write target is refused instead.
+#   gap, because they receive the resolved path. A `cd` or `pushd` in the
+#   command is followed when its destination is literal.
 #
 #   False alarms. The Bash scan reads the command as text, so a protected path
 #   written after a `>` inside a heredoc or a quoted string looks like a
-#   redirection. Refusing a write that was never going to happen is the
-#   safe direction to be wrong in, and the message names the pattern that
-#   matched, so the way out is obvious.
+#   redirection. Likewise, when the command anywhere contains a `cd` whose
+#   destination cannot be read (`cd "$X"`, `cd -`), even in a heredoc body or
+#   after the write, every relative write target is refused. Refusing a write
+#   that was never going to happen is the safe direction to be wrong in, and
+#   the message says what matched, so the way out is obvious.
 set -euo pipefail
 
 block() {
@@ -145,13 +145,13 @@ case "$tool_name" in
           | awk '{print $NF}' || true
       } | sed -E "s/^[\"'](.*)[\"']$/\\1/"
     )
-    # A `cd` or `pushd` earlier in the command moves the shell, so a relative
-    # target after it does not land under the hook's cwd. Collect each literal
+    # A `cd` or `pushd` in the command moves the shell, so a relative target
+    # after it does not land under the hook's cwd. Collect each literal
     # destination; every relative target is then judged from the hook's cwd
     # and from each of them. Order and subshells are not tracked, because
     # judging from too many places can only add refusals. A destination that
-    # cannot be read literally ($VAR, `cd -`, a glob) leaves a relative target
-    # unjudgeable, so the target is refused.
+    # cannot be read literally ($VAR, `cd -`, a glob) anywhere in the command
+    # leaves every relative target unjudgeable, so it is refused.
     cd_word='^[[:space:]]*("[^"]*"|'\''[^'\'']*'\''|[^[:space:]]+)'
     while IFS= read -r clause; do
       verb=${clause%%@*}
@@ -161,16 +161,22 @@ case "$tool_name" in
         rest=${rest:${#BASH_REMATCH[0]}}
         case "${BASH_REMATCH[1]}" in
           -[LPe@] | -[LPe@][LPe@] | --) ;;
-          *) word=${BASH_REMATCH[1]}; break ;;
+          # A quoted part that runs on into more text ('a b'/c) is one word
+          # the pattern above cannot read whole; keep all of it so it is
+          # treated as unreadable below rather than cut at the quote.
+          *) word=${BASH_REMATCH[1]}${rest%%[[:space:]]*}; break ;;
         esac
       done
       dest=
       case "$word" in
         '') [ "$verb" = cd ] && dest=${HOME-} ;; # a bare pushd swaps the stack
-        \'*\') dest=${word:1:${#word}-2} ;;
+        \'*\')
+          dest=${word:1:${#word}-2}
+          case "$dest" in *\'*) dest= ;; esac
+          ;;
         \"*\")
           dest=${word:1:${#word}-2}
-          case "$dest" in *'$'* | *'`'* | *\\*) dest= ;; esac
+          case "$dest" in *'$'* | *'`'* | *\\* | *\"*) dest= ;; esac
           ;;
         *'$'* | *'`'* | *\\* | *\"* | *\'* | *'*'* | *'?'* | *'['* | -* | +*) ;;
         '~') dest=${HOME-} ;;
@@ -181,12 +187,12 @@ case "$tool_name" in
       if [ -n "$dest" ]; then
         cd_dests+=("$dest")
       else
-        cd_unknown="$verb ${word:-(no argument)}"
+        cd_unknown="the command moves with '$verb${word:+ $word}', whose destination cannot be read literally"
       fi
     done < <(
       printf '%s\n' "$command" \
         | tr ';|&(){}' '\n' \
-        | sed -nE 's/^[[:space:]]*((then|do|else|!)[[:space:]]+)*(builtin[[:space:]]+)?(cd|pushd)([[:space:]]+(.*))?$/\4@\6/p' || true
+        | sed -nE 's/^[[:space:]]*((then|do|else|elif|if|while|until|time|!)[[:space:]]+)*((builtin|command)[[:space:]]+)?(cd|pushd)([[:space:]]+(.*))?$/\5@\7/p' || true
     )
     ;;
   *)
@@ -349,16 +355,32 @@ judge_target() {
 }
 
 # The places a relative Bash target may be relative to: the hook's cwd, and
-# every literal `cd` destination resolved from each place already known.
+# every literal `cd` destination. A relative destination is resolved from the
+# one before it, as a sequence of cds runs, and from the hook's cwd, where a
+# subshell's cd starts. Resolving it from every known place instead doubles
+# the list with each cd. Duplicates are dropped, and past a cap a relative
+# target is refused rather than judged slowly enough to hit the hook timeout.
+max_bases=64
 bases=("$event_cwd")
+prev=$event_cwd
 for dest in ${cd_dests[@]+"${cd_dests[@]}"}; do
+  [ -z "$cd_unknown" ] || break
   if [[ $dest == /* ]]; then
     from=(/)
   else
-    from=("${bases[@]}")
+    from=("$prev" "$event_cwd")
   fi
+  first=1
   for base in "${from[@]}"; do
-    resolved=$(normalize_target "$dest" "$base") || { cd_unknown="cd $dest"; continue; }
+    resolved=$(normalize_target "$dest" "$base") \
+      || { cd_unknown="the command moves with 'cd $dest', which cannot be resolved"; break; }
+    [ "$first" -eq 0 ] || prev=$resolved
+    first=0
+    known=0
+    for b in "${bases[@]}"; do [ "$b" != "$resolved" ] || known=1; done
+    [ "$known" -eq 0 ] || continue
+    [ ${#bases[@]} -lt "$max_bases" ] \
+      || { cd_unknown="the command has more cd destinations than the guard follows"; break; }
     bases+=("$resolved")
   done
 done
@@ -368,7 +390,7 @@ for target in "${targets[@]}"; do
     from=("$event_cwd")
   else
     [ -z "$cd_unknown" ] \
-      || block "'$target' is relative, and the command moves with '$cd_unknown', whose destination cannot be read literally, so where it lands is unknown. Write it with an absolute path, or cd to a literal path."
+      || block "'$target' is relative, and $cd_unknown, so where it lands is unknown. Write it with an absolute path, or cd to a literal path."
     from=("${bases[@]}")
   fi
   for base in "${from[@]}"; do

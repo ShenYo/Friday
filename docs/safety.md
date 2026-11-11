@@ -62,9 +62,10 @@ tools hand the guard the resolved path, so that check is exact. The Bash scan is
 literal text: a target that is not spelled out in the command (a variable, a
 language runtime, an encoded command) escapes it, and a protected path quoted in
 a heredoc can raise a false alarm. A `cd` or `pushd` in the command is followed
-when its destination is literal, and a relative target is judged from every
-such destination as well as from the working directory; after a destination it
-cannot read (`cd "$X"`, `cd -`), a relative target is refused. It is a guardrail against carelessness, not a
+when its destination is literal: a relative target is judged from the working
+directory and from each destination. When the command anywhere contains a
+destination the scan cannot read (`cd "$X"`, `cd -`), even in a heredoc body,
+every relative target is refused. It is a guardrail against carelessness, not a
 security boundary.
 
 ### Why the self-check matters

@@ -78,6 +78,14 @@ Each step ends on the condition that says it is done.
 
 ## What the files will not tell you
 
+- **Codex changes, and auto-triggered propagation, are paused while the
+  agents' GitHub machine account is suspended.** Do not take up #7, and do
+  not change Codex's own parts of the payload: `payload/.codex/`, and the
+  Codex wiring in `payload/.agents/hooks/check-collaborative-git.sh` and
+  `payload/.agents/bin/setup.sh`. A change to the shared guard for Claude Code
+  keeps its Codex behaviour as it is. Answer a review finding about Codex
+  by deferring it, and write the follow-up down; when the account is
+  restored, align Codex with what Claude Code does, and remove this bullet.
 - **Consumer-owned files reach new installs only.** Propagation carries managed
   core and skips every `!` entry, because a consumer reconciles its seeds by
   hand. To change one of those files (the `!` entries in

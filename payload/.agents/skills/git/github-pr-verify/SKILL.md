@@ -1,6 +1,7 @@
 ---
 name: github-pr-verify
 description: Verify a specified or current branch pull request, then update its Definition of Done evidence.
+disable-model-invocation: true
 ---
 
 # GitHub PR Verify
@@ -25,35 +26,42 @@ commit, push, merge, or alter unrelated PR-description text.
 1. Read `.agents/AGENTS.md`, `.agents/docs/git-guideline/safety-boundary.md`
    and `.agents/docs/git-guideline/pr-evidence.md`. Also read, when the
    repository has them, its pull request template
-   (`.github/pull_request_template.md`) and the verification or
+   (`pull_request_template.md` in `.github/`, `docs/` or the root, in any
+   capitalisation, or the one the PR used from a `PULL_REQUEST_TEMPLATE/`
+   directory) and the verification or
    Definition-of-Done rules that `.agents/AGENTS.md` routes to.
 2. Inspect the working-tree status and resolve the target PR with `gh pr view`:
    no PR number means the current branch; a supplied PR number means that PR.
    Record the PR number, URL, base branch, head branch, and head SHA. Stop if
-   the target PR is not open.
-3. Fetch only the resolved remote head ref. Do not checkout, reset, or alter
-   the working tree. Pin every diff command to
-   `origin/<base>...origin/<head>`.
+   the target PR is not open, or if its head is in a fork
+   (`isCrossRepository`): this Skill is for the repository's own branches.
+3. Fetch the base branch and the resolved head ref from `origin`. Do not
+   checkout, reset, or alter the working tree. Pin every diff command to
+   `origin/<base>...<head SHA>`, the recorded SHA rather than the branch
+   name, so a branch name never becomes shell text and a later push does not
+   change what is verified.
 4. Run the repository checks that exist:
 
    ```sh
    bash .agents/hooks/check-collaborative-git.sh
-   git diff --check "origin/<base>...origin/<head>"
+   git diff --check "origin/<base>...<head SHA>"
    ```
 
    When the repository keeps an avoid-list at `.agents/avoid-terms.grep`, grep
-   the added lines of the application-code paths its rules name, with any
-   exclusions they name (not prose, which may legitimately document the
-   terms):
+   the added lines of the application-code paths its rules name, leaving out
+   any paths they exclude (not prose, which may legitimately document the
+   terms). Write the diff to a file first, so a failed `git diff` stops the
+   check instead of reading as no matches:
 
    ```sh
-   git diff "origin/<base>...origin/<head>" -- <application-code paths> <exclusions> \
-     | grep '^+' \
-     | grep -inE -f <(grep -v '^ *#' .agents/avoid-terms.grep)
+   git diff "origin/<base>...<head SHA>" -- <application-code paths> \
+     ':(exclude)<excluded path>' > "$diff_file"
+   grep '^+' "$diff_file" \
+     | grep -inE -f <(grep -vE '^[[:space:]]*(#|$)' .agents/avoid-terms.grep)
    ```
 
-   The Avoid-list command passes only when it has no matches. Distinguish a
-   no-match exit from a command error. Search for TODO, FIXME, XXX,
+   The Avoid-list command passes only when `git diff` succeeded and the grep
+   has no matches (exit 1); exit 2 is an error. Search for TODO, FIXME, XXX,
    `console.log`, and `debugger` only in added executable/configuration files
    (`.agents/hooks`, `.claude`, `.codex`, `.github`, and the application-code
    paths), not prose that legitimately documents those terms.
@@ -78,13 +86,18 @@ After every invocation:
 
 1. Confirm the resolved PR is open and that its head SHA is the verified SHA.
    Stop on any mismatch.
-2. Update only the `## Definition of done` section and, if needed, a
-   `## Verification evidence` section immediately after it. Preserve the
-   summary, visual evidence, and every other section verbatim. When the body
-   has no `## Definition of done` section, append a `## Verification evidence`
-   section at the end of the body instead, or replace the one an earlier run
-   appended there, and change nothing else.
+2. Re-read the body just before editing it. Update only the
+   `## Definition of done` section (the heading in any capitalisation) and,
+   if needed, a `## Verification evidence` section immediately after it.
+   Preserve the summary, visual evidence, and every other section verbatim.
+   When the body has no Definition of Done section, append a
+   `## Verification evidence` section at the end of the body, with
+   `<!-- github-pr-verify -->` on the line after its heading, and change
+   nothing else. A rerun replaces only a section carrying that marker; an
+   unmarked one is the author's and stays as it is.
 3. Check a box only when the just-completed verification has evidence. Leave
    manual or independently verified work unchecked, and state each remaining
    action item in `## Verification evidence`.
 4. Read the PR body back after the edit and report the exact changed status.
+   Check the head SHA again: if it moved during the update, say that the
+   evidence describes the verified SHA, not the new head.

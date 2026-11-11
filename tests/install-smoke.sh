@@ -310,6 +310,25 @@ nonrepo=$(mktemp -d)
 expect_guard 2 "Bash: first target outside any repository" \
   "$(bash_payload "echo x > $nonrepo/a.md; echo y > $fr/CLAUDE.md")"
 rmdir "$nonrepo"
+# A cd earlier in the command moves where a relative target lands (#61): from
+# an unrelated repository, from a subdirectory, and inside a subshell.
+other_payload() { jq -n --arg c "$1" --arg d "$2" '{tool_name:"Bash",cwd:$d,tool_input:{command:$c}}'; }
+mkdir -p "$fr/sub"
+expect_guard 2 "Bash: cd into the install, then a relative write" \
+  "$(other_payload "cd $fr && printf x > CLAUDE.md" "$seed_repo")"
+expect_guard 2 "Bash: cd .. from a subdirectory, then a relative write" \
+  "$(other_payload "cd .. && printf x > CLAUDE.md" "$fr/sub")"
+expect_guard 2 "Bash: a relative write after cd inside a subshell" \
+  "$(other_payload "(cd $fr && printf x > CLAUDE.md)" "$seed_repo")"
+expect_guard 0 "Bash: cd into the install, then an unprotected relative write" \
+  "$(other_payload "cd $fr && printf x > notes.md" "$seed_repo")"
+# A destination that is not literal leaves a relative target unjudgeable.
+expect_guard 2 "Bash: a relative write after cd to a variable" \
+  "$(other_payload 'cd "$X" && printf x > notes.md' "$seed_repo")"
+case "$guard_output" in *'cannot be read literally'*) ;; *) echo "FAIL: non-literal cd refusal did not say why: $guard_output" >&2; exit 1 ;; esac
+expect_guard 0 "Bash: cd to a variable, then no write" \
+  "$(other_payload 'cd "$X" && git status' "$seed_repo")"
+rmdir "$fr/sub"
 # append-only: an existing file is refused, a new one is allowed, and a skipped
 # (new-file) append-only entry must not hide a later entry that matches it.
 mkdir -p "$fr/docs/snap"

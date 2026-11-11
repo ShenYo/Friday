@@ -346,6 +346,20 @@ expect_guard 2 "Bash: sed -i with a regex group" \
   "$(bash_payload "sed -i -E 's/(a)/b/' CLAUDE.md")"
 expect_guard 2 "Bash: cp from a command substitution" \
   "$(bash_payload "cp \"\$(pwd)/x\" CLAUDE.md")"
+expect_guard 2 "Bash: cp in a subshell with a spaced closing parenthesis" \
+  "$(bash_payload "( cp a CLAUDE.md )")"
+# A cd that opens a command substitution does not move the shell.
+expect_guard 0 "Bash: cd inside a command substitution, then a relative write" \
+  "$(bash_payload 'DIR=$(cd "$(dirname "$0")" && pwd); echo x > notes.md')"
+# Ten package builds in subshells are judged well inside the hook timeout.
+sib=
+for n in 1 2 3 4 5 6 7 8 9 10; do sib="$sib (cd pkg$n && npm ci > i.log 2> ie.log && npm test > out.log 2> err.log);"; done
+set +e
+sib_output=$(bash_payload "$sib" \
+  | (cd "$fr" && perl -e 'alarm 10; exec @ARGV' "$fr/.agents/hooks/guard-protected-paths.sh") 2>&1)
+sib_exit=$?
+set -e
+[ "$sib_exit" -eq 0 ] || { echo "FAIL: ten subshell builds returned $sib_exit (142 is the 10s alarm): $sib_output" >&2; exit 1; }
 # A destination that is not literal leaves a relative target unjudgeable.
 expect_guard 2 "Bash: a relative write after cd to a variable" \
   "$(other_payload 'cd "$X" && printf x > notes.md' "$seed_repo")"

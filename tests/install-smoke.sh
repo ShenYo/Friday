@@ -310,6 +310,70 @@ nonrepo=$(mktemp -d)
 expect_guard 2 "Bash: first target outside any repository" \
   "$(bash_payload "echo x > $nonrepo/a.md; echo y > $fr/CLAUDE.md")"
 rmdir "$nonrepo"
+# A cd earlier in the command moves where a relative target lands (#61): from
+# an unrelated repository, from a subdirectory, and inside a subshell.
+other_payload() { jq -n --arg c "$1" --arg d "$2" '{tool_name:"Bash",cwd:$d,tool_input:{command:$c}}'; }
+mkdir -p "$fr/sub"
+expect_guard 2 "Bash: cd into the install, then a relative write" \
+  "$(other_payload "cd $fr && printf x > CLAUDE.md" "$seed_repo")"
+expect_guard 2 "Bash: cd .. from a subdirectory, then a relative write" \
+  "$(other_payload "cd .. && printf x > CLAUDE.md" "$fr/sub")"
+expect_guard 2 "Bash: a relative write after cd inside a subshell" \
+  "$(other_payload "(cd $fr && printf x > CLAUDE.md)" "$seed_repo")"
+expect_guard 0 "Bash: cd into the install, then an unprotected relative write" \
+  "$(other_payload "cd $fr && printf x > notes.md" "$seed_repo")"
+expect_guard 2 "Bash: if cd into the install, then a relative write" \
+  "$(other_payload "if cd '$fr'; then printf x > CLAUDE.md; fi" "$seed_repo")"
+expect_guard 2 "Bash: pushd into the install, then a relative write" \
+  "$(other_payload "pushd $fr >/dev/null && printf x > CLAUDE.md" "$seed_repo")"
+expect_guard 2 "Bash: cd into a subdirectory, then a write to ../" \
+  "$(other_payload "cd $fr/sub && printf x > ../CLAUDE.md" "$seed_repo")"
+# A long chain of relative cds stays fast (one base per cd, not a doubling).
+chain="cd sub"
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do chain="$chain && cd .. && cd sub"; done
+# The alarm turns a regression into a FAIL rather than a hang.
+set +e
+chain_output=$(other_payload "$chain && printf x > notes.md" "$fr" \
+  | (cd "$fr" && perl -e 'alarm 10; exec @ARGV' "$fr/.agents/hooks/guard-protected-paths.sh") 2>&1)
+chain_exit=$?
+set -e
+[ "$chain_exit" -eq 0 ] || { echo "FAIL: a long chain of relative cds returned $chain_exit (142 is the 10s alarm): $chain_output" >&2; exit 1; }
+# A cd after a subshell's cd may still start from the outer destination.
+expect_guard 2 "Bash: cd after a subshell's cd, then a relative write" \
+  "$(other_payload "cd $fr/sub && (cd x) && cd .. && printf x > CLAUDE.md" "$seed_repo")"
+# Parentheses in an argument do not hide the target of cp or sed -i.
+expect_guard 2 "Bash: sed -i with a regex group" \
+  "$(bash_payload "sed -i -E 's/(a)/b/' CLAUDE.md")"
+expect_guard 2 "Bash: cp from a command substitution" \
+  "$(bash_payload "cp \"\$(pwd)/x\" CLAUDE.md")"
+expect_guard 2 "Bash: cp in a subshell with a spaced closing parenthesis" \
+  "$(bash_payload "( cp a CLAUDE.md )")"
+# A cd that opens a command substitution does not move the shell.
+expect_guard 0 "Bash: cd inside a command substitution, then a relative write" \
+  "$(bash_payload 'DIR=$(cd "$(dirname "$0")" && pwd); echo x > notes.md')"
+# Ten package builds in subshells are judged well inside the hook timeout.
+sib=
+for n in 1 2 3 4 5 6 7 8 9 10; do sib="$sib (cd pkg$n && npm ci > i.log 2> ie.log && npm test > out.log 2> err.log);"; done
+set +e
+sib_output=$(bash_payload "$sib" \
+  | (cd "$fr" && perl -e 'alarm 10; exec @ARGV' "$fr/.agents/hooks/guard-protected-paths.sh") 2>&1)
+sib_exit=$?
+set -e
+[ "$sib_exit" -eq 0 ] || { echo "FAIL: ten subshell builds returned $sib_exit (142 is the 10s alarm): $sib_output" >&2; exit 1; }
+# The eleventh sibling crosses the cap, which docs/safety.md states; a
+# relative target is then refused rather than judged slowly.
+expect_guard 2 "Bash: eleven subshell builds cross the cd cap" \
+  "$(bash_payload "$sib (cd pkg11 && npm test > out.log);")"
+case "$guard_output" in *'more cd destinations than the guard follows'*) ;; *) echo "FAIL: cap refusal did not say why: $guard_output" >&2; exit 1 ;; esac
+# A destination that is not literal leaves a relative target unjudgeable.
+expect_guard 2 "Bash: a relative write after cd to a variable" \
+  "$(other_payload 'cd "$X" && printf x > notes.md' "$seed_repo")"
+case "$guard_output" in *'cannot be read literally'*) ;; *) echo "FAIL: non-literal cd refusal did not say why: $guard_output" >&2; exit 1 ;; esac
+expect_guard 2 "Bash: a relative write after cd -" \
+  "$(other_payload "cd - && printf x > notes.md" "$seed_repo")"
+expect_guard 0 "Bash: cd to a variable, then no write" \
+  "$(other_payload 'cd "$X" && git status' "$seed_repo")"
+rmdir "$fr/sub"
 # append-only: an existing file is refused, a new one is allowed, and a skipped
 # (new-file) append-only entry must not hide a later entry that matches it.
 mkdir -p "$fr/docs/snap"

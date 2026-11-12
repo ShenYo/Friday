@@ -23,13 +23,16 @@
 #   which is most of them, but "carelessness always uses the plain forms" is
 #   not true. The list itself is the policy; the hook cannot see every write
 #   that breaks it. The tool-level matchers for Write and Edit have no such
-#   gap, because they receive the resolved path.
+#   gap, because they receive the resolved path. A `cd` or `pushd` in the
+#   command is followed when its destination is literal.
 #
 #   False alarms. The Bash scan reads the command as text, so a protected path
 #   written after a `>` inside a heredoc or a quoted string looks like a
-#   redirection. Refusing a write that was never going to happen is the
-#   safe direction to be wrong in, and the message names the pattern that
-#   matched, so the way out is obvious.
+#   redirection. Likewise, when the command anywhere contains a `cd` whose
+#   destination cannot be read (`cd "$X"`, `cd -`), even in a heredoc body or
+#   after the write, every relative write target is refused. Refusing a write
+#   that was never going to happen is the safe direction to be wrong in, and
+#   the message says what matched, so the way out is obvious.
 set -euo pipefail
 
 block() {
@@ -55,6 +58,8 @@ config="$repo_root/.agents/protected-paths.conf"
 # --- collect the paths this call would write ---------------------------------
 
 targets=()
+cd_dests=()
+cd_unknown=
 
 case "$tool_name" in
   Write | Edit | MultiEdit | NotebookEdit)
@@ -128,17 +133,85 @@ case "$tool_name" in
     # `set -e` with pipefail that would abort this subshell before the later
     # extractions ran — so a command using only `tee` was never inspected at
     # all, because the redirection grep above it found nothing first.
+    #
+    # Parentheses are not clause breaks for the last-argument forms: a
+    # command substitution or a sed group would cut the clause before its
+    # target. A subshell's closing parenthesis, glued to the last field or
+    # standing alone after it, is dropped instead. (No comment inside the
+    # process substitution below: bash 3.2 misparses one that holds an
+    # unbalanced parenthesis.)
     done < <(
       {
         printf '%s\n' "$command" \
-          | grep -oE ">>?[[:space:]]*(\"[^\"]*\"|'[^']*'|[^[:space:];|&<>]+)" \
+          | grep -oE ">>?[[:space:]]*(\"[^\"]*\"|'[^']*'|[^[:space:];|&<>()]+)" \
           | sed -E 's/^>>?[[:space:]]*//' || true
         printf '%s\n' "$command" \
           | tr ';|&' '\n' \
-          | grep -E '(^|[[:space:]])(tee|cp|mv|install|sed[[:space:]]+-i)([[:space:]]|$)' \
+          | grep -E '(^|[[:space:](])(tee|cp|mv|install|sed[[:space:]]+-i)([[:space:]]|$)' \
           | sed -E 's/[[:space:]]*$//' \
-          | awk '{print $NF}' || true
+          | awk '{ n = NF; while (n > 1 && $n ~ /^\)+$/) n--; f = $n; if (f !~ /\(/) sub(/\)+$/, "", f); print f }' || true
       } | sed -E "s/^[\"'](.*)[\"']$/\\1/"
+    )
+    # A `cd` or `pushd` in the command moves the shell, so a relative target
+    # after it does not land under the hook's cwd. Collect each literal
+    # destination; every relative target is then judged from the hook's cwd
+    # and from each of them (how each is resolved is set out where the list
+    # is built). Judging from too many places can only add refusals. A
+    # destination that cannot be read literally ($VAR, `cd -`, a glob)
+    # anywhere in the command leaves every relative target unjudgeable, so it
+    # is refused. A cd that opens a command substitution, as in
+    # DIR=$(cd "$(dirname "$0")" && pwd), cannot move the outer shell and is
+    # skipped; a write inside that same substitution is missed.
+    cd_word='^[[:space:]]*("[^"]*"|'\''[^'\'']*'\''|[^[:space:]]+)'
+    while IFS= read -r clause; do
+      verb=${clause%%@*}
+      rest=${clause#*@}
+      word=
+      while [[ $rest =~ $cd_word ]]; do
+        rest=${rest:${#BASH_REMATCH[0]}}
+        case "${BASH_REMATCH[1]}" in
+          -[LPe@] | -[LPe@][LPe@] | --) ;;
+          # A quoted part that runs on into more text ('a b'/c) is one word
+          # the pattern above cannot read whole; keep all of it so it is
+          # treated as unreadable below rather than cut at the quote.
+          *) word=${BASH_REMATCH[1]}${rest%%[[:space:]]*}; break ;;
+        esac
+      done
+      # A redirection glued to the destination (cd X>/dev/null) is not part
+      # of it.
+      case "$word" in
+        \"*\"[\<\>]*) word=${word%%\"[<>]*}\" ;;
+        \'*\'[\<\>]*) word=${word%%\'[<>]*}\' ;;
+        \"* | \'*) ;;
+        *) word=${word%%[<>]*} ;;
+      esac
+      dest=
+      case "$word" in
+        '') [ "$verb" = cd ] && dest=${HOME-} ;; # a bare pushd swaps the stack
+        \'*\')
+          dest=${word:1:${#word}-2}
+          case "$dest" in *\'*) dest= ;; esac
+          ;;
+        \"*\")
+          dest=${word:1:${#word}-2}
+          case "$dest" in *'$'* | *'`'* | *\\* | *\"*) dest= ;; esac
+          ;;
+        *'$'* | *'`'* | *\\* | *\"* | *\'* | *'*'* | *'?'* | *'['* | -* | +*) ;;
+        '~') dest=${HOME-} ;;
+        '~/'*) [ -n "${HOME-}" ] && dest=$HOME/${word#'~/'} ;;
+        '~'*) ;;
+        *) dest=$word ;;
+      esac
+      if [ -n "$dest" ]; then
+        cd_dests+=("$dest")
+      else
+        cd_unknown="the command moves with '$verb${word:+ $word}', whose destination cannot be read literally"
+      fi
+    done < <(
+      printf '%s\n' "$command" \
+        | sed -E 's/\$\(/$(@subst /g' \
+        | tr ';|&(){}' '\n' \
+        | sed -nE 's/^[[:space:]]*((then|do|else|elif|if|while|until|time|!)[[:space:]]+)*((builtin|command)[[:space:]]+)?(cd|pushd)([[:space:]]+(.*))?$/\5@\7/p' || true
     )
     ;;
   *)
@@ -175,6 +248,10 @@ event_cwd=$(cd -P "$event_cwd" 2>/dev/null && pwd -P) \
 # checkout remain comparable to repo_root. A final symlink to a non-directory
 # is refused: resolving it portably would require a readlink/realpath policy,
 # and allowing an unnormalizable write target would be unsafe.
+#
+# The result goes to the global `normalized`, not to stdout: a relative target
+# is normalized once per cd destination, and a command substitution per call
+# would fork that many subshells.
 normalize_target() {
   local target=$1 base=$2 path component next
 
@@ -217,17 +294,18 @@ normalize_target() {
     [ -n "$path" ] || break
   done
 
-  printf '%s\n' "$base"
+  normalized=$base
 }
 
-# Resolve the project that owns a path by walking up to the nearest .git.
-# Pure shell on purpose: `git -C` needs an existing directory, and a write
-# target's parent may not exist yet.
+# Resolve the project that owns a path by walking up to the nearest .git,
+# into the global `owner`. Pure shell on purpose: `git -C` needs an existing
+# directory, and a write target's parent may not exist yet. No fork per level,
+# for the same reason as normalize_target.
 owning_root() {
   local dir=$1
   while [ -n "$dir" ] && [ "$dir" != / ] && [ "$dir" != . ]; do
-    [ -e "$dir/.git" ] && { printf '%s\n' "$dir"; return 0; }
-    dir=$(dirname "$dir")
+    [ -e "$dir/.git" ] && { owner=$dir; return 0; }
+    dir=${dir%/*}
   done
   return 1
 }
@@ -239,17 +317,20 @@ owning_root() {
 # a target in another repository is judged by that repository's list. The
 # guard's own `repo_root` only picks the wording of the message.
 #
-# Everything here is `local`. Resolving a foreign list into the *global*
-# `patterns` array would leave every later target in the same payload judged
-# against the wrong list: a multi-target call whose first target lay in another
+# Everything here is `local`, except a cache of the last list read, which is
+# keyed by its root. Resolving a foreign list into a *global* array without
+# that key would leave every later target in the same payload judged against
+# the wrong list: a multi-target call whose first target lay in another
 # project would make protected files writable with exit 0 and no message.
-# Nothing in this function may outlive one call.
+cached_root=
+cached_pats=()
 judge_target() {
   local absolute=$1
   local root rel conf line pattern append_only label whose
   local -a pats=()
 
-  root=$(owning_root "$(dirname "$absolute")") || return 0
+  owning_root "${absolute%/*}" || return 0
+  root=$owner
   if [ "$root" = "$repo_root" ]; then
     label=.agents/protected-paths.conf
     # Keep this wording stable: it is the refusal projects document.
@@ -270,12 +351,18 @@ judge_target() {
 
   if [ "$absolute" = "$root" ]; then rel=.; else rel=${absolute#"$root"/}; fi
 
-  while IFS= read -r line || [ -n "$line" ]; do
-    line=${line%%#*}
-    line=$(printf '%s' "$line" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
-    [ -n "$line" ] && pats+=("$line")
-  done < "$conf"
-  [ ${#pats[@]} -eq 0 ] && return 0
+  if [ "$root" != "$cached_root" ]; then
+    cached_pats=()
+    while IFS= read -r line || [ -n "$line" ]; do
+      line=${line%%#*}
+      line=${line#"${line%%[![:space:]]*}"}
+      line=${line%"${line##*[![:space:]]}"}
+      [ -z "$line" ] || cached_pats+=("$line")
+    done < "$conf"
+    cached_root=$root
+  fi
+  [ ${#cached_pats[@]} -eq 0 ] && return 0
+  pats=("${cached_pats[@]}")
 
   for pattern in "${pats[@]}"; do
     # An `append-only` prefix means the path may be created but never changed:
@@ -300,12 +387,68 @@ judge_target() {
   return 0
 }
 
-for target in "${targets[@]}"; do
-  absolute=$(normalize_target "$target" "$event_cwd") \
-    || block "unable to normalize write target '$target'"
+# The places a relative Bash target may be relative to: the hook's cwd, and
+# every literal `cd` destination. Each destination has a primary place: where
+# it lands if the cds before it all ran in sequence. A relative destination is
+# resolved from the previous primary, from the hook's cwd and from every
+# earlier primary, since a subshell may have undone any of the cds between.
+# Resolving it from every known place instead would double the list with each
+# cd. Duplicates are dropped, and past a cap a relative target is refused
+# rather than judged slowly enough to hit the hook timeout.
+max_bases=64
+bases=("$event_cwd")
+prims=("$event_cwd")
+prev=$event_cwd
+for dest in ${cd_dests[@]+"${cd_dests[@]}"}; do
+  [ -z "$cd_unknown" ] || break
+  if [[ $dest == /* ]]; then
+    from=(/)
+  else
+    from=("$prev" "${prims[@]}")
+  fi
+  first=1
+  for base in "${from[@]}"; do
+    normalize_target "$dest" "$base" \
+      || { cd_unknown="the command moves with 'cd $dest', which cannot be resolved"; break; }
+    resolved=$normalized
+    if [ "$first" -eq 1 ]; then
+      prev=$resolved
+      known=0
+      for b in "${prims[@]}"; do [ "$b" != "$resolved" ] || known=1; done
+      [ "$known" -eq 1 ] || prims+=("$resolved")
+    fi
+    first=0
+    known=0
+    for b in "${bases[@]}"; do [ "$b" != "$resolved" ] || known=1; done
+    [ "$known" -eq 0 ] || continue
+    [ ${#bases[@]} -lt "$max_bases" ] \
+      || { cd_unknown="the command has more cd destinations than the guard follows"; break; }
+    bases+=("$resolved")
+  done
+done
 
-  # Compare repo-relative inside the owning project, so absolute, repo-root
-  # and nested-session targets are judged identically — and a target in
-  # another project is judged against that project's list rather than skipped.
-  judge_target "$absolute"
+# Each absolute path is judged once: many relative targets from many bases
+# often land on the same few paths.
+judged=$'\n'
+for target in "${targets[@]}"; do
+  if [[ $target == /* ]]; then
+    from=("$event_cwd")
+  else
+    [ -z "$cd_unknown" ] \
+      || block "'$target' is relative, and $cd_unknown, so where it lands is unknown. Write it with an absolute path, or cd to a literal path."
+    from=("${bases[@]}")
+  fi
+  for base in "${from[@]}"; do
+    normalize_target "$target" "$base" \
+      || block "unable to normalize write target '$target'"
+    absolute=$normalized
+    case $judged in *$'\n'"$absolute"$'\n'*) continue ;; esac
+    judged=$judged$absolute$'\n'
+
+    # Compare repo-relative inside the owning project, so absolute, repo-root
+    # and nested-session targets are judged identically — and a target in
+    # another project is judged against that project's list rather than
+    # skipped.
+    judge_target "$absolute"
+  done
 done

@@ -164,6 +164,15 @@ rule that depends on it needs a dependency decision first. Test the reviewed
 kit in a disposable project before adoption; this is not permission to refresh
 an existing consumer or change personal settings.
 
+**The producer slug is set in one place.** `bin/friday-lock` takes it from
+`PRODUCER`, whose default is `ShenYo/Friday` and which `FRIDAY_PRODUCER`
+overrides for one command; a fork changes that default once. It writes the
+slug into every consumer lock and requires it when reading one; a lock naming
+another producer is refused by a message that names both. The hook messages and the
+links in `agent-rules.md` point at upstream `ShenYo/Friday` on purpose: they
+are managed-core bytes, so following the slug would change files every
+consumer carries and need a release that each one syncs.
+
 **The payload owns no project references.** Worked examples use `#123` rather
 than real issue numbers, and no file names another repository's documents,
 because that coupling makes a library unportable

@@ -14,6 +14,9 @@ mkdir -p "$base"
 root=$(mktemp -d "$base/friday-lock-test.XXXXXX")
 echo "sandboxes: $root"
 
+# A FRIDAY_PRODUCER inherited from the shell would decide every case below.
+unset FRIDAY_PRODUCER
+
 fails=0
 total=0
 n=0
@@ -303,6 +306,76 @@ gq -C "$kit" checkout -q --orphan alt
 printf '# a note\n' >> "$kit/bin/managed-core.txt"; commit_kit "orphan: a different list"
 move_tag v1.0.0; gq -C "$kit" checkout -q -f "$orig"
 expect tag-moved "a tag re-pointed to an unrelated commit with a different list"
+
+# --- producer ----------------------------------------------------------------
+
+# A fork records, and recognises, its own slug; a lock naming another producer
+# is refused either way round, by a message that names both. The default is
+# read from the script, so the cases hold in a fork that has changed it.
+fork=Someone/Fork
+default=$(sed -n 's/^PRODUCER=\${FRIDAY_PRODUCER:-\(.*\)}$/\1/p' "${LOCK_UNDER_TEST:-$source_root/bin/friday-lock}")
+producer_check() { # producer ("" for the default)
+  if [ -n "$1" ]; then env "FRIDAY_PRODUCER=$1" bash "$kit/bin/friday-lock" check "$consumer" 2>&1
+  else env -u FRIDAY_PRODUCER bash "$kit/bin/friday-lock" check "$consumer" 2>&1; fi
+}
+expect_other_producer() { # name, producer to check under, producer the lock records
+  local out
+  total=$((total + 1))
+  if out=$(producer_check "$2"); then
+    echo "FAIL $1: check passed: $out"; fails=$((fails + 1))
+  elif printf '%s\n' "$out" | grep -q "records the producer '$3', and this friday-lock is '${2:-$default}'"; then
+    echo "ok   refused: $1"
+  else echo "FAIL $1: wrong refusal: $out"; fails=$((fails + 1)); fi
+}
+expect_in_sync() { # name, producer to check under
+  local out
+  total=$((total + 1))
+  out=$(producer_check "$2")
+  if printf '%s\n' "$out" | grep -q '^status: in sync'; then echo "ok   in sync: $1"
+  else echo "FAIL $1: $out"; fails=$((fails + 1)); fi
+}
+total=$((total + 1))
+if [ -n "$default" ]; then echo "ok   the script names a default producer"
+else echo "FAIL no default producer found in bin/friday-lock"; fails=$((fails + 1)); fi
+
+setup
+FRIDAY_PRODUCER=$fork bash "$kit/bin/friday-lock" write "$consumer" >/dev/null
+equals "$(jq -r .friday.repo "$consumer/.friday-lock.json")" "$fork" "a lock written under FRIDAY_PRODUCER records that slug"
+expect_in_sync "a fork's lock under the same slug" "$fork"
+expect_other_producer "a fork's lock under the default producer" "" "$fork"
+
+# A lock written under the default: no edit, and it reads in sync. An empty
+# FRIDAY_PRODUCER is the default too, not an empty producer.
+setup
+equals "$(jq -r .friday.repo "$consumer/.friday-lock.json")" "$default" "a default lock records the default producer"
+expect_in_sync "a default lock, unedited, under the default" ""
+total=$((total + 1))
+if FRIDAY_PRODUCER= bash "$kit/bin/friday-lock" check "$consumer" 2>&1 | grep -q '^status: in sync'; then
+  echo "ok   in sync: an empty FRIDAY_PRODUCER is the default"
+else echo "FAIL an empty FRIDAY_PRODUCER is not the default"; fails=$((fails + 1)); fi
+expect_other_producer "a default lock under FRIDAY_PRODUCER=$fork" "$fork" "$default"
+
+# A lock that names upstream, read by a tool whose producer is upstream: the
+# existing consumers' case, whatever this checkout's default is.
+setup
+FRIDAY_PRODUCER=ShenYo/Friday bash "$kit/bin/friday-lock" write "$consumer" >/dev/null
+equals "$(jq -r .friday.repo "$consumer/.friday-lock.json")" "ShenYo/Friday" "an upstream lock records ShenYo/Friday"
+expect_in_sync "an upstream lock under the upstream producer" "ShenYo/Friday"
+
+# A file with no producer, or with a name that is not a slug, keeps the older
+# refusal: the name is not echoed back.
+expect_no_record() { # name, lock contents
+  local out
+  setup
+  printf '%s\n' "$2" > "$consumer/.friday-lock.json"
+  total=$((total + 1))
+  if out=$(producer_check ""); then echo "FAIL $1: check passed"; fails=$((fails + 1))
+  elif printf '%s\n' "$out" | grep -q 'records the producer'; then echo "FAIL $1: the name was echoed: $out"; fails=$((fails + 1))
+  elif printf '%s\n' "$out" | grep -q 'not a Friday record'; then echo "ok   refused: $1"
+  else echo "FAIL $1: wrong refusal: $out"; fails=$((fails + 1)); fi
+}
+expect_no_record "a file with no producer is not a Friday record" '{"managed_core":{}}'
+expect_no_record "a producer that is not a slug is not echoed" "{\"friday\":{\"repo\":\"x'\$(id)'/y\",\"commit\":\"0\"},\"managed_core\":{}}"
 
 echo
 if [ "$fails" -gt 0 ]; then echo "$fails of $total failed"; exit 1; fi

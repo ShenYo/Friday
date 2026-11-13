@@ -37,6 +37,10 @@ set -uo pipefail
 # FRIDAY_KIT_ROOT lets friday-propagate run a copy of this script taken from
 # its pinned commit, while still reading this checkout's repository.
 KIT_ROOT=${FRIDAY_KIT_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
+# The producer slug recorded in, and required of, every consumer lock. A fork
+# changes this default once. FRIDAY_PRODUCER overrides it for one run: the
+# tests use it, and so does reading a lock written before a fork was renamed.
+PRODUCER=${FRIDAY_PRODUCER:-ShenYo/Friday}
 PAYLOAD="$KIT_ROOT/payload"
 LIST="$KIT_ROOT/bin/managed-core.txt"
 CONSUMER_LOCK=.friday-lock.json
@@ -209,8 +213,8 @@ write_lock() {
   [ -d "$target" ] || die "no such target: $target"
   target=$(cd "$target" && pwd -P)
 
-  json=$(jq -n --arg commit "$(friday_commit)" --arg tag "$(release_for)" --arg date "$(date -u +%Y-%m-%d)" \
-    '{friday:{repo:"ShenYo/Friday",commit:$commit,tag:(if $tag == "" then null else $tag end),synced:$date},managed_core:{}}')
+  json=$(jq -n --arg commit "$(friday_commit)" --arg tag "$(release_for)" --arg date "$(date -u +%Y-%m-%d)" --arg repo "$PRODUCER" \
+    '{friday:{repo:$repo,commit:$commit,tag:(if $tag == "" then null else $tag end),synced:$date},managed_core:{}}')
 
   # FRIDAY_LOCK_FROM_INDEX=1 records what the target's index holds -- the
   # content its next commit will carry -- instead of the working tree, so an
@@ -241,7 +245,7 @@ write_lock() {
 
 # A Friday record is identified by its contents, never by its filename.
 is_friday_record() {
-  jq -e '(.friday.repo? // "") == "ShenYo/Friday" and (.friday.commit? | type) == "string"' \
+  jq -e --arg repo "$PRODUCER" '(.friday.repo? // "") == $repo and (.friday.commit? | type) == "string"' \
     "$1" >/dev/null 2>&1
 }
 
@@ -257,6 +261,13 @@ check_lock() {
   # truncated one -- used to reach the end of this function and report
   # "in sync" over zero files, which is the worst possible answer: a green
   # light from a check that examined nothing.
+  local recorded
+  recorded=$(jq -r '.friday.repo? // empty | strings' "$lock" 2>/dev/null)
+  # The lock is the consumer's file, so the name is echoed only when it has
+  # the shape of a slug; anything else is not a record.
+  if [[ $recorded =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]] && [ "$recorded" != "$PRODUCER" ]; then
+    die "$(basename "$lock") records the producer '$recorded', and this friday-lock is '$PRODUCER'. Check it with the producer's own friday-lock, or with FRIDAY_PRODUCER set to that producer; rewriting it here would take the files as they are now for the baseline."
+  fi
   is_friday_record "$lock" \
     || die "$(basename "$lock") is not a Friday record (no .friday.repo/.friday.commit) -- run 'friday-lock write $target' or remove it."
   [ "$(jq -r '.managed_core // {} | length' "$lock")" -gt 0 ] \

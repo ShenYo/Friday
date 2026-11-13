@@ -1,0 +1,3 @@
+# Only the owner's approval counts toward the pull request rule on main:
+# the ruleset requires a code owner's review, and this file names one owner.
+* @ShenYo

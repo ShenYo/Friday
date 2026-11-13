@@ -34,12 +34,12 @@ describes the present.
 | Personal skills or preferences | Keep personal scope personal | Keep them in your personal layer; do not promote them into Friday. |
 | Project-specific policy or checks | Preserve consumer ownership | Add a consumer overlay after reviewing the shared baseline. |
 
-## Status (2026-11-11)
+## Status (2026-11-13)
 
-> **中文摘要**：managed core 現為十七檔，最新 release 是 v1.2.0（2026-11-11），最近加入
-> protected-paths guard 與 `github-pr-verify`。
-> pet_care 與 Finance 兩個 consumer 記錄的是 v1.1.4，
-> 要手動 reconcile 後才跟上 v1.2.0。待辦：指定 backup maintainer、
+> **中文摘要**：managed core 現為十七檔，最新 release 是 v1.3.0（2026-11-13），最近的
+> protected-paths guard 會跟著 Bash 指令裡的 `cd`／`pushd`。
+> pet_care 與 Finance 兩個 consumer 記錄的是 v1.2.0；
+> v1.3.0 沒有改任何 seed，只需收 `friday-propagate` 開的 sync PR。待辦：指定 backup maintainer、
 > 真正的新機器 replay、第三個 consumer、external-runtime 收尾，以及 managed-core 更新 bot。
 
 In place:
@@ -49,12 +49,13 @@ In place:
   `.agents/hooks/guard-protected-paths.sh` the 16th, and `github-pr-verify` the 17th.
 - Released as `v1.0.0` and `v1.0.1` (2026-10-25), then `v1.1.0` and `v1.1.1`
   (2026-10-26), `v1.1.2` (2026-11-03), `v1.1.3` (2026-11-04), `v1.1.4`
-  (2026-11-10) and `v1.2.0` (2026-11-11): `v1.1.0` brought `.agents/bin/setup.sh`, the `CLAUDE.md` seed and
+  (2026-11-10), `v1.2.0` (2026-11-11) and `v1.3.0` (2026-11-13): `v1.1.0` brought `.agents/bin/setup.sh`, the `CLAUDE.md` seed and
   release-based install (`install.sh` installs a release, not the checkout). Consumers receive the managed core only as a release
   (see [Releases](./docs/releases.md#releases)). `v1.2.0` brought the
-  protected-paths guard and `github-pr-verify` into the managed core.
-- Both consumers, `pet_care` and Finance, record `v1.1.4`. Each must reconcile
-  `v1.2.0` by hand (see the [v1.2.0 note](./docs/changelog/v1.md#v120-2026-11-11)).
+  protected-paths guard and `github-pr-verify` into the managed core. `v1.3.0` made that guard follow `cd` and `pushd` in a Bash command.
+- Both consumers, `pet_care` and Finance, record `v1.2.0`. `v1.3.0` changed no seed, so each
+  only takes the sync PR that `friday-propagate` opens
+  (see the [v1.3.0 note](./docs/changelog/v1.md#v130-2026-11-13)).
 - CI is required on `main`: the test suites on ubuntu and macos, shellcheck, and
   gitleaks ([`ci.yml`](./.github/workflows/ci.yml)).
 

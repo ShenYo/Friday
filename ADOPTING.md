@@ -419,9 +419,17 @@ launch command for either.
 ## Cutting releases from a fork
 
 A fork's consumer locks must name the fork. The producer slug is set once, as
-the default of `PRODUCER` near the top of `bin/friday-lock`; the
-`FRIDAY_PRODUCER` environment variable overrides it. A lock that names another
-producer is not recognised.
+the default of `PRODUCER` near the top of `bin/friday-lock`. A lock that names
+another producer is refused, with a message naming both.
+
+Change the default before the fork's first consumer is installed. A consumer
+whose lock already names another producer, upstream included, is refused from
+then on. To move one over, first check it against the producer it records
+(`FRIDAY_PRODUCER=<that producer> bin/friday-lock check <consumer>`), and only
+when that reads `in sync` run `bin/friday-lock write <consumer>`: writing takes
+the files as they are for the new baseline, so drift written over is no longer
+reported. `FRIDAY_PRODUCER` overrides the default for one command; do not
+export it from a shell profile.
 
 The hook messages in `payload/.agents/githooks/` and the links in
 `payload/.agents/docs/agent-rules.md` point at upstream `ShenYo/Friday` on

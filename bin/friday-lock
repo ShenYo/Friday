@@ -38,7 +38,8 @@ set -uo pipefail
 # its pinned commit, while still reading this checkout's repository.
 KIT_ROOT=${FRIDAY_KIT_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
 # The producer slug recorded in, and required of, every consumer lock. A fork
-# changes this default once; FRIDAY_PRODUCER overrides it (the tests use it).
+# changes this default once. FRIDAY_PRODUCER overrides it for one run: the
+# tests use it, and so does reading a lock written before a fork was renamed.
 PRODUCER=${FRIDAY_PRODUCER:-ShenYo/Friday}
 PAYLOAD="$KIT_ROOT/payload"
 LIST="$KIT_ROOT/bin/managed-core.txt"
@@ -260,6 +261,11 @@ check_lock() {
   # truncated one -- used to reach the end of this function and report
   # "in sync" over zero files, which is the worst possible answer: a green
   # light from a check that examined nothing.
+  local recorded
+  recorded=$(jq -r '.friday.repo? // empty | strings' "$lock" 2>/dev/null)
+  if [ -n "$recorded" ] && [ "$recorded" != "$PRODUCER" ]; then
+    die "$(basename "$lock") records the producer '$recorded', and this friday-lock is '$PRODUCER'. Check it with the producer's own friday-lock, or with FRIDAY_PRODUCER='$recorded'; rewriting it here would take the files as they are now for the baseline."
+  fi
   is_friday_record "$lock" \
     || die "$(basename "$lock") is not a Friday record (no .friday.repo/.friday.commit) -- run 'friday-lock write $target' or remove it."
   [ "$(jq -r '.managed_core // {} | length' "$lock")" -gt 0 ] \

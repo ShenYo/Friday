@@ -352,8 +352,15 @@ runtime 自己要補的證據工作。Gemini CLI 與 `agy` 在這裡仍是 pendi
 ## 從 fork 發行 release
 
 fork 的 consumer lock 必須記載 fork 自己的名稱。producer slug 只設定一次，就是
-`bin/friday-lock` 開頭附近 `PRODUCER` 的預設值；環境變數 `FRIDAY_PRODUCER`
-可以覆寫它。記載其他 producer 的 lock 不會被認得。
+`bin/friday-lock` 開頭附近 `PRODUCER` 的預設值。記載其他 producer 的 lock
+會被拒絕，訊息會同時寫出兩個名稱。
+
+請在 fork 的第一個 consumer 安裝之前就改好預設值。lock 已經記載其他 producer
+（包含 upstream）的 consumer，從那之後都會被拒絕。要把它轉過來，先對照它記載的
+producer 檢查一次（`FRIDAY_PRODUCER=<那個 producer> bin/friday-lock check <consumer>`），
+結果是 `in sync` 才執行 `bin/friday-lock write <consumer>`：write 會把檔案目前的
+內容當成新的基準，被蓋過去的 drift 之後不會再被回報。`FRIDAY_PRODUCER` 只覆寫
+單一指令的預設值；不要在 shell profile 裡 export 它。
 
 `payload/.agents/githooks/` 裡的 hook 訊息與 `payload/.agents/docs/agent-rules.md`
 裡的連結，是刻意指向 upstream `ShenYo/Friday` 的。它們屬於 managed core 的

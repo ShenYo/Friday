@@ -361,8 +361,9 @@ producer 檢查一次（`FRIDAY_PRODUCER=<那個 producer> bin/friday-lock check
 結果是 `in sync` 或 `behind` 時，執行 `bin/friday-lock write <consumer>`；`behind`
 只代表 fork 的 payload 已經往前走，下一次 propagation 會帶過去。結果是 `drifted`
 時，先把 drift 的檔案處理好：write 會把檔案目前的內容當成新的基準，被蓋過去的
-drift 之後不會再被回報。`FRIDAY_PRODUCER` 只覆寫
-單一指令的預設值；不要在 shell profile 裡 export 它。
+drift 之後不會再被回報。其他任何 status，先照該 status 自己的訊息處理，再檢查
+一次才 write。`FRIDAY_PRODUCER` 只覆寫單一指令的預設值；不要在 shell profile 裡
+export 它。
 
 `payload/.agents/githooks/` 裡的 hook 訊息與 `payload/.agents/docs/agent-rules.md`
 裡的連結，是刻意指向 upstream `ShenYo/Friday` 的。它們屬於 managed core 的

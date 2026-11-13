@@ -430,8 +430,9 @@ that reads `in sync` or `behind`, run `bin/friday-lock write <consumer>`;
 `behind` only means the fork's payload has moved on, and the next propagation
 carries that. When it reads `drifted`, settle the drifted files first: writing
 takes the files as they are for the new baseline, so drift written over is no
-longer reported. `FRIDAY_PRODUCER` overrides the default for one command; do not
-export it from a shell profile.
+longer reported. For any other status, do what that status's own message
+says, then check again before writing. `FRIDAY_PRODUCER` overrides the default
+for one command; do not export it from a shell profile.
 
 The hook messages in `payload/.agents/githooks/` and the links in
 `payload/.agents/docs/agent-rules.md` point at upstream `ShenYo/Friday` on

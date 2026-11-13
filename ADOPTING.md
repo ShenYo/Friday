@@ -416,6 +416,20 @@ runtime-specific evidence work. Gemini CLI and
 `agy` remain pending here, so this guide intentionally provides no speculative
 launch command for either.
 
+## Cutting releases from a fork
+
+A fork's consumer locks must name the fork. The producer slug is set once, as
+the default of `PRODUCER` near the top of `bin/friday-lock`; the
+`FRIDAY_PRODUCER` environment variable overrides it. A lock that names another
+producer is not recognised.
+
+The hook messages in `payload/.agents/githooks/` and the links in
+`payload/.agents/docs/agent-rules.md` point at upstream `ShenYo/Friday` on
+purpose. They are managed-core bytes: making them follow the slug would change
+files every consumer carries, and so need a release that every consumer then
+syncs. The clone command in `install.sh`'s error text names upstream too; it
+is not copied to consumers, so a fork may edit it.
+
 ## What adoption does not give you
 
 Read `payload/.agents/docs/git-guideline/safety-boundary.md` before relying on

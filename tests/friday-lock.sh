@@ -304,6 +304,33 @@ printf '# a note\n' >> "$kit/bin/managed-core.txt"; commit_kit "orphan: a differ
 move_tag v1.0.0; gq -C "$kit" checkout -q -f "$orig"
 expect tag-moved "a tag re-pointed to an unrelated commit with a different list"
 
+# --- producer ----------------------------------------------------------------
+
+# A fork records, and recognises, its own slug; a lock naming another producer
+# is refused either way round.
+fork=Someone/Fork
+setup
+FRIDAY_PRODUCER=$fork bash "$kit/bin/friday-lock" write "$consumer" >/dev/null
+equals "$(jq -r .friday.repo "$consumer/.friday-lock.json")" "$fork" "a lock written under FRIDAY_PRODUCER records that slug"
+total=$((total + 1))
+out=$(FRIDAY_PRODUCER=$fork bash "$kit/bin/friday-lock" check "$consumer" 2>&1)
+if printf '%s\n' "$out" | grep -q '^status: in sync'; then echo "ok   a fork's lock passes check under the same slug"; else echo "FAIL a fork's lock under the same slug: $out"; fails=$((fails + 1)); fi
+expect_refused() { # name, env assignment (may be empty)
+  total=$((total + 1))
+  if out=$(env $2 bash "$kit/bin/friday-lock" check "$consumer" 2>&1); then
+    echo "FAIL $1: check passed: $out"; fails=$((fails + 1))
+  elif printf '%s\n' "$out" | grep -q 'not a Friday record'; then echo "ok   refused: $1"
+  else echo "FAIL $1: wrong refusal: $out"; fails=$((fails + 1)); fi
+}
+expect_refused "a fork's lock under the default producer" ""
+setup
+expect_refused "a default lock under FRIDAY_PRODUCER=$fork" "FRIDAY_PRODUCER=$fork"
+
+# An existing lock naming ShenYo/Friday reads in sync with no edit.
+setup
+equals "$(jq -r .friday.repo "$consumer/.friday-lock.json")" "ShenYo/Friday" "a default lock records ShenYo/Friday"
+expect "in sync" "an existing ShenYo/Friday lock, unedited, under the default"
+
 echo
 if [ "$fails" -gt 0 ]; then echo "$fails of $total failed"; exit 1; fi
 echo "all $total passed"

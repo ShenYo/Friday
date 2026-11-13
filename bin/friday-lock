@@ -37,6 +37,9 @@ set -uo pipefail
 # FRIDAY_KIT_ROOT lets friday-propagate run a copy of this script taken from
 # its pinned commit, while still reading this checkout's repository.
 KIT_ROOT=${FRIDAY_KIT_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
+# The producer slug recorded in, and required of, every consumer lock. A fork
+# changes this default once; FRIDAY_PRODUCER overrides it (the tests use it).
+PRODUCER=${FRIDAY_PRODUCER:-ShenYo/Friday}
 PAYLOAD="$KIT_ROOT/payload"
 LIST="$KIT_ROOT/bin/managed-core.txt"
 CONSUMER_LOCK=.friday-lock.json
@@ -209,8 +212,8 @@ write_lock() {
   [ -d "$target" ] || die "no such target: $target"
   target=$(cd "$target" && pwd -P)
 
-  json=$(jq -n --arg commit "$(friday_commit)" --arg tag "$(release_for)" --arg date "$(date -u +%Y-%m-%d)" \
-    '{friday:{repo:"ShenYo/Friday",commit:$commit,tag:(if $tag == "" then null else $tag end),synced:$date},managed_core:{}}')
+  json=$(jq -n --arg commit "$(friday_commit)" --arg tag "$(release_for)" --arg date "$(date -u +%Y-%m-%d)" --arg repo "$PRODUCER" \
+    '{friday:{repo:$repo,commit:$commit,tag:(if $tag == "" then null else $tag end),synced:$date},managed_core:{}}')
 
   # FRIDAY_LOCK_FROM_INDEX=1 records what the target's index holds -- the
   # content its next commit will carry -- instead of the working tree, so an
@@ -241,7 +244,7 @@ write_lock() {
 
 # A Friday record is identified by its contents, never by its filename.
 is_friday_record() {
-  jq -e '(.friday.repo? // "") == "ShenYo/Friday" and (.friday.commit? | type) == "string"' \
+  jq -e --arg repo "$PRODUCER" '(.friday.repo? // "") == $repo and (.friday.commit? | type) == "string"' \
     "$1" >/dev/null 2>&1
 }
 

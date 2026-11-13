@@ -349,6 +349,18 @@ instruction 文件。原生的 workspace trust、callback 傳遞、優先序，�
 runtime 自己要補的證據工作。Gemini CLI 與 `agy` 在這裡仍是 pending，所以
 本指南刻意不為它們提供任何臆測性的啟動指令。
 
+## 從 fork 發行 release
+
+fork 的 consumer lock 必須記載 fork 自己的名稱。producer slug 只設定一次，就是
+`bin/friday-lock` 開頭附近 `PRODUCER` 的預設值；環境變數 `FRIDAY_PRODUCER`
+可以覆寫它。記載其他 producer 的 lock 不會被認得。
+
+`payload/.agents/githooks/` 裡的 hook 訊息與 `payload/.agents/docs/agent-rules.md`
+裡的連結，是刻意指向 upstream `ShenYo/Friday` 的。它們屬於 managed core 的
+bytes：讓它們跟著 slug 走會改動每個 consumer 都帶著的檔案，因此需要發一次
+release，而且每個 consumer 都要同步。`install.sh` 錯誤文字裡的 clone 指令也寫
+upstream；它不會被複製到 consumer，所以 fork 可以自行修改。
+
 ## 採用不會給你什麼
 
 在依賴以上任何東西之前，請讀

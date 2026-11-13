@@ -357,9 +357,11 @@ fork 的 consumer lock 必須記載 fork 自己的名稱。producer slug 只設�
 
 請在 fork 的第一個 consumer 安裝之前就改好預設值。lock 已經記載其他 producer
 （包含 upstream）的 consumer，從那之後都會被拒絕。要把它轉過來，先對照它記載的
-producer 檢查一次（`FRIDAY_PRODUCER=<那個 producer> bin/friday-lock check <consumer>`），
-結果是 `in sync` 才執行 `bin/friday-lock write <consumer>`：write 會把檔案目前的
-內容當成新的基準，被蓋過去的 drift 之後不會再被回報。`FRIDAY_PRODUCER` 只覆寫
+producer 檢查一次（`FRIDAY_PRODUCER=<那個 producer> bin/friday-lock check <consumer>`）。
+結果是 `in sync` 或 `behind` 時，執行 `bin/friday-lock write <consumer>`；`behind`
+只代表 fork 的 payload 已經往前走，下一次 propagation 會帶過去。結果是 `drifted`
+時，先把 drift 的檔案處理好：write 會把檔案目前的內容當成新的基準，被蓋過去的
+drift 之後不會再被回報。`FRIDAY_PRODUCER` 只覆寫
 單一指令的預設值；不要在 shell profile 裡 export 它。
 
 `payload/.agents/githooks/` 裡的 hook 訊息與 `payload/.agents/docs/agent-rules.md`

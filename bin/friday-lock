@@ -263,8 +263,10 @@ check_lock() {
   # light from a check that examined nothing.
   local recorded
   recorded=$(jq -r '.friday.repo? // empty | strings' "$lock" 2>/dev/null)
-  if [ -n "$recorded" ] && [ "$recorded" != "$PRODUCER" ]; then
-    die "$(basename "$lock") records the producer '$recorded', and this friday-lock is '$PRODUCER'. Check it with the producer's own friday-lock, or with FRIDAY_PRODUCER='$recorded'; rewriting it here would take the files as they are now for the baseline."
+  # The lock is the consumer's file, so the name is echoed only when it has
+  # the shape of a slug; anything else is not a record.
+  if [[ $recorded =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]] && [ "$recorded" != "$PRODUCER" ]; then
+    die "$(basename "$lock") records the producer '$recorded', and this friday-lock is '$PRODUCER'. Check it with the producer's own friday-lock, or with FRIDAY_PRODUCER set to that producer; rewriting it here would take the files as they are now for the baseline."
   fi
   is_friday_record "$lock" \
     || die "$(basename "$lock") is not a Friday record (no .friday.repo/.friday.commit) -- run 'friday-lock write $target' or remove it."

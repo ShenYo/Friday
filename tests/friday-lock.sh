@@ -313,7 +313,7 @@ expect tag-moved "a tag re-pointed to an unrelated commit with a different list"
 # is refused either way round, by a message that names both. The default is
 # read from the script, so the cases hold in a fork that has changed it.
 fork=Someone/Fork
-default=$(sed -n 's/^PRODUCER=\${FRIDAY_PRODUCER:-\(.*\)}$/\1/p' "$source_root/bin/friday-lock")
+default=$(sed -n 's/^PRODUCER=\${FRIDAY_PRODUCER:-\(.*\)}$/\1/p' "${LOCK_UNDER_TEST:-$source_root/bin/friday-lock}")
 producer_check() { # producer ("" for the default)
   if [ -n "$1" ]; then env "FRIDAY_PRODUCER=$1" bash "$kit/bin/friday-lock" check "$consumer" 2>&1
   else env -u FRIDAY_PRODUCER bash "$kit/bin/friday-lock" check "$consumer" 2>&1; fi
@@ -362,13 +362,20 @@ FRIDAY_PRODUCER=ShenYo/Friday bash "$kit/bin/friday-lock" write "$consumer" >/de
 equals "$(jq -r .friday.repo "$consumer/.friday-lock.json")" "ShenYo/Friday" "an upstream lock records ShenYo/Friday"
 expect_in_sync "an upstream lock under the upstream producer" "ShenYo/Friday"
 
-# A file with no producer at all keeps the older refusal.
-setup
-printf '{"managed_core":{}}\n' > "$consumer/.friday-lock.json"
-total=$((total + 1))
-if out=$(producer_check ""); then echo "FAIL a file with no producer: check passed"; fails=$((fails + 1))
-elif printf '%s\n' "$out" | grep -q 'not a Friday record'; then echo "ok   refused: a file with no producer is not a Friday record"
-else echo "FAIL a file with no producer: wrong refusal: $out"; fails=$((fails + 1)); fi
+# A file with no producer, or with a name that is not a slug, keeps the older
+# refusal: the name is not echoed back.
+expect_no_record() { # name, lock contents
+  local out
+  setup
+  printf '%s\n' "$2" > "$consumer/.friday-lock.json"
+  total=$((total + 1))
+  if out=$(producer_check ""); then echo "FAIL $1: check passed"; fails=$((fails + 1))
+  elif printf '%s\n' "$out" | grep -q 'records the producer'; then echo "FAIL $1: the name was echoed: $out"; fails=$((fails + 1))
+  elif printf '%s\n' "$out" | grep -q 'not a Friday record'; then echo "ok   refused: $1"
+  else echo "FAIL $1: wrong refusal: $out"; fails=$((fails + 1)); fi
+}
+expect_no_record "a file with no producer is not a Friday record" '{"managed_core":{}}'
+expect_no_record "a producer that is not a slug is not echoed" "{\"friday\":{\"repo\":\"x'\$(id)'/y\",\"commit\":\"0\"},\"managed_core\":{}}"
 
 echo
 if [ "$fails" -gt 0 ]; then echo "$fails of $total failed"; exit 1; fi

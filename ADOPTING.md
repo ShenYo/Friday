@@ -425,10 +425,12 @@ another producer is refused, with a message naming both.
 Change the default before the fork's first consumer is installed. A consumer
 whose lock already names another producer, upstream included, is refused from
 then on. To move one over, first check it against the producer it records
-(`FRIDAY_PRODUCER=<that producer> bin/friday-lock check <consumer>`), and only
-when that reads `in sync` run `bin/friday-lock write <consumer>`: writing takes
-the files as they are for the new baseline, so drift written over is no longer
-reported. `FRIDAY_PRODUCER` overrides the default for one command; do not
+(`FRIDAY_PRODUCER=<that producer> bin/friday-lock check <consumer>`). When
+that reads `in sync` or `behind`, run `bin/friday-lock write <consumer>`;
+`behind` only means the fork's payload has moved on, and the next propagation
+carries that. When it reads `drifted`, settle the drifted files first: writing
+takes the files as they are for the new baseline, so drift written over is no
+longer reported. `FRIDAY_PRODUCER` overrides the default for one command; do not
 export it from a shell profile.
 
 The hook messages in `payload/.agents/githooks/` and the links in

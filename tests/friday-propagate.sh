@@ -439,6 +439,64 @@ run --tag; rc2=$?
 check "--tag with no value dies with usage" \
   bash -c "[ $rc1 = 2 ] && [ $rc2 = 2 ] && printf '%s' '$l1' | grep -q 'usage:' && grep -q 'usage:' '$case_dir/run.log' && [ -z \"\$(git -C '$case_dir/c1' branch --list 'chore/*')\" ]"
 
+# 24. The pull request body carries the changelog's "Seed changes" section when
+#     the range touches a seed, and says in one line that none did otherwise.
+#     A seed is a `!` entry of managed-core.txt. Propagation still writes none.
+seed_entry() { # <version> <marker>: a changelog entry with a Seed changes section
+  mkdir -p "$kit/docs/changelog"
+  cat >> "$kit/docs/changelog/v1.md" <<EOF
+## $1 (2026-01-01)
+
+- A change.
+
+### Seed changes
+
+- **Capability:** cap-$2
+- **Who is affected:** who-$2
+- **Action:** act-$2
+- **Check:** chk-$2
+
+EOF
+}
+new_case; new_consumer c1
+a=$(m1 1)
+bump "$a" first
+bump AGENTS.md seedchange
+seed_entry v1.1.0 one; gq -C "$kit" add -A; gq -C "$kit" commit -qm "docs: changelog"; release v1.1.0
+bump "$a" second; seed_entry v1.2.0 two; gq -C "$kit" add -A; gq -C "$kit" commit -qm "docs: changelog 2"; release v1.2.0
+run "$case_dir/c1"
+body="$GH_SHIM_LOG/1.args"; br="chore/sync-managed-core-v1.2.0"
+check "seed body: says the range changed seeds, and names AGENTS.md" \
+  bash -c "grep -q 'Seed changes: this range changed consumer-owned seeds' '$body' && grep -qxF 'AGENTS.md' '$body'"
+check "seed body: carries the section of the release that changed the seed" \
+  bash -c "grep -qxF -- '- **Action:** act-one' '$body' && grep -qxF -- '- **Check:** chk-one' '$body' && grep -q 'From release .v1.1.0' '$body'"
+check "seed body: carries the section of every release in the range, not only the last" \
+  grep -qxF -- '- **Capability:** cap-two' "$body"
+check "seed body: never writes a seed into the consumer" \
+  bash -c "! git -C '$case_dir/c1' diff --name-only main '$br' | grep -q AGENTS.md"
+
+new_case; new_consumer c1
+bump "$(m1 1)" only; release v1.1.0
+run "$case_dir/c1"
+body="$GH_SHIM_LOG/1.args"
+check "no seed body: one line says no seed changed" \
+  bash -c "[ \$(grep -c '^Seed changes:' '$body') = 1 ] && grep -q '^Seed changes: none. No consumer-owned seed changed between .v1.0.0. and .v1.1.0.' '$body' && ! grep -q 'this range changed' '$body'"
+
+new_case; new_consumer c1
+bump "$(m1 1)" only; bump AGENTS.md seedchange; release v1.1.0
+run "$case_dir/c1"
+check "seed body: a seed moved but no entry has the section, and the body says so" \
+  grep -q 'No changelog entry of a release in this range has a Seed changes section' "$GH_SHIM_LOG/1.args"
+
+new_case; new_consumer c1
+jq '.friday.tag = null | .friday.commit = "0000000000000000000000000000000000000000"' "$case_dir/c1/.friday-lock.json" > "$case_dir/lock" \
+  && cp "$case_dir/lock" "$case_dir/c1/.friday-lock.json"
+gq -C "$case_dir/c1" commit -qam "chore: an unknown commit" && gq -C "$case_dir/c1" push -q origin main
+bump "$(m1 1)" only; release v1.1.0
+run "$case_dir/c1"
+check "seed body: an unresolvable starting point is said, not guessed" \
+  grep -q '^Seed changes: could not be decided' "$GH_SHIM_LOG/1.args"
+
 echo
 if [ "$fails" -gt 0 ]; then echo "$fails of $total failed"; exit 1; fi
 echo "all $total passed"

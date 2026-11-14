@@ -30,13 +30,12 @@ integration, and overlays; do not copy a whole `.agents/` directory. Then run
 the clone, and `bash "$FRIDAY/bin/friday-lock" write "$TARGET"` to refresh the
 lock.
 
-A release that adds a seed needs a hand edit the sync does not make. The protected-paths
-guard (Unreleased) needs `.claude/settings.json` to carry the two protected-paths launcher hooks
-(under `Bash` and under `Write|Edit|MultiEdit|NotebookEdit`, copied from the payload) and
-`.agents/protected-paths.conf` to exist (the seed, or the consumer's own list), then
-`bash .agents/bin/setup.sh`. `check-collaborative-git.sh` fails until the hooks and the link are
-in place, as intended, so the propagate PR's verification fails unless that reconciliation is in
-the same PR. It does not require the conf: without one the guard protects nothing.
+A release that changes a seed needs a hand edit the sync does not make, because propagation
+never writes a seed. Its changelog entry ends with a `### Seed changes` section (capability, who
+is affected, action, check), in the format [`CHANGELOG.md`](../CHANGELOG.md#seed-changes) sets
+out, and `friday-propagate` copies that section into the pull request body. Make the edit in the
+same pull request, then run the check the section names. When the body says `Seed changes: none`,
+nothing needs reconciling by hand.
 
 After reconciliation, verify the consumer rather than treating the installer
 as an update engine:

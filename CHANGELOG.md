@@ -4,7 +4,9 @@
 > [`docs/changelog/`](./docs/changelog/)，最新的在每個檔案的最上面；這個檔案只留規則和各版本檔的連結。
 > release 的 pull request 把 `Unreleased` 的條目改名為「版號 + 日期」，日期是 tag 當天的台北時間（UTC+8）；
 > annotated tag 的訊息就是該條目，GitHub Release 由 tag 建立，文字相同。PATCH 一行即可；MINOR 與 MAJOR
-> 要寫改了什麼、為什麼、consumer 必須做什麼。
+> 要寫改了什麼、為什麼、consumer 必須做什麼。release 若改了 seed（consumer 自有的檔案），條目必須有固定格式的
+> `### Seed changes` 段落（四個欄位：Capability、Who is affected、Action、Check），由 `bin/friday-seed-check` 檢查，
+> `friday-propagate` 也會把它帶進 pull request 內文。
 
 Friday's release notes are kept one file per major version, so no single file grows
 too long to read. This page holds the rules and links to each file.
@@ -27,3 +29,38 @@ How entries are written:
 - A release that starts a new major version moves `## Unreleased` out of the old file to the
   top of the new `docs/changelog/vN.md`, and adds a row for it to the table above, in the
   same pull request. Apart from a later maintenance release of that major, that is the last edit to the old file.
+
+## Seed changes
+
+Propagation carries only the managed core and never writes a seed (a `!` entry of
+[`bin/managed-core.txt`](./bin/managed-core.txt)), so a release that changes a seed needs a hand
+edit in every consumer. The entry for that release says what, in a fixed section.
+
+An entry is the text under its `## vX.Y.Z (YYYY-MM-DD)` heading (`## Unreleased` before the
+release) up to the next `## ` heading. A release that changes a seed ends that entry with a
+`### Seed changes` heading, and the section runs to the next `### ` or `## ` heading. It holds
+four fields, each a list item with text on its first line (a field may continue on indented
+lines), in this order:
+
+```markdown
+### Seed changes
+
+- **Capability:** what the change gives the consumer.
+- **Who is affected:** which consumers, and in which state.
+- **Action:** what the consumer does by hand, in a reviewed change.
+- **Check:** the command that proves it, and what it prints when it is done.
+```
+
+One section covers every seed the release changed. The v1.2.0 entry in
+[`docs/changelog/v1.md`](./docs/changelog/v1.md) is the worked example.
+
+Two tools hold to that rule:
+
+- [`bin/friday-seed-check`](./bin/friday-seed-check) fails when the range from the previous
+  release to a release (or, for the pending entry, to `HEAD`) changes a seed and the entry has no
+  such section. The range is read from Git, not from the entry. It asks nothing of a release
+  before v1.2.0, and CI runs it on every pull request.
+- `bin/friday-propagate` puts the section of every release in the consumer's range into the pull
+  request body when the range from the consumer's recorded release (or commit) to the one it
+  carries changes a seed, and says in one line that none did otherwise. It still never writes a
+  seed.

@@ -82,6 +82,9 @@ Each step ends on the condition that says it is done.
   core and skips every `!` entry, because a consumer reconciles its seeds by
   hand. To change one of those files (the `!` entries in
   `bin/managed-core.txt`) in existing consumers, open a pull request in each.
+  The release's changelog entry must end with a `### Seed changes` section
+  ([`CHANGELOG.md`](CHANGELOG.md#seed-changes)); `bin/friday-seed-check` fails
+  CI without it, and the propagation pull request body carries it.
 - **A change to `bin/friday-lock` is proven by `bash tests/friday-lock.sh`.**
   It builds a scratch kit and consumer for each state, including a file that
   joins or leaves the managed core. Done when it reports `all … passed` and a

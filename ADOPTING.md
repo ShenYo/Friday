@@ -4,7 +4,22 @@
 > 新專案用 `install.sh`，既有專案用 `--managed-only` 只拿 managed core、seeds 留給專案自己
 > 調和；clone 之後執行 `setup.sh`；之後由維護者用 `friday-propagate` 開 pull request。
 
-Two paths. A blank repository is a handful of commands. An existing project
+## Choose your path
+
+- **Consume `ShenYo/Friday` releases (the default).** You need nothing but the
+  upstream repository: clone it, and `install.sh` installs its newest annotated
+  release tag. Later releases reach your projects as pull requests that
+  `friday-propagate` opens, and a release that changes a seed says so in its
+  changelog entry ([Seed changes](./CHANGELOG.md#seed-changes)). Apart from
+  the fork section, everything below is written for this path.
+- **Fork and cut your own releases (advanced).** The installer takes a release,
+  never the checkout, so a fork must carry the release tags: annotated
+  `vMAJOR.MINOR.PATCH` tags, pushed to the fork's `origin` and reachable from
+  its `main`, cut by you for each release. You also set the producer slug once
+  before the first consumer is installed. That is
+  [Cutting releases from a fork](#cutting-releases-from-a-fork).
+
+Two ways in. A blank repository is a handful of commands. An existing project
 needs one judgement call, made once, and this page exists because that call was
 not written down.
 
@@ -15,7 +30,9 @@ seed ship from `v1.1.0`; a release before that (`v1.0.0`, `v1.0.1`) has neither,
 its installer wires the clone itself, and a project installed from one has no
 `setup.sh` to run after a clone (there, `git config core.hooksPath
 .agents/githooks` is the part a fresh clone lacks). The installer is a script in
-a local Friday checkout; if there is none yet, one line gets it:
+a local Friday checkout; if there is none yet, one line gets it (the path is a
+convention, not a requirement: the scripts find the kit from their own
+location):
 
 ```sh
 git clone https://github.com/ShenYo/Friday.git ~/.Friday
@@ -282,7 +299,10 @@ consumer repository's clone.
 
    It opens one pull request in each consumer that is behind, carrying the
    managed-core files that moved. A consumer that is already current is left
-   alone.
+   alone. It never writes a seed: when the release range changes one, the pull
+   request body carries that release's `### Seed changes` section
+   ([the convention](./CHANGELOG.md#seed-changes)), and the edit is yours to
+   make by hand.
 3. Review and merge each pull request. A person does this. Then do step 2 on
    every machine.
 
@@ -417,6 +437,10 @@ runtime-specific evidence work. Gemini CLI and
 launch command for either.
 
 ## Cutting releases from a fork
+
+The installer needs an annotated `vMAJOR.MINOR.PATCH` tag on the fork's `origin`,
+reachable from its `main` ([Prerequisites](#prerequisites)), so a fork cuts its
+own tags as well as naming itself.
 
 A fork's consumer locks must name the fork. The producer slug is set once, as
 the default of `PRODUCER` near the top of `bin/friday-lock`. A lock that names

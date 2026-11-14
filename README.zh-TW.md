@@ -6,6 +6,22 @@
 > 先以 `--check` 預覽，再安裝封閉式的 allowlist。衝突絕不覆寫，現有專案需經
 > 人工審查後調和。
 
+## 採用 Friday 之前
+
+- **適合誰。** 想把一套經過審查、專案範圍內的 baseline（Git 政策、guard、Git skills）複製進自己的
+  repository，並願意把每次更新當成 pull request 來審查的開發者或團隊。它不是放個人 Skills 的地方。
+- **兩條路徑。** *使用 `ShenYo/Friday` 的 release*（預設）：安裝最新的 release，之後的 release 以
+  pull request 收取；見[選擇路徑](./ADOPTING.zh-TW.md#選擇路徑)。*Fork 並發行自己的 release*（進階）：
+  見[從 fork 發行 release](./ADOPTING.zh-TW.md#從-fork-發行-release)。
+- **支援範圍。** 以 macOS 與 Claude Code 為先。Codex 尚待處理。不支援 Linux 與 Windows：CI 也會在
+  ubuntu 上執行測試套件，但那不是支援承諾。
+- **先備條件。** Git、Bash 與 `jq`（`friday-propagate` 另需 `gh` 來開 pull request）。測試套件在
+  macOS 內建的 Bash 3.2 與 Bash 5 下都通過。
+- **你可以依賴什麼。** release 的版本號是 `vMAJOR.MINOR.PATCH`（[規則](./docs/releases.md#releases)，
+  英文）。自 `v1.2.0` 起，每個改動 consumer 自有 seed 的 release，其 changelog 條目都附有遷移說明
+  （[Seed changes](./CHANGELOG.md#seed-changes)，英文）；CI 以 `bin/friday-seed-check` 強制檢查。
+  沒有任何回應時間的承諾，Friday 由一個人維護。
+
 Friday 是一套可攜式、經過審查的共享專案基線（baseline）。它會把專案範圍內的政策、Git
 skills、共用的暫存檔規範，以及 Claude/Codex 的 guard 接線，複製進消費端（consumer）
 repository，而不依賴開發者個人的 home 目錄、個人 Skills 或 vendor 工作流程。
@@ -51,11 +67,11 @@ Friday 是怎麼走到現在的，記錄在 [`docs/history.md`](./docs/history.m
 - `main` 上要求 CI：ubuntu 與 macos 的測試、shellcheck 與 gitleaks
   （[`ci.yml`](./.github/workflows/ci.yml)）。
 
-待辦：
+已知限制與待辦：
 
-- 指定備援維護者（見[生命週期治理](./docs/releases.md#lifecycle-governance-b06)）。
-- 真正的新機器 replay。
-- 第三個 genuine consumer。
+- 只有一位維護者，尚未指定備援維護者（見[生命週期治理](./docs/releases.md#lifecycle-governance-b06)）。
+- 目前只有維護者自己的兩個私有 repository（`pet_care` 與 Finance）採用；還沒有第三個 consumer。
+- 新機器安裝尚未由獨立的採用者 replay 過。
 - External-runtime 的收尾：Friday 尚未驗證的 Codex 與 Gemini 行為。
 - managed-core 更新 bot，讓 Friday 發行時自動向 consumer 開 pull request：
   [ShenYo/Friday#7](https://github.com/ShenYo/Friday/issues/7)。
@@ -76,6 +92,9 @@ bash ~/.Friday/install.sh my-project                       # 最新的 release
 這會把最新的 release 安裝進一個空 repository。已經有自己檔案的專案，改用 `--managed-only`。
 每個步驟、之後要執行的檢查，以及 clone 消費端之後該做什麼，都在
 [採用 Friday](./ADOPTING.zh-TW.md)。
+
+`~/.Friday` 只是慣例，不是必要條件：`install.sh`、`bin/friday-lock` 與 `bin/friday-propagate` 都從自己所在的
+位置找到 kit，所以 clone 到任何位置都行。
 
 ## 文件
 

@@ -4,7 +4,18 @@
 > 新專案用 `install.sh`，既有專案用 `--managed-only` 只拿 managed core、seeds 留給專案自己
 > 調和；clone 之後執行 `setup.sh`；之後由維護者用 `friday-propagate` 開 pull request。
 
-兩條路徑。空 repository 只要幾個指令；既有專案需要一次判斷，而這份文件之所以存在，
+## 選擇路徑
+
+- **使用 `ShenYo/Friday` 的 release（預設）。** 除了 upstream repository 之外你什麼都不需要：clone
+  它，`install.sh` 會安裝它最新的 annotated release tag。之後的 release 以 `friday-propagate` 開的
+  pull request 抵達你的專案；改動 seed 的 release 會在它的 changelog 條目中說明
+  （[Seed changes](./CHANGELOG.md#seed-changes)，英文）。除了 fork 那一節，以下都是針對這條路徑寫的。
+- **Fork 並發行自己的 release（進階）。** 安裝程式安裝的是 release，絕不是 checkout，所以 fork 必須帶有
+  release tag：形如 `vMAJOR.MINOR.PATCH` 的 annotated tag，推到 fork 的 `origin`，且可從它的 `main`
+  到達，每次發行都由你自己建立。你還要在安裝第一個 consumer 之前，把 producer slug 設定一次。
+  見[從 fork 發行 release](#從-fork-發行-release)。
+
+兩種入口。空 repository 只要幾個指令；既有專案需要一次判斷，而這份文件之所以存在，
 就是因為那個判斷從來沒有被寫下來。
 
 ## 先備條件
@@ -12,7 +23,7 @@
 先備條件是 Git、Bash 與 `jq`。`.agents/bin/setup.sh` 與 `CLAUDE.md` seed 從 `v1.1.0` 起才附帶；更早的 release
 （`v1.0.0`、`v1.0.1`）兩者都沒有，它的安裝程式自己為 clone 接線，從這類 release 安裝的專案也沒有 `setup.sh`
 可在 clone 之後執行（那裡全新 clone 缺少的是 `git config core.hooksPath .agents/githooks`）。安裝程式是本機
-Friday checkout 裡的一支腳本；還沒有的話，一行就能取得：
+Friday checkout 裡的一支腳本；還沒有的話，一行就能取得（路徑只是慣例，不是必要條件：腳本會從自己所在的位置找到 kit）：
 
 ```sh
 git clone https://github.com/ShenYo/Friday.git ~/.Friday
@@ -233,7 +244,9 @@ Friday 發了新 release 之後，會以 pull request 的形式送到每個 cons
    bash "$FRIDAY/bin/friday-propagate"           ~/path/to/consumer ...
    ```
 
-   它會在每個落後的 consumer 開一個 pull request，帶上有變動的 managed-core 檔案。已經是最新的 consumer 不會被動到。
+   它會在每個落後的 consumer 開一個 pull request，帶上有變動的 managed-core 檔案。已經是最新的 consumer 不會被動到。它絕不寫入 seed：當這個 release 範圍改動了 seed，
+   pull request 內文會帶上該 release 的 `### Seed changes` 段落（[慣例](./CHANGELOG.md#seed-changes)，英文），
+   那項修改要由你親手做。
 3. 由人 review 並 merge 每個 pull request，然後在每台機器上做第 2 節。
 
 檢查：merge 之後，`bash "$FRIDAY/bin/friday-lock" check "$CONSUMER"` 會顯示 `in sync`。更多細節見[把變更帶到各個 consumer](./docs/updating-consumers.md#carrying-a-change-out-to-consumers)。
@@ -350,6 +363,9 @@ runtime 自己要補的證據工作。Gemini CLI 與 `agy` 在這裡仍是 pendi
 本指南刻意不為它們提供任何臆測性的啟動指令。
 
 ## 從 fork 發行 release
+
+安裝程式需要 fork 的 `origin` 上有可從 `main` 到達、形如 `vMAJOR.MINOR.PATCH` 的 annotated tag
+（見[先備條件](#先備條件)），所以 fork 除了寫上自己的名稱，也要自己建立 tag。
 
 fork 的 consumer lock 必須記載 fork 自己的名稱。producer slug 只設定一次，就是
 `bin/friday-lock` 開頭附近 `PRODUCER` 的預設值。記載其他 producer 的 lock

@@ -1,0 +1,156 @@
+#!/usr/bin/env bash
+# Fail when a release that changed a consumer-owned seed has no "Seed changes"
+# section in its changelog entry.
+#
+#   bin/friday-seed-check
+#
+# A seed is a `!` entry of bin/managed-core.txt, and lives under payload/.
+# Propagation never writes one, so a release that changes one needs a hand
+# edit in every consumer, and the entry must say which (CHANGELOG.md has the
+# format). Two things are checked, from Git:
+#
+#   each release tag from FLOOR on   the range from the release before it
+#                                    (the highest vMAJOR.MINOR.PATCH tag that
+#                                    is an ancestor of its parent) to the tag;
+#                                    a repository without the FLOOR tag has
+#                                    every release checked
+#   the pending entry                the range from the newest release
+#                                    reachable from HEAD to HEAD; the entry is
+#                                    the top `## ` section of the newest
+#                                    docs/changelog/vN.md, whether it is still
+#                                    `## Unreleased` or already renamed for a
+#                                    tag that is not cut yet
+#
+# A range that touches a seed needs, in the entry for that release, a
+# "### Seed changes" section with the four fields (Capability, Who is
+# affected, Action, Check), each with text on its line. Releases before FLOOR
+# are not asked for anything. The entry is read from the working tree.
+#
+# Needs the release tags, so a shallow clone is refused: in CI, check out with
+# fetch-depth: 0.
+set -uo pipefail
+
+KIT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+FLOOR=v1.2.0
+RELEASE_RE='^v[0-9]+\.[0-9]+\.[0-9]+$'
+FIELDS=("Capability" "Who is affected" "Action" "Check")
+
+die() { echo "friday-seed-check: $*" >&2; exit 2; }
+g() { git -C "$KIT_ROOT" "$@"; }
+
+[ "$(g rev-parse --is-shallow-repository 2>/dev/null)" = false ] \
+  || die "this clone is shallow or not a repository, so the release tags cannot be trusted: fetch the full history and tags."
+
+# The "### Seed changes" section of one entry ("Unreleased" or a version) in a
+# changelog read from stdin, heading line included; nothing when there is none.
+# friday-propagate applies the same rule.
+seed_section() {
+  awk -v v="$1" '
+    /^## / { insec = ($2 == v); inseed = 0; next }
+    insec && /^### / { inseed = ($0 ~ /^### Seed changes[ \t]*$/) }
+    inseed { print }'
+}
+
+# Seeds as payload/ paths, from the tree of the given commit.
+seed_paths() {
+  g show "$1:bin/managed-core.txt" 2>/dev/null | while IFS= read -r line || [ -n "$line" ]; do
+    line=${line%%#*}
+    line=$(printf '%s' "$line" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+    case "$line" in '!'*) printf 'payload/%s\n' "${line#!}" ;; esac
+  done
+}
+
+changelog_text() {
+  local f
+  # An empty `## ` line before each file ends the last entry of the one before,
+  # so it does not run on into the next file's title and introduction.
+  for f in "$KIT_ROOT"/docs/changelog/v[0-9]*.md; do [ -f "$f" ] && { printf '\n## \n'; cat "$f"; }; done
+}
+
+# touched <from-commit> <to-commit>: the seeds that differ, one per line. The
+# seed set is the union of the `!` entries at both ends, so a seed dropped from
+# the list, or promoted to managed core, with a content change still counts.
+touched() {
+  local paths=() p
+  while IFS= read -r p; do paths+=("$p"); done < <({ seed_paths "$1"; seed_paths "$2"; } | sort -u)
+  [ ${#paths[@]} -gt 0 ] || return 0
+  g diff --name-only "$1" "$2" -- "${paths[@]}"
+}
+
+failures=0
+# verify <label> <entry-name> <seeds-touched>
+verify() {
+  local label=$1 entry=$2 files=$3 section f
+  section=$(changelog_text | seed_section "$entry")
+  if [ -z "$section" ]; then
+    echo "FAIL $label: changed a seed ($(printf '%s' "$files" | tr '\n' ' ' | sed 's/ $//')) but its changelog entry ($entry) has no '### Seed changes' section"
+    failures=$((failures + 1)); return
+  fi
+  local bad=0
+  for f in "${FIELDS[@]}"; do
+    if ! printf '%s\n' "$section" | grep -Eq "^- \*\*$f:\*\*[[:space:]]*[^[:space:]]"; then
+      echo "FAIL $label: the Seed changes section of $entry has no '- **$f:** <text>' field"
+      failures=$((failures + 1)); bad=1
+    fi
+  done
+  [ "$bad" = 0 ] || return
+  echo "ok   $label: Seed changes section present ($(printf '%s' "$files" | tr '\n' ' ' | sed 's/ $//'))"
+}
+
+tags=$(g tag -l 'v[0-9]*' --sort=v:refname | grep -E "$RELEASE_RE")
+[ -n "$tags" ] || die "no release tag (vMAJOR.MINOR.PATCH) in this clone: fetch the tags."
+
+# The release before a commit: the highest release tag that is an ancestor of it.
+prev_release() {
+  g tag -l 'v[0-9]*' --merged "$1" --sort=-v:refname 2>/dev/null | grep -E "$RELEASE_RE" | sed -n 1p
+}
+
+# From FLOOR on. A repository without that tag began after the rule, so every
+# release it has is held to it.
+started=0
+if ! printf '%s\n' "$tags" | grep -qx "$FLOOR"; then
+  started=1
+  echo "note: no $FLOOR tag here, so every release tag is checked"
+fi
+for t in $tags; do
+  [ "$t" = "$FLOOR" ] && started=1
+  [ "$started" = 1 ] || continue
+  prev=$(prev_release "refs/tags/$t^{commit}^")
+  [ -n "$prev" ] || { echo "skip $t: no release before it"; continue; }
+  files=$(touched "refs/tags/$prev^{commit}" "refs/tags/$t^{commit}")
+  if [ -z "$files" ]; then echo "ok   $t: no seed changed since $prev"; continue; fi
+  verify "$t" "$t" "$files"
+done
+
+last=$(prev_release HEAD)
+if [ -z "$last" ]; then
+  echo "skip pending: no release tag is reachable from HEAD"
+else
+  files=$(touched "refs/tags/$last^{commit}" HEAD)
+  if [ -z "$files" ]; then
+    echo "ok   pending: no seed changed since $last"
+  else
+    # The newest major's file, by number. Not parsed from ls: a path may hold a space.
+    newest=""; maxn=-1
+    for f in "$KIT_ROOT"/docs/changelog/v[0-9]*.md; do
+      [ -f "$f" ] || continue
+      b=${f##*/v}; b=${b%.md}
+      case "$b" in *[!0-9]*) continue ;; esac
+      if [ "$b" -gt "$maxn" ]; then maxn=$b; newest=$f; fi
+    done
+    top=""
+    [ -n "$newest" ] && top=$(awk '/^## / { print $2; exit }' "$newest")
+    if [ -z "$top" ]; then
+      echo "FAIL pending: changed a seed since $last but there is no changelog entry to hold the Seed changes section"
+      failures=$((failures + 1))
+    elif [ "$top" != Unreleased ] && g rev-parse -q --verify "refs/tags/$top" >/dev/null; then
+      echo "FAIL pending: changed a seed since $last, but the top changelog entry ($top) is already released: add '## Unreleased' with a Seed changes section"
+      failures=$((failures + 1))
+    else
+      verify "pending" "$top" "$files"
+    fi
+  fi
+fi
+
+[ "$failures" -eq 0 ] || { echo "friday-seed-check: $failures problem(s)"; exit 1; }
+echo "friday-seed-check: ok"

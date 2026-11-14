@@ -439,6 +439,162 @@ run --tag; rc2=$?
 check "--tag with no value dies with usage" \
   bash -c "[ $rc1 = 2 ] && [ $rc2 = 2 ] && printf '%s' '$l1' | grep -q 'usage:' && grep -q 'usage:' '$case_dir/run.log' && [ -z \"\$(git -C '$case_dir/c1' branch --list 'chore/*')\" ]"
 
+# 24. The pull request body carries the changelog's "Seed changes" section when
+#     the range touches a seed, and says in one line that none did otherwise.
+#     A seed is a `!` entry of managed-core.txt. Propagation still writes none.
+seed_entry() { # <version> <marker>: a changelog entry with a Seed changes section
+  mkdir -p "$kit/docs/changelog"
+  cat >> "$kit/docs/changelog/v1.md" <<EOF
+## $1 (2026-01-01)
+
+- A change.
+
+### Seed changes
+
+- **Capability:** cap-$2
+- **Who is affected:** who-$2
+- **Action:** act-$2
+- **Check:** chk-$2
+
+EOF
+}
+new_case; new_consumer c1
+a=$(m1 1)
+bump "$a" first
+bump AGENTS.md seedchange
+seed_entry v1.1.0 one; gq -C "$kit" add -A; gq -C "$kit" commit -qm "docs: changelog"; release v1.1.0
+bump "$a" second; seed_entry v1.2.0 two; gq -C "$kit" add -A; gq -C "$kit" commit -qm "docs: changelog 2"; release v1.2.0
+run "$case_dir/c1"
+body="$GH_SHIM_LOG/1.args"; br="chore/sync-managed-core-v1.2.0"
+check "seed body: says the range changed seeds, and names AGENTS.md" \
+  bash -c "grep -q 'Seed changes: this range changed consumer-owned seeds' '$body' && grep -qxF 'AGENTS.md' '$body'"
+check "seed body: carries the section of the release that changed the seed" \
+  bash -c "grep -qxF -- '- **Action:** act-one' '$body' && grep -qxF -- '- **Check:** chk-one' '$body' && grep -q 'From release .v1.1.0' '$body'"
+check "seed body: carries the section of every release in the range, not only the last" \
+  grep -qxF -- '- **Capability:** cap-two' "$body"
+check "seed body: never writes a seed into the consumer" \
+  bash -c "! git -C '$case_dir/c1' diff --name-only main '$br' | grep -q AGENTS.md"
+
+new_case; new_consumer c1
+bump "$(m1 1)" only; release v1.1.0
+run "$case_dir/c1"
+body="$GH_SHIM_LOG/1.args"
+check "no seed body: one line says no seed changed" \
+  bash -c "[ \$(grep -c '^Seed changes:' '$body') = 1 ] && grep -q '^Seed changes: none. No consumer-owned seed changed between .v1.0.0. and .v1.1.0.' '$body' && ! grep -q 'this range changed' '$body'"
+
+new_case; new_consumer c1
+bump "$(m1 1)" only; bump AGENTS.md seedchange; release v1.1.0
+run "$case_dir/c1"
+check "seed body: a seed moved but no entry has the section, and the body says so" \
+  grep -q 'No changelog entry of a release in this range has a Seed changes section' "$GH_SHIM_LOG/1.args"
+
+new_case; new_consumer c1
+jq '.friday.tag = null | .friday.commit = "0000000000000000000000000000000000000000"' "$case_dir/c1/.friday-lock.json" > "$case_dir/lock" \
+  && cp "$case_dir/lock" "$case_dir/c1/.friday-lock.json"
+gq -C "$case_dir/c1" commit -qam "chore: an unknown commit" && gq -C "$case_dir/c1" push -q origin main
+bump "$(m1 1)" only; release v1.1.0
+run "$case_dir/c1"
+check "seed body: an unresolvable starting point is said, not guessed" \
+  grep -q '^Seed changes: could not be decided' "$GH_SHIM_LOG/1.args"
+
+plain_entry() { # <version>: a changelog entry with no Seed changes section
+  mkdir -p "$kit/docs/changelog"
+  printf '## %s (2026-01-01)\n\n- A change.\n\n' "$1" >> "$kit/docs/changelog/v1.md"
+}
+commit_all() { gq -C "$kit" add -A; gq -C "$kit" commit -qm "$1" >/dev/null; }
+
+# 25. The changelog is read from the kit's HEAD, not the tag: a section added
+#     after the release was cut still reaches the body.
+new_case; new_consumer c1
+bump "$(m1 1)" first; bump AGENTS.md seedchange; release v1.1.0
+seed_entry v1.1.0 late; commit_all "docs: a section added after the tag"
+run "$case_dir/c1"
+check "late section: the body carries a section added after the tag was cut" \
+  grep -qxF -- '- **Action:** act-late' "$GH_SHIM_LOG/1.args"
+
+# 26. Only releases in the range: not one the consumer already holds, and not
+#     one newer than the target.
+new_case
+bump "$(m1 1)" first; bump AGENTS.md one; seed_entry v1.1.0 held; commit_all "docs: v1.1.0"; release v1.1.0
+new_consumer c1
+bump "$(m1 1)" second; bump AGENTS.md two; seed_entry v1.2.0 target; commit_all "docs: v1.2.0"; release v1.2.0
+bump "$(m1 1)" third; bump AGENTS.md three; seed_entry v1.3.0 newer; commit_all "docs: v1.3.0"; release v1.3.0
+run --tag v1.2.0 "$case_dir/c1"
+body="$GH_SHIM_LOG/1.args"
+check "range: the target's own section is carried" grep -qxF -- '- **Action:** act-target' "$body"
+check "range: a release the consumer already holds is not carried" \
+  bash -c "! grep -q 'act-held' '$body' && ! grep -q 'From release .v1.1.0' '$body'"
+check "range: a release newer than the target is not carried" \
+  bash -c "! grep -q 'act-newer' '$body' && ! grep -q 'From release .v1.3.0' '$body'"
+
+# 27. A release's own entry is the only one it reads, and a seed-changing
+#     release with no section is named even when another release's is carried.
+new_case; new_consumer c1
+bump "$(m1 1)" first; bump AGENTS.md one; plain_entry v1.1.0; commit_all "docs: v1.1.0"; release v1.1.0
+bump "$(m1 1)" second; seed_entry v1.2.0 only; commit_all "docs: v1.2.0"; release v1.2.0
+run "$case_dir/c1"
+body="$GH_SHIM_LOG/1.args"
+check "other's section: carried once, under the release that has it" \
+  bash -c "[ \$(grep -c '^From release' '$body') = 1 ] && grep -q 'From release .v1.2.0' '$body' && grep -qxF -- '- **Action:** act-only' '$body'"
+check "other's section: the seed-changing release without one is named" \
+  grep -q 'Release .v1.1.0. changed seeds and its entry has no Seed changes section' "$body"
+check "other's section: the none-found line is absent when a section was carried" \
+  bash -c "! grep -q 'No changelog entry of a release in this range' '$body'"
+check "other's section: a release that changed no seed is not named" \
+  bash -c "! grep -q 'Release .v1.2.0. changed seeds' '$body'"
+
+# 28. The seed set is the union of the `!` entries at both ends of the range.
+new_case; new_consumer c1
+printf 'new seed\n' > "$kit/payload/newseed.md"; printf '!newseed.md\n' >> "$kit/bin/managed-core.txt"
+bump "$(m1 1)" first; commit_all "a seed joins the list"; release v1.1.0
+run "$case_dir/c1"
+check "union: a seed added to the list within the range counts" \
+  grep -qxF 'newseed.md' "$GH_SHIM_LOG/1.args"
+
+new_case; new_consumer c1
+grep -v '^!AGENTS.md$' "$kit/bin/managed-core.txt" > "$kit/bin/mc.new" && mv "$kit/bin/mc.new" "$kit/bin/managed-core.txt"
+gq -C "$kit" rm -q payload/AGENTS.md
+bump "$(m1 1)" first; commit_all "a seed leaves the list, and its file goes"; release v1.1.0
+run "$case_dir/c1"
+check "union: a seed dropped from the list while its file changes counts" \
+  grep -qxF 'AGENTS.md' "$GH_SHIM_LOG/1.args"
+
+new_case; new_consumer c1
+sed 's/^!AGENTS.md$/AGENTS.md/' "$kit/bin/managed-core.txt" > "$kit/bin/mc.new" && mv "$kit/bin/mc.new" "$kit/bin/managed-core.txt"
+bump AGENTS.md promoted
+bump "$(m1 1)" first; commit_all "a seed is promoted to managed core"; release v1.1.0
+run "$case_dir/c1"
+check "union: a seed that leaves the list for managed core with its content changed counts" \
+  grep -qxF 'AGENTS.md' "$GH_SHIM_LOG/1.args"
+
+# 29. The changelog is read once, from main at the commit the run started on:
+#     a changelog commit made while the run is going reaches neither body.
+new_case; new_consumer c1; new_consumer c2
+bump "$(m1 1)" first; bump AGENTS.md seedchange
+seed_entry v1.1.0 orig; commit_all "docs: v1.1.0"; release v1.1.0
+head_before=$(git -C "$kit" rev-parse HEAD)
+export GH_SHIM_ONCE="sed 's/act-orig/act-edited/' '$kit/docs/changelog/v1.md' > '$kit/docs/changelog/v1.new' && mv '$kit/docs/changelog/v1.new' '$kit/docs/changelog/v1.md' && git -C '$kit' commit -qam 'docs: edited mid-run'"
+run "$case_dir/c1" "$case_dir/c2"
+unset GH_SHIM_ONCE
+check "mid-run changelog: the kit really did move during the run" \
+  bash -c "[ \"\$(git -C '$kit' rev-parse HEAD)\" != '$head_before' ]"
+check "mid-run changelog: both bodies carry the section as the run started" \
+  bash -c "grep -qxF -- '- **Action:** act-orig' '$GH_SHIM_LOG/1.args' && grep -qxF -- '- **Action:** act-orig' '$GH_SHIM_LOG/2.args'"
+check "mid-run changelog: neither body carries the later edit" \
+  bash -c "! grep -q 'act-edited' '$GH_SHIM_LOG/1.args' && ! grep -q 'act-edited' '$GH_SHIM_LOG/2.args'"
+
+# 30. An entry ends at its file's end: the next file's title and intro are not
+#     pasted into the body.
+new_case; new_consumer c1
+bump "$(m1 1)" first; bump AGENTS.md seedchange
+seed_entry v1.1.0 only
+printf '# Friday changelog: v2\n\nINTRO-OF-V2 text.\n' > "$kit/docs/changelog/v2.md"
+commit_all "docs: two changelog files"; release v1.1.0
+run "$case_dir/c1"
+check "next file: the section is carried" grep -qxF -- '- **Action:** act-only' "$GH_SHIM_LOG/1.args"
+check "next file: its title and intro are not" \
+  bash -c "! grep -q 'Friday changelog: v2' '$GH_SHIM_LOG/1.args' && ! grep -q 'INTRO-OF-V2' '$GH_SHIM_LOG/1.args'"
+
 echo
 if [ "$fails" -gt 0 ]; then echo "$fails of $total failed"; exit 1; fi
 echo "all $total passed"

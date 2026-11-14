@@ -50,9 +50,10 @@ Each step ends on the condition that says it is done.
    compares against, and the commit each consumer's lock records. An
    uncommitted edit under `payload/`, or a Friday commit made while the run is
    going, cannot reach a consumer, and the sync branch, the lock and the pull
-   request body always name one commit. It refuses to run from any branch but
-   `main`. After pulling a consumer's `main` it checks it again, and refuses
-   if that pull brought drift or changed what has to be carried. It looks at
+   request body always name one commit. The changelog's Seed changes text is
+   read once, from `main` at that starting commit. It refuses to run from any
+   branch but `main`. After pulling a consumer's `main` it checks it again, and
+   refuses if that pull brought drift or changed what has to be carried. It looks at
    each consumer file again just before writing it, and refuses rather than
    overwrite a concurrent edit. It writes the lock from the index, so the lock
    records what the commit holds. It returns each consumer to `main`, except
@@ -82,6 +83,10 @@ Each step ends on the condition that says it is done.
   core and skips every `!` entry, because a consumer reconciles its seeds by
   hand. To change one of those files (the `!` entries in
   `bin/managed-core.txt`) in existing consumers, open a pull request in each.
+  The release's changelog entry must have a `### Seed changes` section (at its
+  end, by convention; [`CHANGELOG.md`](CHANGELOG.md#seed-changes));
+  `bin/friday-seed-check` fails CI without it, and the propagation pull request
+  body carries it.
 - **A change to `bin/friday-lock` is proven by `bash tests/friday-lock.sh`.**
   It builds a scratch kit and consumer for each state, including a file that
   joins or leaves the managed core. Done when it reports `all … passed` and a

@@ -6,6 +6,33 @@
 > 先以 `--check` 預覽，再安裝封閉的 allowlist。衝突絕不覆寫，現有專案需經
 > 人工審查後調和。
 
+## Before you adopt Friday
+
+- **Who it is for.** A developer or team that wants a reviewed, project-scoped
+  baseline (Git policy, guards, Git skills) copied into its own repositories, and
+  will review each update as a pull request. It is not a home for personal skills.
+- **Two paths.** *Consume `ShenYo/Friday` releases* (the default): install the
+  newest release, and take later ones as pull requests; see
+  [Choose your path](./ADOPTING.md#choose-your-path). *Fork and cut your own
+  releases* (advanced): see
+  [Cutting releases from a fork](./ADOPTING.md#cutting-releases-from-a-fork).
+- **Support.** macOS and Claude Code first. Codex is pending. Linux and Windows
+  are not supported: CI also runs the test suites on ubuntu, but that is not a
+  support promise.
+- **Prerequisites.** Git, Bash and `jq` (`friday-propagate` also needs `gh`,
+  authenticated, with push access to each consumer, to open pull requests).
+  The test suites pass under Bash 3.2, which macOS ships,
+  and under Bash 5.
+- **What you can rely on.** Releases are versioned `vMAJOR.MINOR.PATCH`, but
+  this is not strict semantic versioning: any release that changes a
+  consumer-owned seed, a PATCH included, needs a hand edit, which its Seed
+  changes section gives ([rules](./docs/releases.md#releases)). Every release
+  from `v1.2.0` that changes a consumer-owned seed carries a migration note in
+  its changelog entry
+  ([Seed changes](./CHANGELOG.md#seed-changes)); CI enforces it with
+  `bin/friday-seed-check`. There is no response-time promise, and Friday is
+  maintained by one person.
+
 Friday is a portable, reviewed shared project baseline. It copies
 project-scoped policy, Git skills, a shared temporary-file contract, and
 Claude/Codex guard wiring into a consumer repository without depending on a
@@ -39,8 +66,9 @@ describes the present.
 > **中文摘要**：managed core 現為十七檔，最新 release 是 v1.3.0（2026-11-13），最近的
 > protected-paths guard 會跟著 Bash 指令裡的 `cd`／`pushd`。
 > pet_care 與 Finance 兩個 consumer 記錄的是 v1.2.0；
-> v1.3.0 沒有改任何 seed，只需收 `friday-propagate` 開的 sync PR。待辦：指定 backup maintainer、
-> 真正的新機器 replay、第三個 consumer、external-runtime 收尾，以及 managed-core 更新 bot。
+> v1.3.0 沒有改任何 seed，只需收 `friday-propagate` 開的 sync PR。已知限制：只有一位維護者、
+> 兩個 consumer 都是維護者自己的私有 repository、新機器安裝尚未由獨立採用者 replay、
+> external-runtime 收尾，以及 managed-core 更新 bot。
 
 In place:
 
@@ -59,11 +87,12 @@ In place:
 - CI is required on `main`: the test suites on ubuntu and macos, shellcheck, and
   gitleaks ([`ci.yml`](./.github/workflows/ci.yml)).
 
-Pending:
+Known limits and open work:
 
-- A named backup maintainer (see [Lifecycle governance](./docs/releases.md#lifecycle-governance-b06)).
-- A real new-machine replay.
-- A third genuine consumer.
+- One maintainer, no named backup (see [Lifecycle governance](./docs/releases.md#lifecycle-governance-b06)).
+- Adopted so far by two private repositories of the maintainer, `pet_care` and
+  Finance; no third consumer yet.
+- The new-machine install has not been replayed by an independent adopter.
 - External-runtime closure: Codex and Gemini behaviour Friday does not verify.
 - The managed-core update bot, so that a Friday release opens the consumer pull
   requests itself: [ShenYo/Friday#7](https://github.com/ShenYo/Friday/issues/7).
@@ -84,6 +113,11 @@ bash ~/.Friday/install.sh my-project                       # the newest release
 That installs the newest release into a blank repository. A project that already has its own
 files takes `--managed-only` instead. Every step, the checks to run afterwards, and what to do
 after cloning a consumer are in [Adopting Friday](./ADOPTING.md).
+
+`~/.Friday` is a convention, not a requirement: `install.sh`, `bin/friday-lock` and
+`bin/friday-propagate` find the kit from their own location, so a clone anywhere works. The
+pull request body that `friday-propagate` writes tells the reviewer to run `bash ~/.Friday/bin/friday-lock check .`; substitute
+your own path there.
 
 ## Documents
 

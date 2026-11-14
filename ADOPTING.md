@@ -2,20 +2,42 @@
 
 > **中文摘要**：`install.sh` 預設安裝最新的 release，不是這個 checkout 目前的內容；
 > 新專案用 `install.sh`，既有專案用 `--managed-only` 只拿 managed core、seeds 留給專案自己
-> 調和；clone 之後執行 `setup.sh`；之後由維護者用 `friday-propagate` 開 pull request。
+> 調和；clone 之後執行 `setup.sh`；之後由你自己（採用者）在更新過的 checkout 執行 `friday-propagate` 開 pull request，upstream 不會替你開。
 
-Two paths. A blank repository is a handful of commands. An existing project
+## Choose your path
+
+- **Consume `ShenYo/Friday` releases (the default).** You need nothing but the
+  upstream repository: clone it, and `install.sh` installs its newest annotated
+  release tag. Later releases reach your projects as pull requests that you
+  open yourself: pull your Friday checkout and run `friday-propagate` (see
+  [Staying current](#staying-current)); nobody upstream opens pull requests in
+  your repositories. A release that changes a seed says so in its changelog
+  entry ([Seed changes](./CHANGELOG.md#seed-changes)). Apart from the fork
+  section, everything below is written for this path.
+- **Fork and cut your own releases (advanced).** The installer takes a release,
+  never the checkout, so a fork must cut its own annotated
+  `vMAJOR.MINOR.PATCH` tags on its `main` and push them to its `origin`. The
+  producer slug is set in `bin/friday-lock` and takes effect only in a release
+  cut after that edit, so the first fork release comes before the first
+  consumer install. The steps are in
+  [Cutting releases from a fork](#cutting-releases-from-a-fork).
+
+Two ways in. A blank repository is a handful of commands. An existing project
 needs one judgement call, made once, and this page exists because that call was
 not written down.
 
 ## Prerequisites
 
-Prerequisites are Git, Bash and `jq`. `.agents/bin/setup.sh` and the `CLAUDE.md`
+Prerequisites are Git, Bash and `jq`; `friday-propagate` also needs `gh`,
+authenticated, with push access to each consumer. `.agents/bin/setup.sh` and
+the `CLAUDE.md`
 seed ship from `v1.1.0`; a release before that (`v1.0.0`, `v1.0.1`) has neither,
 its installer wires the clone itself, and a project installed from one has no
 `setup.sh` to run after a clone (there, `git config core.hooksPath
 .agents/githooks` is the part a fresh clone lacks). The installer is a script in
-a local Friday checkout; if there is none yet, one line gets it:
+a local Friday checkout; if there is none yet, one line gets it (the path is a
+convention, not a requirement: the scripts find the kit from their own
+location):
 
 ```sh
 git clone https://github.com/ShenYo/Friday.git ~/.Friday
@@ -265,7 +287,7 @@ consumer repository's clone.
 
 | Situation | Who, where | Go to |
 | --- | --- | --- |
-| Friday cut a new release | the maintainer, on one machine | [1](#1-friday-cut-a-new-release) |
+| Friday cut a new release | you, on the machine that runs `friday-propagate` | [1](#1-friday-cut-a-new-release) |
 | A propagate pull request merged in a consumer | every machine that has that consumer's clone | [2](#2-a-propagate-pull-request-merged) |
 | You are about to run `install.sh` or `friday-propagate` | the machine you run it on | [3](#3-before-running-friday-on-a-machine) |
 | You are not sure where a consumer stands | any machine | [4](#4-where-does-a-consumer-stand) |
@@ -282,7 +304,11 @@ consumer repository's clone.
 
    It opens one pull request in each consumer that is behind, carrying the
    managed-core files that moved. A consumer that is already current is left
-   alone.
+   alone. It never writes a seed. The pull request body carries the
+   `### Seed changes` section of every release in the consumer's range
+   ([the convention](./CHANGELOG.md#seed-changes)), says in one line when no
+   seed changed, and names a release that changed seeds but has no section; the
+   edit is yours to make by hand.
 3. Review and merge each pull request. A person does this. Then do step 2 on
    every machine.
 
@@ -417,6 +443,41 @@ runtime-specific evidence work. Gemini CLI and
 launch command for either.
 
 ## Cutting releases from a fork
+
+A fork is its own producer, and the installer runs the `bin/friday-lock` of the
+release it installs. Releases up to and including `v1.3.0` hard-code
+`ShenYo/Friday` in their own `bin/friday-lock`, so a consumer installed from
+one of them records the upstream producer. Do this in order:
+
+1. Clone your fork, not upstream (`git clone <your fork's URL>`), so that
+   `origin` is the fork, and run every command from that checkout. The
+   installer and `friday-propagate` check release tags against `origin`, and the
+   installer needs a local `main`.
+2. Set the producer slug (below) on a branch and merge it into the fork's
+   `main` through a pull request: a release is cut on a reviewed commit on
+   `main` (`docs/releases.md`), and Friday's `pre-push` hook refuses a push to
+   the default branch when the hooks are wired (`docs/safety.md`).
+3. Keep your releases numbered from `v2.0.0`, above upstream's `v1.x`. Without
+   `--release`, the installer, like `friday-propagate`, picks the highest
+   `vMAJOR.MINOR.PATCH` tag in the checkout, and an upstream release names the
+   upstream producer. So never fetch upstream's tags:
+   `git remote add upstream <upstream URL>`, then
+   `git config remote.upstream.tagOpt --no-tags`. Bring in upstream changes
+   later through a branch and a pull request like any change, and keep your
+   releases above upstream's major versions. The `v2.0.0` release starts a new
+   changelog file: `docs/changelog/v2.md` and its row in the table of
+   `CHANGELOG.md` belong to that release's pull request. A seed change that
+   came from upstream must be written into your own entry as a Seed changes
+   section, because `bin/friday-seed-check` and `friday-propagate` read the
+   fork's entries, by the fork's tag names and its top entry.
+4. After the release pull request merges, pull `main` and cut an annotated tag
+   on the commit on `main` that holds the slug edit (normally the release
+   commit that adds the changelog file): `git tag -a vX.Y.Z <commit> -m <note>`,
+   then push only the tag: `git push origin vX.Y.Z`. Cutting and pushing a
+   release tag is a person's step (`docs/releases.md`). The tag must be
+   annotated, on `main`, and the same tag object on `origin`.
+5. Install from that checkout, for example `bash install.sh --check <target>`
+   and then `bash install.sh <target>`.
 
 A fork's consumer locks must name the fork. The producer slug is set once, as
 the default of `PRODUCER` near the top of `bin/friday-lock`. A lock that names

@@ -31,7 +31,7 @@ the clone, and `bash "$FRIDAY/bin/friday-lock" write "$TARGET"` to refresh the
 lock.
 
 A release that changes a seed needs a hand edit the sync does not make, because propagation
-never writes a seed. Its changelog entry ends with a `### Seed changes` section (capability, who
+never writes a seed. Its changelog entry has a `### Seed changes` section (capability, who
 is affected, action, check), in the format [`CHANGELOG.md`](../CHANGELOG.md#seed-changes) sets
 out, and `friday-propagate` copies that section into the pull request body. Make the edit in the
 same pull request, then run the check the section names. When the body says `Seed changes: none`,

@@ -497,6 +497,76 @@ run "$case_dir/c1"
 check "seed body: an unresolvable starting point is said, not guessed" \
   grep -q '^Seed changes: could not be decided' "$GH_SHIM_LOG/1.args"
 
+plain_entry() { # <version>: a changelog entry with no Seed changes section
+  mkdir -p "$kit/docs/changelog"
+  printf '## %s (2026-01-01)\n\n- A change.\n\n' "$1" >> "$kit/docs/changelog/v1.md"
+}
+commit_all() { gq -C "$kit" add -A; gq -C "$kit" commit -qm "$1" >/dev/null; }
+
+# 25. The changelog is read from the kit's HEAD, not the tag: a section added
+#     after the release was cut still reaches the body.
+new_case; new_consumer c1
+bump "$(m1 1)" first; bump AGENTS.md seedchange; release v1.1.0
+seed_entry v1.1.0 late; commit_all "docs: a section added after the tag"
+run "$case_dir/c1"
+check "late section: the body carries a section added after the tag was cut" \
+  grep -qxF -- '- **Action:** act-late' "$GH_SHIM_LOG/1.args"
+
+# 26. Only releases in the range: not one the consumer already holds, and not
+#     one newer than the target.
+new_case
+bump "$(m1 1)" first; bump AGENTS.md one; seed_entry v1.1.0 held; commit_all "docs: v1.1.0"; release v1.1.0
+new_consumer c1
+bump "$(m1 1)" second; bump AGENTS.md two; seed_entry v1.2.0 target; commit_all "docs: v1.2.0"; release v1.2.0
+bump "$(m1 1)" third; bump AGENTS.md three; seed_entry v1.3.0 newer; commit_all "docs: v1.3.0"; release v1.3.0
+run --tag v1.2.0 "$case_dir/c1"
+body="$GH_SHIM_LOG/1.args"
+check "range: the target's own section is carried" grep -qxF -- '- **Action:** act-target' "$body"
+check "range: a release the consumer already holds is not carried" \
+  bash -c "! grep -q 'act-held' '$body' && ! grep -q 'From release .v1.1.0' '$body'"
+check "range: a release newer than the target is not carried" \
+  bash -c "! grep -q 'act-newer' '$body' && ! grep -q 'From release .v1.3.0' '$body'"
+
+# 27. A release's own entry is the only one it reads, and a seed-changing
+#     release with no section is named even when another release's is carried.
+new_case; new_consumer c1
+bump "$(m1 1)" first; bump AGENTS.md one; plain_entry v1.1.0; commit_all "docs: v1.1.0"; release v1.1.0
+bump "$(m1 1)" second; seed_entry v1.2.0 only; commit_all "docs: v1.2.0"; release v1.2.0
+run "$case_dir/c1"
+body="$GH_SHIM_LOG/1.args"
+check "other's section: carried once, under the release that has it" \
+  bash -c "[ \$(grep -c '^From release' '$body') = 1 ] && grep -q 'From release .v1.2.0' '$body' && grep -qxF -- '- **Action:** act-only' '$body'"
+check "other's section: the seed-changing release without one is named" \
+  grep -q 'Release .v1.1.0. changed seeds and its entry has no Seed changes section' "$body"
+check "other's section: the none-found line is absent when a section was carried" \
+  bash -c "! grep -q 'No changelog entry of a release in this range' '$body'"
+check "other's section: a release that changed no seed is not named" \
+  bash -c "! grep -q 'Release .v1.2.0. changed seeds' '$body'"
+
+# 28. The seed set is the union of the `!` entries at both ends of the range.
+new_case; new_consumer c1
+printf 'new seed\n' > "$kit/payload/newseed.md"; printf '!newseed.md\n' >> "$kit/bin/managed-core.txt"
+bump "$(m1 1)" first; commit_all "a seed joins the list"; release v1.1.0
+run "$case_dir/c1"
+check "union: a seed added to the list within the range counts" \
+  grep -qxF 'newseed.md' "$GH_SHIM_LOG/1.args"
+
+new_case; new_consumer c1
+grep -v '^!AGENTS.md$' "$kit/bin/managed-core.txt" > "$kit/bin/mc.new" && mv "$kit/bin/mc.new" "$kit/bin/managed-core.txt"
+gq -C "$kit" rm -q payload/AGENTS.md
+bump "$(m1 1)" first; commit_all "a seed leaves the list, and its file goes"; release v1.1.0
+run "$case_dir/c1"
+check "union: a seed dropped from the list while its file changes counts" \
+  grep -qxF 'AGENTS.md' "$GH_SHIM_LOG/1.args"
+
+new_case; new_consumer c1
+sed 's/^!AGENTS.md$/AGENTS.md/' "$kit/bin/managed-core.txt" > "$kit/bin/mc.new" && mv "$kit/bin/mc.new" "$kit/bin/managed-core.txt"
+bump AGENTS.md promoted
+bump "$(m1 1)" first; commit_all "a seed is promoted to managed core"; release v1.1.0
+run "$case_dir/c1"
+check "union: a seed that leaves the list for managed core with its content changed counts" \
+  grep -qxF 'AGENTS.md' "$GH_SHIM_LOG/1.args"
+
 echo
 if [ "$fails" -gt 0 ]; then echo "$fails of $total failed"; exit 1; fi
 echo "all $total passed"

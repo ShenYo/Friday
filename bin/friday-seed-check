@@ -10,8 +10,10 @@
 # format). Two things are checked, from Git:
 #
 #   each release tag from FLOOR on   the range from the release before it
-#                                    (the nearest vMAJOR.MINOR.PATCH tag
-#                                    reachable from its commit) to the tag
+#                                    (the highest vMAJOR.MINOR.PATCH tag that
+#                                    is an ancestor of its parent) to the tag;
+#                                    a repository without the FLOOR tag has
+#                                    every release checked
 #   the pending entry                the range from the newest release
 #                                    reachable from HEAD to HEAD; the entry is
 #                                    the top `## ` section of the newest
@@ -63,10 +65,12 @@ changelog_text() {
   for f in "$KIT_ROOT"/docs/changelog/v[0-9]*.md; do [ -f "$f" ] && cat "$f"; done
 }
 
-# touched <from-commit> <to-commit>: the seeds that differ, one per line.
+# touched <from-commit> <to-commit>: the seeds that differ, one per line. The
+# seed set is the union of the `!` entries at both ends, so a seed dropped from
+# the list, or promoted to managed core, with a content change still counts.
 touched() {
   local paths=() p
-  while IFS= read -r p; do paths+=("$p"); done < <(seed_paths "$2")
+  while IFS= read -r p; do paths+=("$p"); done < <({ seed_paths "$1"; seed_paths "$2"; } | sort -u)
   [ ${#paths[@]} -gt 0 ] || return 0
   g diff --name-only "$1" "$2" -- "${paths[@]}"
 }
@@ -94,24 +98,47 @@ verify() {
 tags=$(g tag -l 'v[0-9]*' --sort=v:refname | grep -E "$RELEASE_RE")
 [ -n "$tags" ] || die "no release tag (vMAJOR.MINOR.PATCH) in this clone: fetch the tags."
 
+# The release before a commit: the highest release tag that is an ancestor of it.
+prev_release() {
+  local t
+  for t in $(printf '%s\n' "$tags" | sed '1!G;h;$!d'); do
+    if g merge-base --is-ancestor "refs/tags/$t^{commit}" "$1" 2>/dev/null; then echo "$t"; return; fi
+  done
+}
+
+# From FLOOR on. A repository without that tag began after the rule, so every
+# release it has is held to it.
 started=0
+if ! printf '%s\n' "$tags" | grep -qx "$FLOOR"; then
+  started=1
+  echo "note: no $FLOOR tag here, so every release tag is checked"
+fi
 for t in $tags; do
   [ "$t" = "$FLOOR" ] && started=1
   [ "$started" = 1 ] || continue
-  prev=$(g describe --tags --abbrev=0 --match 'v[0-9]*.[0-9]*.[0-9]*' --exclude 'v*-*' "refs/tags/$t^{commit}^" 2>/dev/null)
+  prev=$(prev_release "refs/tags/$t^{commit}^")
   [ -n "$prev" ] || { echo "skip $t: no release before it"; continue; }
   files=$(touched "refs/tags/$prev^{commit}" "refs/tags/$t^{commit}")
   if [ -z "$files" ]; then echo "ok   $t: no seed changed since $prev"; continue; fi
   verify "$t" "$t" "$files"
 done
 
-last=$(g describe --tags --abbrev=0 --match 'v[0-9]*.[0-9]*.[0-9]*' --exclude 'v*-*' HEAD 2>/dev/null)
-if [ -n "$last" ]; then
+last=$(prev_release HEAD)
+if [ -z "$last" ]; then
+  echo "skip pending: no release tag is reachable from HEAD"
+else
   files=$(touched "refs/tags/$last^{commit}" HEAD)
   if [ -z "$files" ]; then
     echo "ok   pending: no seed changed since $last"
   else
-    newest=$(ls "$KIT_ROOT"/docs/changelog/v[0-9]*.md 2>/dev/null | sed -n 's#.*/v\([0-9][0-9]*\)\.md$#\1 &#p' | sort -n | tail -1 | cut -d' ' -f2)
+    # The newest major's file, by number. Not parsed from ls: a path may hold a space.
+    newest=""; maxn=-1
+    for f in "$KIT_ROOT"/docs/changelog/v[0-9]*.md; do
+      [ -f "$f" ] || continue
+      b=${f##*/v}; b=${b%.md}
+      case "$b" in *[!0-9]*) continue ;; esac
+      if [ "$b" -gt "$maxn" ]; then maxn=$b; newest=$f; fi
+    done
     top=""
     [ -n "$newest" ] && top=$(awk '/^## / { print $2; exit }' "$newest")
     if [ -z "$top" ]; then

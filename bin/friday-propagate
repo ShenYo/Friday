@@ -121,14 +121,10 @@ blob_mode() { git -C "$KIT_ROOT" ls-tree "$tree" -- "payload/$1" | cut -d' ' -f1
 # The managed core is classified in one place; this reads it rather than
 # carrying a second copy that could disagree.
 managed=()
-seeds=()
 while IFS= read -r line || [ -n "$line" ]; do
   line=${line%%#*}
   line=$(printf '%s' "$line" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
-  case "$line" in
-    '') continue ;;
-    '!'*) seeds+=("payload/${line#!}"); continue ;;
-  esac
+  case "$line" in ''|'!'*) continue ;; esac
   managed+=("$line")
 done < <(git -C "$KIT_ROOT" show "$tree:bin/managed-core.txt")
 
@@ -143,10 +139,38 @@ seed_section() {
     insec && /^### / { inseed = ($0 ~ /^### Seed changes[ \t]*$/) }
     inseed { print }'
 }
-changelog_at_pin() {
+# The changelog is read from the kit's HEAD (main, which this run requires),
+# not from the pinned tag: a Seed changes section added or corrected after a
+# release was cut is the file's to say, and must reach the pull request body.
+# Everything else -- managed core, seeds, diffs -- stays at the pin.
+changelog_at_head() {
   local f
-  git -C "$KIT_ROOT" ls-tree --name-only "$tree" docs/changelog/ 2>/dev/null | grep -E '/v[0-9]+\.md$' \
-    | while IFS= read -r f; do git -C "$KIT_ROOT" show "$tree:$f"; done
+  git -C "$KIT_ROOT" ls-tree --name-only HEAD docs/changelog/ 2>/dev/null | grep -E '/v[0-9]+\.md$' \
+    | while IFS= read -r f; do git -C "$KIT_ROOT" show "HEAD:$f"; done
+}
+# Seeds (the `!` entries of managed-core.txt) as payload/ paths at one commit.
+seeds_at() {
+  git -C "$KIT_ROOT" show "$1:bin/managed-core.txt" 2>/dev/null | while IFS= read -r line || [ -n "$line" ]; do
+    line=${line%%#*}
+    line=$(printf '%s' "$line" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+    case "$line" in '!'*) printf 'payload/%s\n' "${line#!}" ;; esac
+  done
+}
+# The seeds that differ between two commits, without the payload/ prefix. The
+# seed set is the union of the `!` entries at both ends, so a seed dropped from
+# the list, or promoted to managed core, with a content change still counts.
+seeds_touched() {
+  local paths=() p
+  while IFS= read -r p; do paths+=("$p"); done < <({ seeds_at "$1"; seeds_at "$2"; } | sort -u)
+  [ ${#paths[@]} -gt 0 ] || return 0
+  git -C "$KIT_ROOT" diff --name-only "$1" "$2" -- "${paths[@]}" 2>/dev/null | sed 's#^payload/##'
+}
+# The release before a commit: the highest release tag that is an ancestor of it.
+prev_release() {
+  local t
+  for t in $(git -C "$KIT_ROOT" tag -l 'v[0-9]*' --sort=-v:refname | grep -E "$RELEASE_RE"); do
+    if git -C "$KIT_ROOT" merge-base --is-ancestor "refs/tags/$t^{commit}" "$1" 2>/dev/null; then echo "$t"; return; fi
+  done
 }
 
 opened=0; skipped=0; refused=0
@@ -345,14 +369,13 @@ $changes"
     changes_note="The release or commit this repository's lock recorded could not be found in Friday, so what changed since is not listed."
   fi
   # Does the range touch a consumer-owned seed? Decided from Git, not from the
-  # changelog: the `!` entries of managed-core.txt, under payload/, between what
-  # the consumer held and this release. The section text comes from the
-  # changelog entries of the releases in that range.
+  # changelog: the `!` entries of managed-core.txt (at either end), under
+  # payload/, between what the consumer held and this release. The section text
+  # comes from the changelog entries of the releases in that range.
   if [ -z "$from" ]; then
     seed_note="Seed changes: could not be decided, because the starting point could not be found in Friday. Read the Seed changes sections in Friday's docs/changelog/ for every release up to \`$tag\`."
   else
-    touched=""
-    [ ${#seeds[@]} -gt 0 ] && touched=$(git -C "$KIT_ROOT" diff --name-only "$from_ref" "refs/tags/$tag" -- "${seeds[@]}" 2>/dev/null | sed 's#^payload/##')
+    touched=$(seeds_touched "$from_ref^{commit}" "refs/tags/$tag^{commit}")
     if [ -z "$touched" ]; then
       seed_note="Seed changes: none. No consumer-owned seed changed between \`$from\` and \`$tag\`; there is nothing to reconcile by hand."
     else
@@ -362,17 +385,27 @@ $changes"
 $touched
 \`\`\`
 "
-      changelog=$(changelog_at_pin)
+      changelog=$(changelog_at_head)
       found=0
       while IFS= read -r rel_tag; do
         [ -n "$rel_tag" ] || continue
         sect=$(printf '%s\n' "$changelog" | seed_section "$rel_tag" | sed 1d)
-        [ -n "$(printf '%s' "$sect" | tr -d '[:space:]')" ] || continue
-        found=1
-        seed_note="$seed_note
+        if [ -n "$(printf '%s' "$sect" | tr -d '[:space:]')" ]; then
+          found=1
+          seed_note="$seed_note
 From release \`$rel_tag\`:
 $sect
 "
+        else
+          # Did this release itself change a seed? Then the missing section is
+          # said, even when another release's section was found above.
+          rel_prev=$(prev_release "refs/tags/$rel_tag^{commit}^")
+          if [ -n "$rel_prev" ] && [ -n "$(seeds_touched "refs/tags/$rel_prev^{commit}" "refs/tags/$rel_tag^{commit}")" ]; then
+            seed_note="$seed_note
+Release \`$rel_tag\` changed seeds and its entry has no Seed changes section. Ask the Friday maintainer what to do for its seeds.
+"
+          fi
+        fi
       done < <(git -C "$KIT_ROOT" tag -l 'v[0-9]*' --sort=v:refname | grep -E "$RELEASE_RE" | while IFS= read -r t; do
         git -C "$KIT_ROOT" merge-base --is-ancestor "refs/tags/$t^{commit}" "refs/tags/$tag^{commit}" 2>/dev/null \
           && ! git -C "$KIT_ROOT" merge-base --is-ancestor "refs/tags/$t^{commit}" "$from_ref^{commit}" 2>/dev/null \

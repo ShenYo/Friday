@@ -26,7 +26,7 @@ export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 
 n=0
 new_repo() {
-  n=$((n + 1)); r="$root/$n"
+  n=$((n + 1)); r="$root/$n${1:-}"
   mkdir -p "$r/bin" "$r/payload" "$r/docs/changelog"
   cp "${CHECK_UNDER_TEST:-$source_root/bin/friday-seed-check}" "$r/bin/friday-seed-check"
   printf 'managed.md\n\n# --- consumer-owned ---\n!seed.md\n' > "$r/bin/managed-core.txt"
@@ -104,6 +104,147 @@ new_repo; edit seed.md one; entry "v1.2.0 (2026-02-01)" no-section; tag v1.2.0
 git clone -q --depth 1 "file://$r" "$r/shallow" 2>/dev/null
 bash "$r/shallow/bin/friday-seed-check" > "$r/out" 2>&1; rc=$?
 check "a shallow clone is refused, not passed" bash -c "[ $rc = 2 ] && grep -q 'shallow' '$r/out'"
+
+# setlog: replace the changelog with stdin, and commit it.
+setlog() { cat > "$r/docs/changelog/v1.md"; gq -C "$r" commit -qam "docs: changelog"; }
+SECTION='### Seed changes
+
+- **Capability:** cap
+- **Who is affected:** who
+- **Action:** do
+- **Check:** chk
+'
+
+# 7. A path with a space in it is read whole.
+new_repo " sp ace"; edit managed.md one; tag v1.2.0
+edit seed.md two
+setlog <<EOF
+# v1
+
+## Unreleased
+
+- a change.
+
+$SECTION
+## v1.2.0 (2026-02-01)
+
+- x.
+
+## v1.1.0 (2026-01-01)
+
+- first.
+EOF
+run
+check "a kit path with a space: the pending entry is found and passes" bash -c "[ $rc = 0 ] && grep -q 'ok   pending' '$r/out'"
+
+# 8. The section must be in the entry of the release that changed the seed.
+new_repo; edit seed.md one; tag v1.2.0
+setlog <<EOF
+# v1
+
+## v1.2.0 (2026-02-01)
+
+- no section here.
+
+## v1.1.0 (2026-01-01)
+
+- first.
+
+$SECTION
+EOF
+run
+check "another entry's section does not cover this release" bash -c "[ $rc = 1 ] && grep -q 'FAIL v1.2.0' '$r/out'"
+new_repo; edit seed.md one; tag v1.2.0
+edit seed.md two
+setlog <<EOF
+# v1
+
+## Unreleased
+
+- no section here.
+
+## v1.2.0 (2026-02-01)
+
+- x.
+
+$SECTION
+## v1.1.0 (2026-01-01)
+
+- first.
+EOF
+run
+check "pending: the released entry's section does not cover the Unreleased entry" bash -c "[ $rc = 1 ] && grep -q 'FAIL pending' '$r/out'"
+
+# 9. A field must have text, and the heading must be exactly "Seed changes".
+new_repo; edit seed.md one; tag v1.2.0
+setlog <<EOF
+# v1
+
+## v1.2.0 (2026-02-01)
+
+### Seed changes
+
+- **Capability:** cap
+- **Who is affected:** who
+- **Action:**
+- **Check:** chk
+
+## v1.1.0 (2026-01-01)
+EOF
+run
+check "an empty field fails, and is named" bash -c "[ $rc = 1 ]"
+check "... naming Action" says "no '- \*\*Action:\*\* <text>' field"
+new_repo; edit seed.md one; tag v1.2.0
+setlog <<EOF
+# v1
+
+## v1.2.0 (2026-02-01)
+
+### Seed changes (notes)
+
+- **Capability:** cap
+- **Who is affected:** who
+- **Action:** do
+- **Check:** chk
+
+## v1.1.0 (2026-01-01)
+EOF
+run
+check "a heading that only starts with Seed changes is not the section" bash -c "[ $rc = 1 ] && grep -q \"no '### Seed changes' section\" '$r/out'"
+
+# 10. The seed set is the union of both ends of the range.
+new_repo; tag v1.2.0
+printf 'second\n' > "$r/payload/seed2.md"; printf '!seed2.md\n' >> "$r/bin/managed-core.txt"
+gq -C "$r" add -A; gq -C "$r" commit -qm "a seed joins"; tag v1.2.1
+run
+check "a seed added to managed-core.txt within the range counts" bash -c "[ $rc = 1 ] && grep -q 'FAIL v1.2.1: changed a seed (payload/seed2.md)' '$r/out'"
+new_repo; tag v1.2.0
+printf 'managed.md\n' > "$r/bin/managed-core.txt"; printf 'changed\n' >> "$r/payload/seed.md"
+gq -C "$r" commit -qam "a seed is dropped from the list, and changes"; tag v1.2.1
+run
+check "a seed dropped from the list while its file changes counts" bash -c "[ $rc = 1 ] && grep -q 'FAIL v1.2.1: changed a seed (payload/seed.md)' '$r/out'"
+new_repo; tag v1.2.0
+printf 'managed.md\nseed.md\n' > "$r/bin/managed-core.txt"; printf 'changed\n' >> "$r/payload/seed.md"
+gq -C "$r" commit -qam "a seed is promoted to managed core, and changes"; tag v1.2.1
+run
+check "a seed promoted to managed core with a content change counts" bash -c "[ $rc = 1 ] && grep -q 'FAIL v1.2.1: changed a seed (payload/seed.md)' '$r/out'"
+
+# 11. The previous release is found by ancestry among vMAJOR.MINOR.PATCH tags.
+new_repo; edit seed.md one; tag v1.2.0rc1
+edit managed.md two; tag v1.2.0
+run
+check "a tag that is not a release does not shorten the range" bash -c "[ $rc = 1 ] && grep -q 'FAIL v1.2.0: changed a seed' '$r/out'"
+
+# 12. No v1.2.0 tag: every release is held to the rule, and the run says so.
+new_repo; edit seed.md one; tag v1.1.1
+run
+check "without a v1.2.0 tag every release is checked" bash -c "[ $rc = 1 ] && grep -q 'FAIL v1.1.1' '$r/out' && grep -q 'no v1.2.0 tag' '$r/out'"
+
+# 13. HEAD reaching no release says so instead of printing nothing.
+new_repo; tag v1.2.0
+gq -C "$r" checkout -q --orphan other; gq -C "$r" commit -qm "unrelated root"
+run
+check "pending: no reachable release prints a skip line" bash -c "[ $rc = 0 ] && grep -q '^skip pending' '$r/out'"
 
 echo
 if [ "$fails" -gt 0 ]; then echo "$fails of $total failed"; exit 1; fi

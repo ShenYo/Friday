@@ -37,10 +37,11 @@ Propagation carries only the managed core and never writes a seed (a `!` entry o
 edit in every consumer. The entry for that release says what, in a fixed section.
 
 An entry is the text under its `## vX.Y.Z (YYYY-MM-DD)` heading (`## Unreleased` before the
-release) up to the next `## ` heading. A release that changes a seed ends that entry with a
-`### Seed changes` heading, and the section runs to the next `### ` or `## ` heading. It holds
-four fields, each a list item with text on its first line (a field may continue on indented
-lines), in this order:
+release) up to the next `## ` heading. An entry must not contain a line starting with `## ` inside
+a fenced block, because that ends the entry for both tools. A release that changes a seed has,
+in that entry, a `### Seed changes` heading, and the section runs to the next `### ` or `## `
+heading. By convention it goes at the end of the entry, and holds four fields, each a list item
+with text on its first line (a field may continue on indented lines), written in this order:
 
 ```markdown
 ### Seed changes
@@ -52,15 +53,24 @@ lines), in this order:
 ```
 
 One section covers every seed the release changed. The v1.2.0 entry in
-[`docs/changelog/v1.md`](./docs/changelog/v1.md) is the worked example.
+[`docs/changelog/v1.md`](./docs/changelog/v1.md) is the worked example. A released entry may gain,
+or have corrected, a Seed changes section afterwards: the tag's message and the GitHub Release keep
+their original text, and the file is the authority for seed changes.
 
 Two tools hold to that rule:
 
 - [`bin/friday-seed-check`](./bin/friday-seed-check) fails when the range from the previous
-  release to a release (or, for the pending entry, to `HEAD`) changes a seed and the entry has no
-  such section. The range is read from Git, not from the entry. It asks nothing of a release
-  before v1.2.0, and CI runs it on every pull request.
+  release to a release (or, for the pending entry, to `HEAD`) changes a seed and that entry has
+  no such section, or a section where any of the four fields has no text. The order and the
+  position of the section are convention, not checked. The range is read from Git, not from the
+  entry, and the seeds are the `!` entries of `bin/managed-core.txt` at either end of it, so a
+  seed dropped from the list or promoted to managed core with a content change still counts. The
+  previous release is the highest release tag that is an ancestor. It asks nothing of a release
+  before v1.2.0 (a repository without a v1.2.0 tag has every release checked), and CI runs it on
+  every pull request.
 - `bin/friday-propagate` puts the section of every release in the consumer's range into the pull
   request body when the range from the consumer's recorded release (or commit) to the one it
-  carries changes a seed, and says in one line that none did otherwise. It still never writes a
-  seed.
+  carries changes a seed, and says in one line that none did otherwise. It names a release in the
+  range that changed seeds and has no section. It reads the changelog from the Friday checkout's
+  `HEAD` (`main`), not from the tag, so a section added after a release reaches the body; the
+  managed core, the seeds and the range stay at the pinned release. It still never writes a seed.

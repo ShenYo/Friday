@@ -453,19 +453,29 @@ one of them records the upstream producer. Do this in order:
    `origin` is the fork, and run every command from that checkout. The
    installer and `friday-propagate` check release tags against `origin`, and the
    installer needs a local `main`.
-2. Set the producer slug (below) and commit it on `main`.
-3. Number your releases from `v2.0.0`, and fetch upstream with `--no-tags`
-   (`git fetch --no-tags <upstream>`). Without `--release`, the installer, like
-   `friday-propagate`, picks the highest `vMAJOR.MINOR.PATCH` tag in the
-   checkout, so your tags must sort above every inherited upstream tag
-   (upstream is at `v1.x`) or the installer picks an upstream release, which
-   names the upstream producer. A release that starts a new major version
-   also starts a new changelog file ([`CHANGELOG.md`](./CHANGELOG.md)).
-4. Cut an annotated tag on the commit that holds the slug edit, and push `main`
-   and the tag to the fork's `origin`:
-   `git tag -a vX.Y.Z <commit> -m <note>`, then
-   `git push origin main vX.Y.Z`. The tag must be annotated, on `main`, and the
-   same tag object on `origin`.
+2. Set the producer slug (below) on a branch and merge it into the fork's
+   `main` through a pull request: a release is cut on a reviewed commit on
+   `main` (`docs/releases.md`), and Friday's `pre-push` hook refuses a push to
+   the default branch when the hooks are wired (`docs/safety.md`).
+3. Keep your releases numbered from `v2.0.0`, above upstream's `v1.x`. Without
+   `--release`, the installer, like `friday-propagate`, picks the highest
+   `vMAJOR.MINOR.PATCH` tag in the checkout, and an upstream release names the
+   upstream producer. So never fetch upstream's tags:
+   `git remote add upstream <upstream URL>`, then
+   `git config remote.upstream.tagOpt --no-tags`. Bring in upstream changes
+   later through a branch and a pull request like any change, and keep your
+   releases above upstream's major versions. The `v2.0.0` release starts a new
+   changelog file: `docs/changelog/v2.md` and its row in the table of
+   `CHANGELOG.md` belong to that release's pull request. A seed change that
+   came from upstream must be written into your own entry as a Seed changes
+   section, because `bin/friday-seed-check` and `friday-propagate` read the
+   fork's entries, by the fork's tag names and its top entry.
+4. After the release pull request merges, pull `main` and cut an annotated tag
+   on the commit on `main` that holds the slug edit (normally the release
+   commit that adds the changelog file): `git tag -a vX.Y.Z <commit> -m <note>`,
+   then push only the tag: `git push origin vX.Y.Z`. Cutting and pushing a
+   release tag is a person's step (`docs/releases.md`). The tag must be
+   annotated, on `main`, and the same tag object on `origin`.
 5. Install from that checkout, for example `bash install.sh --check <target>`
    and then `bash install.sh <target>`.
 

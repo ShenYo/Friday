@@ -17,8 +17,8 @@
   ubuntu 上執行測試套件，但那不是支援承諾。
 - **先備條件。** Git、Bash 與 `jq`（`friday-propagate` 另需 `gh`，須已登入且對每個 consumer 有 push 權限，用來開 pull request）。測試套件在
   macOS 內建的 Bash 3.2 與 Bash 5 下都通過。
-- **你可以依賴什麼。** release 的版本號是 `vMAJOR.MINOR.PATCH`，但這不是嚴格的 semantic versioning：MINOR release
-  會改動執行的內容，可能需要手動修改，其 Seed changes 段落會告訴你怎麼改（[規則](./docs/releases.md#releases)，英文）。自 `v1.2.0` 起，每個改動 consumer 自有 seed 的 release，其 changelog 條目都附有遷移說明
+- **你可以依賴什麼。** release 的版本號是 `vMAJOR.MINOR.PATCH`，但這不是嚴格的 semantic versioning：任何改動 consumer
+  自有 seed 的 release（PATCH 也一樣）都需要手動修改，其 Seed changes 段落會告訴你怎麼改（[規則](./docs/releases.md#releases)，英文）。自 `v1.2.0` 起，每個改動 consumer 自有 seed 的 release，其 changelog 條目都附有遷移說明
   （[Seed changes](./CHANGELOG.md#seed-changes)，英文）；CI 以 `bin/friday-seed-check` 強制檢查。
   沒有任何回應時間的承諾，Friday 由一個人維護。
 

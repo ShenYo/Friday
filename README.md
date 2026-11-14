@@ -24,10 +24,11 @@
   The test suites pass under Bash 3.2, which macOS ships,
   and under Bash 5.
 - **What you can rely on.** Releases are versioned `vMAJOR.MINOR.PATCH`, but
-  this is not strict semantic versioning: a MINOR release changes what runs and
-  may need a hand edit, which its Seed changes section gives
-  ([rules](./docs/releases.md#releases)). Every release from `v1.2.0` that
-  changes a consumer-owned seed carries a migration note in its changelog entry
+  this is not strict semantic versioning: any release that changes a
+  consumer-owned seed, a PATCH included, needs a hand edit, which its Seed
+  changes section gives ([rules](./docs/releases.md#releases)). Every release
+  from `v1.2.0` that changes a consumer-owned seed carries a migration note in
+  its changelog entry
   ([Seed changes](./CHANGELOG.md#seed-changes)); CI enforces it with
   `bin/friday-seed-check`. There is no response-time promise, and Friday is
   maintained by one person.

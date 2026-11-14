@@ -373,16 +373,22 @@ fork 本身就是 producer，而安裝程式執行的是它所安裝那個 relea
 1. clone 你的 fork，不是 upstream（`git clone <你的 fork 的 URL>`），讓 `origin` 就是 fork，所有指令
    都在這個 checkout 執行。安裝程式與 `friday-propagate` 都以 `origin` 檢查 release tag，安裝程式
    還需要本機有 `main`。
-2. 設定 producer slug（見下）並 commit 到 `main`。
-3. 你的 release 從 `v2.0.0` 開始編號，並以 `--no-tags` 抓取 upstream
-   （`git fetch --no-tags <upstream>`）。沒有 `--release` 時，安裝程式與 `friday-propagate` 一樣，會挑
-   checkout 裡最高的 `vMAJOR.MINOR.PATCH` tag，所以你的 tag 必須排在每個繼承來的 upstream tag 之上
-   （upstream 目前是 `v1.x`），否則安裝程式會挑中 upstream 的 release，而它記載的是 upstream 的
-   producer。開始新 major 版本的 release 也要開一個新的 changelog 檔
-   （見 [`CHANGELOG.md`](./CHANGELOG.md)，英文）。
-4. 在含有 slug 修改的那個 commit 上建立 annotated tag，並把 `main` 與 tag 推到 fork 的 `origin`：
-   `git tag -a vX.Y.Z <commit> -m <note>`，然後 `git push origin main vX.Y.Z`。tag 必須是
-   annotated、在 `main` 上，且在 `origin` 上是同一個 tag object。
+2. 在 branch 上設定 producer slug（見下），並透過 pull request merge 進 fork 的 `main`：release 是在
+   `main` 上經審查的 commit 上建立的（`docs/releases.md`），而且 hook 接好線時，Friday 的 `pre-push`
+   hook 會拒絕推送到預設 branch（`docs/safety.md`）。
+3. 你的 release 從 `v2.0.0` 開始編號，高於 upstream 的 `v1.x`。沒有 `--release` 時，安裝程式與
+   `friday-propagate` 一樣，會挑 checkout 裡最高的 `vMAJOR.MINOR.PATCH` tag，而 upstream 的 release
+   記載的是 upstream 的 producer。所以絕不要抓取 upstream 的 tag：
+   `git remote add upstream <upstream URL>`，然後
+   `git config remote.upstream.tagOpt --no-tags`。之後要帶入 upstream 的變更，和任何變更一樣經由
+   branch 與 pull request，並讓你的 release 一直高於 upstream 的 major 版本。`v2.0.0` release 會開啟新的
+   changelog 檔：`docs/changelog/v2.md` 與 `CHANGELOG.md` 表格裡它的那一列，屬於該 release 的 pull
+   request。來自 upstream 的 seed 變更，必須在你自己的條目裡寫成 Seed changes 段落，因為
+   `bin/friday-seed-check` 與 `friday-propagate` 讀的是 fork 的條目，依 fork 的 tag 名稱與最上面的條目查找。
+4. release 的 pull request merge 之後，pull `main`，在 `main` 上含有 slug 修改的 commit（通常就是新增
+   changelog 檔的 release commit）上建立 annotated tag：`git tag -a vX.Y.Z <commit> -m <note>`，
+   然後只推送 tag：`git push origin vX.Y.Z`。建立並推送 release tag 是人的步驟（`docs/releases.md`）。
+   tag 必須是 annotated、在 `main` 上，且在 `origin` 上是同一個 tag object。
 5. 從那個 checkout 安裝，例如先 `bash install.sh --check <target>`，再 `bash install.sh <target>`。
 
 fork 的 consumer lock 必須記載 fork 自己的名稱。producer slug 只設定一次，就是

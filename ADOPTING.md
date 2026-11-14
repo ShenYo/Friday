@@ -457,22 +457,24 @@ one of them records the upstream producer. Do this in order:
    `main` through a pull request: a release is cut on a reviewed commit on
    `main` (`docs/releases.md`), and Friday's `pre-push` hook refuses a push to
    the default branch when the hooks are wired (`docs/safety.md`).
-3. Keep your releases numbered from `v2.0.0`, above upstream's `v1.x`. Without
-   `--release`, the installer, like `friday-propagate`, picks the highest
-   `vMAJOR.MINOR.PATCH` tag in the checkout, and an upstream release names the
-   upstream producer. So never fetch upstream's tags:
+3. Number your first release above every release tag the fork already has
+   (upstream's newest is `v1.3.0`). Without `--release`, the installer, like
+   `friday-propagate`, picks the highest `vMAJOR.MINOR.PATCH` tag in the
+   checkout, and an upstream release names the upstream producer. For the
+   same reason, keep upstream's later tags out of the checkout:
    `git remote add upstream <upstream URL>`, then
-   `git config remote.upstream.tagOpt --no-tags`. Bring in upstream changes
-   later through a branch and a pull request like any change, and keep your
-   releases above upstream's major versions. The `v2.0.0` release starts a new
-   changelog file: `docs/changelog/v2.md` and its row in the table of
-   `CHANGELOG.md` belong to that release's pull request. A seed change that
-   came from upstream must be written into your own entry as a Seed changes
-   section, because `bin/friday-seed-check` and `friday-propagate` read the
-   fork's entries, by the fork's tag names and its top entry.
+   `git config remote.upstream.tagOpt --no-tags`
+   ([#82](https://github.com/ShenYo/Friday/issues/82) will make the tools
+   choose from the tags on `origin`, and this advice goes then). Bring in
+   upstream changes later through a branch and a pull request like any
+   change. A seed change that came from upstream must be written into your
+   own changelog entry as a Seed changes section, because
+   `bin/friday-seed-check` and `friday-propagate` read the fork's entries, by
+   the fork's tag names and its top entry.
 4. After the release pull request merges, pull `main` and cut an annotated tag
    on the commit on `main` that holds the slug edit (normally the release
-   commit that adds the changelog file): `git tag -a vX.Y.Z <commit> -m <note>`,
+   commit, which renames the changelog entry):
+   `git tag -a vX.Y.Z <commit> -m <note>`,
    then push only the tag: `git push origin vX.Y.Z`. Cutting and pushing a
    release tag is a person's step (`docs/releases.md`). The tag must be
    annotated, on `main`, and the same tag object on `origin`.

@@ -2,21 +2,24 @@
 
 > **中文摘要**：`install.sh` 預設安裝最新的 release，不是這個 checkout 目前的內容；
 > 新專案用 `install.sh`，既有專案用 `--managed-only` 只拿 managed core、seeds 留給專案自己
-> 調和；clone 之後執行 `setup.sh`；之後由維護者用 `friday-propagate` 開 pull request。
+> 調和；clone 之後執行 `setup.sh`；之後由你自己（採用者）在更新過的 checkout 執行 `friday-propagate` 開 pull request，upstream 不會替你開。
 
 ## Choose your path
 
 - **Consume `ShenYo/Friday` releases (the default).** You need nothing but the
   upstream repository: clone it, and `install.sh` installs its newest annotated
-  release tag. Later releases reach your projects as pull requests that
-  `friday-propagate` opens, and a release that changes a seed says so in its
-  changelog entry ([Seed changes](./CHANGELOG.md#seed-changes)). Apart from
-  the fork section, everything below is written for this path.
+  release tag. Later releases reach your projects as pull requests that you
+  open yourself: pull your Friday checkout and run `friday-propagate` (see
+  [Staying current](#staying-current)); nobody upstream opens pull requests in
+  your repositories. A release that changes a seed says so in its changelog
+  entry ([Seed changes](./CHANGELOG.md#seed-changes)). Apart from the fork
+  section, everything below is written for this path.
 - **Fork and cut your own releases (advanced).** The installer takes a release,
-  never the checkout, so a fork must carry the release tags: annotated
-  `vMAJOR.MINOR.PATCH` tags, pushed to the fork's `origin` and reachable from
-  its `main`, cut by you for each release. You also set the producer slug once
-  before the first consumer is installed. That is
+  never the checkout, so a fork must cut its own annotated
+  `vMAJOR.MINOR.PATCH` tags on its `main` and push them to its `origin`. The
+  producer slug is set in `bin/friday-lock` and takes effect only in a release
+  cut after that edit, so the first fork release comes before the first
+  consumer install. The steps are in
   [Cutting releases from a fork](#cutting-releases-from-a-fork).
 
 Two ways in. A blank repository is a handful of commands. An existing project
@@ -25,7 +28,9 @@ not written down.
 
 ## Prerequisites
 
-Prerequisites are Git, Bash and `jq`. `.agents/bin/setup.sh` and the `CLAUDE.md`
+Prerequisites are Git, Bash and `jq`; `friday-propagate` also needs `gh`,
+authenticated, with push access to each consumer. `.agents/bin/setup.sh` and
+the `CLAUDE.md`
 seed ship from `v1.1.0`; a release before that (`v1.0.0`, `v1.0.1`) has neither,
 its installer wires the clone itself, and a project installed from one has no
 `setup.sh` to run after a clone (there, `git config core.hooksPath
@@ -282,7 +287,7 @@ consumer repository's clone.
 
 | Situation | Who, where | Go to |
 | --- | --- | --- |
-| Friday cut a new release | the maintainer, on one machine | [1](#1-friday-cut-a-new-release) |
+| Friday cut a new release | you, on the machine that runs `friday-propagate` | [1](#1-friday-cut-a-new-release) |
 | A propagate pull request merged in a consumer | every machine that has that consumer's clone | [2](#2-a-propagate-pull-request-merged) |
 | You are about to run `install.sh` or `friday-propagate` | the machine you run it on | [3](#3-before-running-friday-on-a-machine) |
 | You are not sure where a consumer stands | any machine | [4](#4-where-does-a-consumer-stand) |
@@ -299,10 +304,11 @@ consumer repository's clone.
 
    It opens one pull request in each consumer that is behind, carrying the
    managed-core files that moved. A consumer that is already current is left
-   alone. It never writes a seed: when the release range changes one, the pull
-   request body carries that release's `### Seed changes` section
-   ([the convention](./CHANGELOG.md#seed-changes)), and the edit is yours to
-   make by hand.
+   alone. It never writes a seed. The pull request body carries the
+   `### Seed changes` section of every release in the consumer's range
+   ([the convention](./CHANGELOG.md#seed-changes)), says in one line when no
+   seed changed, and names a release that changed seeds but has no section; the
+   edit is yours to make by hand.
 3. Review and merge each pull request. A person does this. Then do step 2 on
    every machine.
 
@@ -438,9 +444,30 @@ launch command for either.
 
 ## Cutting releases from a fork
 
-The installer needs an annotated `vMAJOR.MINOR.PATCH` tag on the fork's `origin`,
-reachable from its `main` ([Prerequisites](#prerequisites)), so a fork cuts its
-own tags as well as naming itself.
+A fork is its own producer, and the installer runs the `bin/friday-lock` of the
+release it installs. Releases up to and including `v1.3.0` hard-code
+`ShenYo/Friday` in their own `bin/friday-lock`, so a consumer installed from
+one of them records the upstream producer. Do this in order:
+
+1. Clone your fork, not upstream (`git clone <your fork's URL>`), so that
+   `origin` is the fork, and run every command from that checkout. The
+   installer and `friday-propagate` check release tags against `origin`, and the
+   installer needs a local `main`.
+2. Set the producer slug (below) and commit it on `main`.
+3. Number your releases from `v2.0.0`, and fetch upstream with `--no-tags`
+   (`git fetch --no-tags <upstream>`). Without `--release`, the installer, like
+   `friday-propagate`, picks the highest `vMAJOR.MINOR.PATCH` tag in the
+   checkout, so your tags must sort above every inherited upstream tag
+   (upstream is at `v1.x`) or the installer picks an upstream release, which
+   names the upstream producer. A release that starts a new major version
+   also starts a new changelog file ([`CHANGELOG.md`](./CHANGELOG.md)).
+4. Cut an annotated tag on the commit that holds the slug edit, and push `main`
+   and the tag to the fork's `origin`:
+   `git tag -a vX.Y.Z <commit> -m <note>`, then
+   `git push origin main vX.Y.Z`. The tag must be annotated, on `main`, and the
+   same tag object on `origin`.
+5. Install from that checkout, for example `bash install.sh --check <target>`
+   and then `bash install.sh <target>`.
 
 A fork's consumer locks must name the fork. The producer slug is set once, as
 the default of `PRODUCER` near the top of `bin/friday-lock`. A lock that names

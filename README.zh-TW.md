@@ -15,10 +15,10 @@
   見[從 fork 發行 release](./ADOPTING.zh-TW.md#從-fork-發行-release)。
 - **支援範圍。** 以 macOS 與 Claude Code 為先。Codex 尚待處理。不支援 Linux 與 Windows：CI 也會在
   ubuntu 上執行測試套件，但那不是支援承諾。
-- **先備條件。** Git、Bash 與 `jq`（`friday-propagate` 另需 `gh` 來開 pull request）。測試套件在
+- **先備條件。** Git、Bash 與 `jq`（`friday-propagate` 另需 `gh`，須已登入且對每個 consumer 有 push 權限，用來開 pull request）。測試套件在
   macOS 內建的 Bash 3.2 與 Bash 5 下都通過。
-- **你可以依賴什麼。** release 的版本號是 `vMAJOR.MINOR.PATCH`（[規則](./docs/releases.md#releases)，
-  英文）。自 `v1.2.0` 起，每個改動 consumer 自有 seed 的 release，其 changelog 條目都附有遷移說明
+- **你可以依賴什麼。** release 的版本號是 `vMAJOR.MINOR.PATCH`，但這不是嚴格的 semantic versioning：MINOR release
+  會改動執行的內容，可能需要手動修改，其 Seed changes 段落會告訴你怎麼改（[規則](./docs/releases.md#releases)，英文）。自 `v1.2.0` 起，每個改動 consumer 自有 seed 的 release，其 changelog 條目都附有遷移說明
   （[Seed changes](./CHANGELOG.md#seed-changes)，英文）；CI 以 `bin/friday-seed-check` 強制檢查。
   沒有任何回應時間的承諾，Friday 由一個人維護。
 
@@ -50,8 +50,9 @@ Friday 是怎麼走到現在的，記錄在 [`docs/history.md`](./docs/history.m
 > **摘要**：managed core 現為十七檔，最新 release 是 v1.3.0（2026-11-13），最近的
 > protected-paths guard 會跟著 Bash 指令裡的 `cd`／`pushd`。
 > pet_care 與 Finance 兩個 consumer 記錄的是 v1.2.0；
-> v1.3.0 沒有改任何 seed，只需收 `friday-propagate` 開的 sync PR。待辦：指定 backup maintainer、
-> 真正的新機器 replay、第三個 consumer、external-runtime 收尾，以及 managed-core 更新 bot。
+> v1.3.0 沒有改任何 seed，只需收 `friday-propagate` 開的 sync PR。已知限制：只有一位維護者、
+> 兩個 consumer 都是維護者自己的私有 repository、新機器安裝尚未由獨立採用者 replay、
+> external-runtime 收尾，以及 managed-core 更新 bot。
 
 已就位：
 
@@ -94,7 +95,8 @@ bash ~/.Friday/install.sh my-project                       # 最新的 release
 [採用 Friday](./ADOPTING.zh-TW.md)。
 
 `~/.Friday` 只是慣例，不是必要條件：`install.sh`、`bin/friday-lock` 與 `bin/friday-propagate` 都從自己所在的
-位置找到 kit，所以 clone 到任何位置都行。
+位置找到 kit，所以 clone 到任何位置都行。不過 `friday-propagate` 寫的 pull request 內文會叫 reviewer 執行
+`bash ~/.Friday/bin/friday-lock check .`，請把那裡換成你自己的路徑。
 
 ## 文件
 

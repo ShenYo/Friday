@@ -19,10 +19,13 @@
 - **Support.** macOS and Claude Code first. Codex is pending. Linux and Windows
   are not supported: CI also runs the test suites on ubuntu, but that is not a
   support promise.
-- **Prerequisites.** Git, Bash and `jq` (`friday-propagate` also needs `gh`, to
-  open pull requests). The test suites pass under Bash 3.2, which macOS ships,
+- **Prerequisites.** Git, Bash and `jq` (`friday-propagate` also needs `gh`,
+  authenticated, with push access to each consumer, to open pull requests).
+  The test suites pass under Bash 3.2, which macOS ships,
   and under Bash 5.
-- **What you can rely on.** Releases are versioned `vMAJOR.MINOR.PATCH`
+- **What you can rely on.** Releases are versioned `vMAJOR.MINOR.PATCH`, but
+  this is not strict semantic versioning: a MINOR release changes what runs and
+  may need a hand edit, which its Seed changes section gives
   ([rules](./docs/releases.md#releases)). Every release from `v1.2.0` that
   changes a consumer-owned seed carries a migration note in its changelog entry
   ([Seed changes](./CHANGELOG.md#seed-changes)); CI enforces it with
@@ -62,8 +65,9 @@ describes the present.
 > **中文摘要**：managed core 現為十七檔，最新 release 是 v1.3.0（2026-11-13），最近的
 > protected-paths guard 會跟著 Bash 指令裡的 `cd`／`pushd`。
 > pet_care 與 Finance 兩個 consumer 記錄的是 v1.2.0；
-> v1.3.0 沒有改任何 seed，只需收 `friday-propagate` 開的 sync PR。待辦：指定 backup maintainer、
-> 真正的新機器 replay、第三個 consumer、external-runtime 收尾，以及 managed-core 更新 bot。
+> v1.3.0 沒有改任何 seed，只需收 `friday-propagate` 開的 sync PR。已知限制：只有一位維護者、
+> 兩個 consumer 都是維護者自己的私有 repository、新機器安裝尚未由獨立採用者 replay、
+> external-runtime 收尾，以及 managed-core 更新 bot。
 
 In place:
 
@@ -110,7 +114,9 @@ files takes `--managed-only` instead. Every step, the checks to run afterwards, 
 after cloning a consumer are in [Adopting Friday](./ADOPTING.md).
 
 `~/.Friday` is a convention, not a requirement: `install.sh`, `bin/friday-lock` and
-`bin/friday-propagate` find the kit from their own location, so a clone anywhere works.
+`bin/friday-propagate` find the kit from their own location, so a clone anywhere works. The
+pull request body that `friday-propagate` writes tells the reviewer to run `bash ~/.Friday/bin/friday-lock check .`; substitute
+your own path there.
 
 ## Documents
 

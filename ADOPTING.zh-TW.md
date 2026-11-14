@@ -2,25 +2,27 @@
 
 > **摘要**：`install.sh` 預設安裝最新的 release，不是這個 checkout 目前的內容；
 > 新專案用 `install.sh`，既有專案用 `--managed-only` 只拿 managed core、seeds 留給專案自己
-> 調和；clone 之後執行 `setup.sh`；之後由維護者用 `friday-propagate` 開 pull request。
+> 調和；clone 之後執行 `setup.sh`；之後由你自己（採用者）在更新過的 checkout 執行 `friday-propagate` 開 pull request，upstream 不會替你開。
 
 ## 選擇路徑
 
 - **使用 `ShenYo/Friday` 的 release（預設）。** 除了 upstream repository 之外你什麼都不需要：clone
-  它，`install.sh` 會安裝它最新的 annotated release tag。之後的 release 以 `friday-propagate` 開的
-  pull request 抵達你的專案；改動 seed 的 release 會在它的 changelog 條目中說明
-  （[Seed changes](./CHANGELOG.md#seed-changes)，英文）。除了 fork 那一節，以下都是針對這條路徑寫的。
-- **Fork 並發行自己的 release（進階）。** 安裝程式安裝的是 release，絕不是 checkout，所以 fork 必須帶有
-  release tag：形如 `vMAJOR.MINOR.PATCH` 的 annotated tag，推到 fork 的 `origin`，且可從它的 `main`
-  到達，每次發行都由你自己建立。你還要在安裝第一個 consumer 之前，把 producer slug 設定一次。
-  見[從 fork 發行 release](#從-fork-發行-release)。
+  它，`install.sh` 會安裝它最新的 annotated release tag。之後的 release 以 pull request 抵達你的專案，
+  而 pull request 是你自己開的：更新你的 Friday checkout，再執行 `friday-propagate`（見
+  [持續保持最新](#持續保持最新)）；upstream 不會在你的 repository 開 pull request。改動 seed 的 release
+  會在它的 changelog 條目中說明（[Seed changes](./CHANGELOG.md#seed-changes)，英文）。除了 fork
+  那一節，以下都是針對這條路徑寫的。
+- **Fork 並發行自己的 release（進階）。** 安裝程式安裝的是 release，絕不是 checkout，所以 fork 必須自己在
+  `main` 上建立形如 `vMAJOR.MINOR.PATCH` 的 annotated tag，並推到 fork 的 `origin`。producer slug
+  設定在 `bin/friday-lock`，只對該修改之後發行的 release 生效，所以第一個 fork release 要在第一次安裝
+  consumer 之前發行。步驟見[從 fork 發行 release](#從-fork-發行-release)。
 
 兩種入口。空 repository 只要幾個指令；既有專案需要一次判斷，而這份文件之所以存在，
 就是因為那個判斷從來沒有被寫下來。
 
 ## 先備條件
 
-先備條件是 Git、Bash 與 `jq`。`.agents/bin/setup.sh` 與 `CLAUDE.md` seed 從 `v1.1.0` 起才附帶；更早的 release
+先備條件是 Git、Bash 與 `jq`；`friday-propagate` 另需 `gh`，且須已登入，並對每個 consumer 有 push 權限。`.agents/bin/setup.sh` 與 `CLAUDE.md` seed 從 `v1.1.0` 起才附帶；更早的 release
 （`v1.0.0`、`v1.0.1`）兩者都沒有，它的安裝程式自己為 clone 接線，從這類 release 安裝的專案也沒有 `setup.sh`
 可在 clone 之後執行（那裡全新 clone 缺少的是 `git config core.hooksPath .agents/githooks`）。安裝程式是本機
 Friday checkout 裡的一支腳本；還沒有的話，一行就能取得（路徑只是慣例，不是必要條件：腳本會從自己所在的位置找到 kit）：
@@ -229,7 +231,7 @@ Friday 發了新 release 之後，會以 pull request 的形式送到每個 cons
 
 | 情境 | 誰、在哪裡 | 前往 |
 | --- | --- | --- |
-| Friday 發了新的 release | 維護者，在其中一台機器上 | [1](#1-friday-發了新的-release) |
+| Friday 發了新的 release | 你，在執行 `friday-propagate` 的那台機器上 | [1](#1-friday-發了新的-release) |
 | 某個 consumer merge 了 propagate 的 pull request | 每一台有那個 consumer clone 的機器 | [2](#2-propagate-的-pull-request-merge-之後) |
 | 準備在某台機器上執行 `install.sh` 或 `friday-propagate` | 要執行的那台機器 | [3](#3-在機器上執行-friday-之前) |
 | 不確定某個 consumer 目前在什麼狀態 | 任何一台機器 | [4](#4-consumer-目前在什麼狀態) |
@@ -244,9 +246,9 @@ Friday 發了新 release 之後，會以 pull request 的形式送到每個 cons
    bash "$FRIDAY/bin/friday-propagate"           ~/path/to/consumer ...
    ```
 
-   它會在每個落後的 consumer 開一個 pull request，帶上有變動的 managed-core 檔案。已經是最新的 consumer 不會被動到。它絕不寫入 seed：當這個 release 範圍改動了 seed，
-   pull request 內文會帶上該 release 的 `### Seed changes` 段落（[慣例](./CHANGELOG.md#seed-changes)，英文），
-   那項修改要由你親手做。
+   它會在每個落後的 consumer 開一個 pull request，帶上有變動的 managed-core 檔案。已經是最新的 consumer 不會被動到。它絕不寫入 seed。pull request 內文會帶上 consumer 所跨 release 範圍內
+   每個 release 的 `### Seed changes` 段落（[慣例](./CHANGELOG.md#seed-changes)，英文），沒有 seed 改動時
+   用一行說明，若某個 release 改了 seed 卻沒有該段落則指名提醒；那項修改要由你親手做。
 3. 由人 review 並 merge 每個 pull request，然後在每台機器上做第 2 節。
 
 檢查：merge 之後，`bash "$FRIDAY/bin/friday-lock" check "$CONSUMER"` 會顯示 `in sync`。更多細節見[把變更帶到各個 consumer](./docs/updating-consumers.md#carrying-a-change-out-to-consumers)。
@@ -364,8 +366,24 @@ runtime 自己要補的證據工作。Gemini CLI 與 `agy` 在這裡仍是 pendi
 
 ## 從 fork 發行 release
 
-安裝程式需要 fork 的 `origin` 上有可從 `main` 到達、形如 `vMAJOR.MINOR.PATCH` 的 annotated tag
-（見[先備條件](#先備條件)），所以 fork 除了寫上自己的名稱，也要自己建立 tag。
+fork 本身就是 producer，而安裝程式執行的是它所安裝那個 release 自己的 `bin/friday-lock`。`v1.3.0`
+（含）以前的 release，在它們自己的 `bin/friday-lock` 裡把 `ShenYo/Friday` 寫死，所以從其中任何一個
+安裝的 consumer 會記載 upstream 為 producer。請依序進行：
+
+1. clone 你的 fork，不是 upstream（`git clone <你的 fork 的 URL>`），讓 `origin` 就是 fork，所有指令
+   都在這個 checkout 執行。安裝程式與 `friday-propagate` 都以 `origin` 檢查 release tag，安裝程式
+   還需要本機有 `main`。
+2. 設定 producer slug（見下）並 commit 到 `main`。
+3. 你的 release 從 `v2.0.0` 開始編號，並以 `--no-tags` 抓取 upstream
+   （`git fetch --no-tags <upstream>`）。沒有 `--release` 時，安裝程式與 `friday-propagate` 一樣，會挑
+   checkout 裡最高的 `vMAJOR.MINOR.PATCH` tag，所以你的 tag 必須排在每個繼承來的 upstream tag 之上
+   （upstream 目前是 `v1.x`），否則安裝程式會挑中 upstream 的 release，而它記載的是 upstream 的
+   producer。開始新 major 版本的 release 也要開一個新的 changelog 檔
+   （見 [`CHANGELOG.md`](./CHANGELOG.md)，英文）。
+4. 在含有 slug 修改的那個 commit 上建立 annotated tag，並把 `main` 與 tag 推到 fork 的 `origin`：
+   `git tag -a vX.Y.Z <commit> -m <note>`，然後 `git push origin main vX.Y.Z`。tag 必須是
+   annotated、在 `main` 上，且在 `origin` 上是同一個 tag object。
+5. 從那個 checkout 安裝，例如先 `bash install.sh --check <target>`，再 `bash install.sh <target>`。
 
 fork 的 consumer lock 必須記載 fork 自己的名稱。producer slug 只設定一次，就是
 `bin/friday-lock` 開頭附近 `PRODUCER` 的預設值。記載其他 producer 的 lock

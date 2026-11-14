@@ -64,7 +64,7 @@ changelog_text() {
   local f
   # An empty `## ` line before each file ends the last entry of the one before,
   # so it does not run on into the next file's title and introduction.
-  for f in "$KIT_ROOT"/docs/changelog/v[0-9]*.md; do [ -f "$f" ] && { printf '## \n'; cat "$f"; }; done
+  for f in "$KIT_ROOT"/docs/changelog/v[0-9]*.md; do [ -f "$f" ] && { printf '\n## \n'; cat "$f"; }; done
 }
 
 # touched <from-commit> <to-commit>: the seeds that differ, one per line. The

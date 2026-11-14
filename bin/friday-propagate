@@ -151,7 +151,7 @@ seed_section() {
 changelog_at_head() {
   local f
   git -C "$KIT_ROOT" ls-tree --name-only "$changelog_commit" docs/changelog/ 2>/dev/null | grep -E '/v[0-9]+\.md$' \
-    | while IFS= read -r f; do printf '## \n'; git -C "$KIT_ROOT" show "$changelog_commit:$f"; done
+    | while IFS= read -r f; do printf '\n## \n'; git -C "$KIT_ROOT" show "$changelog_commit:$f"; done
 }
 changelog=$(changelog_at_head)
 # Seeds (the `!` entries of managed-core.txt) as payload/ paths at one commit.

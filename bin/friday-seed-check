@@ -62,7 +62,9 @@ seed_paths() {
 
 changelog_text() {
   local f
-  for f in "$KIT_ROOT"/docs/changelog/v[0-9]*.md; do [ -f "$f" ] && cat "$f"; done
+  # An empty `## ` line before each file ends the last entry of the one before,
+  # so it does not run on into the next file's title and introduction.
+  for f in "$KIT_ROOT"/docs/changelog/v[0-9]*.md; do [ -f "$f" ] && { printf '## \n'; cat "$f"; }; done
 }
 
 # touched <from-commit> <to-commit>: the seeds that differ, one per line. The
@@ -100,10 +102,7 @@ tags=$(g tag -l 'v[0-9]*' --sort=v:refname | grep -E "$RELEASE_RE")
 
 # The release before a commit: the highest release tag that is an ancestor of it.
 prev_release() {
-  local t
-  for t in $(printf '%s\n' "$tags" | sed '1!G;h;$!d'); do
-    if g merge-base --is-ancestor "refs/tags/$t^{commit}" "$1" 2>/dev/null; then echo "$t"; return; fi
-  done
+  g tag -l 'v[0-9]*' --merged "$1" --sort=-v:refname 2>/dev/null | grep -E "$RELEASE_RE" | sed -n 1p
 }
 
 # From FLOOR on. A repository without that tag began after the rule, so every

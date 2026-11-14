@@ -72,5 +72,6 @@ Two tools hold to that rule:
   request body when the range from the consumer's recorded release (or commit) to the one it
   carries changes a seed, and says in one line that none did otherwise. It names a release in the
   range that changed seeds and has no section. It reads the changelog from the Friday checkout's
-  `HEAD` (`main`), not from the tag, so a section added after a release reaches the body; the
-  managed core, the seeds and the range stay at the pinned release. It still never writes a seed.
+  `HEAD` (`main`) at the commit the run started on, once for all consumers, not from the tag, so a
+  section added after a release reaches the body; the managed core, the seeds and the range stay
+  at the pinned release. It still never writes a seed.

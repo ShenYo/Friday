@@ -246,6 +246,30 @@ gq -C "$r" checkout -q --orphan other; gq -C "$r" commit -qm "unrelated root"
 run
 check "pending: no reachable release prints a skip line" bash -c "[ $rc = 0 ] && grep -q '^skip pending' '$r/out'"
 
+# 14. An entry ends at its file's end: the next file's title and intro are not
+#     part of it, so a section there is not the last entry's.
+new_repo; edit seed.md one; tag v1.2.0
+setlog <<EOF
+# v1
+
+## v1.1.0 (2026-01-01)
+
+- first.
+
+## v1.2.0 (2026-02-01)
+
+- no section here.
+EOF
+cat > "$r/docs/changelog/v2.md" <<EOF
+# v2
+
+An intro.
+
+$SECTION
+EOF
+run
+check "the last entry of a file does not take a section from the next file" bash -c "[ $rc = 1 ] && grep -q 'FAIL v1.2.0' '$r/out'"
+
 echo
 if [ "$fails" -gt 0 ]; then echo "$fails of $total failed"; exit 1; fi
 echo "all $total passed"

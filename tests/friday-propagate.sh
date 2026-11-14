@@ -567,6 +567,34 @@ run "$case_dir/c1"
 check "union: a seed that leaves the list for managed core with its content changed counts" \
   grep -qxF 'AGENTS.md' "$GH_SHIM_LOG/1.args"
 
+# 29. The changelog is read once, from main at the commit the run started on:
+#     a changelog commit made while the run is going reaches neither body.
+new_case; new_consumer c1; new_consumer c2
+bump "$(m1 1)" first; bump AGENTS.md seedchange
+seed_entry v1.1.0 orig; commit_all "docs: v1.1.0"; release v1.1.0
+head_before=$(git -C "$kit" rev-parse HEAD)
+export GH_SHIM_ONCE="sed 's/act-orig/act-edited/' '$kit/docs/changelog/v1.md' > '$kit/docs/changelog/v1.new' && mv '$kit/docs/changelog/v1.new' '$kit/docs/changelog/v1.md' && git -C '$kit' commit -qam 'docs: edited mid-run'"
+run "$case_dir/c1" "$case_dir/c2"
+unset GH_SHIM_ONCE
+check "mid-run changelog: the kit really did move during the run" \
+  bash -c "[ \"\$(git -C '$kit' rev-parse HEAD)\" != '$head_before' ]"
+check "mid-run changelog: both bodies carry the section as the run started" \
+  bash -c "grep -qxF -- '- **Action:** act-orig' '$GH_SHIM_LOG/1.args' && grep -qxF -- '- **Action:** act-orig' '$GH_SHIM_LOG/2.args'"
+check "mid-run changelog: neither body carries the later edit" \
+  bash -c "! grep -q 'act-edited' '$GH_SHIM_LOG/1.args' && ! grep -q 'act-edited' '$GH_SHIM_LOG/2.args'"
+
+# 30. An entry ends at its file's end: the next file's title and intro are not
+#     pasted into the body.
+new_case; new_consumer c1
+bump "$(m1 1)" first; bump AGENTS.md seedchange
+seed_entry v1.1.0 only
+printf '# Friday changelog: v2\n\nINTRO-OF-V2 text.\n' > "$kit/docs/changelog/v2.md"
+commit_all "docs: two changelog files"; release v1.1.0
+run "$case_dir/c1"
+check "next file: the section is carried" grep -qxF -- '- **Action:** act-only' "$GH_SHIM_LOG/1.args"
+check "next file: its title and intro are not" \
+  bash -c "! grep -q 'Friday changelog: v2' '$GH_SHIM_LOG/1.args' && ! grep -q 'INTRO-OF-V2' '$GH_SHIM_LOG/1.args'"
+
 echo
 if [ "$fails" -gt 0 ]; then echo "$fails of $total failed"; exit 1; fi
 echo "all $total passed"

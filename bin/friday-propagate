@@ -69,9 +69,11 @@ command -v gh >/dev/null || die "'gh' is required to open pull requests."
 # managed, their content and mode, what friday-lock compares against, and the
 # commit the consumer's lock records. An uncommitted edit here, or a commit
 # made while the run is going, cannot reach a consumer or disagree with the
-# label it is shipped under.
+# label it is shipped under. The changelog's Seed changes text is read once as
+# well, from main at the commit the run started on.
 [ "$(git -C "$KIT_ROOT" symbolic-ref --short -q HEAD)" = main ] \
   || die "run from Friday's main: the release carried out must be on the main checked out here."
+changelog_commit=$(git -C "$KIT_ROOT" rev-parse --verify -q HEAD) || die "cannot read Friday's HEAD"
 if [ -z "$tag" ]; then
   tag=$(git -C "$KIT_ROOT" tag -l 'v[0-9]*' --sort=-v:refname | grep -E "$RELEASE_RE" | sed -n 1p)
   [ -n "$tag" ] || die "Friday has no release tag (vMAJOR.MINOR.PATCH) -- cut one on main first. Nothing was written."
@@ -139,15 +141,19 @@ seed_section() {
     insec && /^### / { inseed = ($0 ~ /^### Seed changes[ \t]*$/) }
     inseed { print }'
 }
-# The changelog is read from the kit's HEAD (main, which this run requires),
-# not from the pinned tag: a Seed changes section added or corrected after a
-# release was cut is the file's to say, and must reach the pull request body.
-# Everything else -- managed core, seeds, diffs -- stays at the pin.
+# The changelog is read from main's commit at the start of the run
+# ($changelog_commit), not from the pinned tag: a Seed changes section added
+# or corrected after a release was cut is the file's to say, and must reach
+# the pull request body.
+# Everything else -- managed core, seeds, diffs -- stays at the pin. Each file
+# is preceded by an empty `## ` line, so the last entry of one file ends there
+# and does not run on into the next file's title and introduction.
 changelog_at_head() {
   local f
-  git -C "$KIT_ROOT" ls-tree --name-only HEAD docs/changelog/ 2>/dev/null | grep -E '/v[0-9]+\.md$' \
-    | while IFS= read -r f; do git -C "$KIT_ROOT" show "HEAD:$f"; done
+  git -C "$KIT_ROOT" ls-tree --name-only "$changelog_commit" docs/changelog/ 2>/dev/null | grep -E '/v[0-9]+\.md$' \
+    | while IFS= read -r f; do printf '## \n'; git -C "$KIT_ROOT" show "$changelog_commit:$f"; done
 }
+changelog=$(changelog_at_head)
 # Seeds (the `!` entries of managed-core.txt) as payload/ paths at one commit.
 seeds_at() {
   git -C "$KIT_ROOT" show "$1:bin/managed-core.txt" 2>/dev/null | while IFS= read -r line || [ -n "$line" ]; do
@@ -167,10 +173,7 @@ seeds_touched() {
 }
 # The release before a commit: the highest release tag that is an ancestor of it.
 prev_release() {
-  local t
-  for t in $(git -C "$KIT_ROOT" tag -l 'v[0-9]*' --sort=-v:refname | grep -E "$RELEASE_RE"); do
-    if git -C "$KIT_ROOT" merge-base --is-ancestor "refs/tags/$t^{commit}" "$1" 2>/dev/null; then echo "$t"; return; fi
-  done
+  git -C "$KIT_ROOT" tag -l 'v[0-9]*' --merged "$1" --sort=-v:refname 2>/dev/null | grep -E "$RELEASE_RE" | sed -n 1p
 }
 
 opened=0; skipped=0; refused=0
@@ -385,7 +388,6 @@ $changes"
 $touched
 \`\`\`
 "
-      changelog=$(changelog_at_head)
       found=0
       while IFS= read -r rel_tag; do
         [ -n "$rel_tag" ] || continue

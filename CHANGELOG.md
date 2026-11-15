@@ -75,3 +75,6 @@ Two tools hold to that rule:
   `HEAD` (`main`) at the commit the run started on, once for all consumers, not from the tag, so a
   section added after a release reaches the body; the managed core, the seeds and the range stay
   at the pinned release. It still never writes a seed.
+- The two tools differ on which tags they read for the range and the previous release:
+  `bin/friday-propagate` reads only the release tags that are on `origin` as the same tag object,
+  and `bin/friday-seed-check`, which has no network, reads every local release tag.

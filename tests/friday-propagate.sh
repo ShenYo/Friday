@@ -660,6 +660,45 @@ GH_SHIM_LOG="$case_dir/gh2" run --tag v1.2.0 "$case_dir/c2"
 check "local-only tag, --tag: the same holds on the explicit path" \
   bash -c "! grep -q 'act-upstream' '$case_dir/gh2/1.args' && grep -q 'Release .v1.2.0. changed seeds and its entry has no Seed changes section' '$case_dir/gh2/1.args'"
 
+
+# 32. A tag is read only when origin holds that very tag object (#84, round 1).
+#     origin's v1.1.0 is the fork's own release and changed no seed; this
+#     checkout holds upstream's v1.1.0, a different object under the same name,
+#     which did. v1.2.0 is the release that has to be named.
+new_case; new_consumer c1
+bump "$(m1 1)" fork; plain_entry v1.1.0; commit_all "docs: the fork's v1.1.0"; release v1.1.0
+bump AGENTS.md upstream-seed; commit_all "payload: a seed change"
+gq -C "$kit" tag -d v1.1.0 >/dev/null; gq -C "$kit" tag -a v1.1.0 -m "upstream's v1.1.0, same name"
+bump "$(m1 1)" fork2; plain_entry v1.2.0; commit_all "docs: the fork's v1.2.0"; release v1.2.0
+run "$case_dir/c1"
+body="$GH_SHIM_LOG/1.args"
+check "same name, other object: the fork's release is the one named" \
+  grep -q 'Release .v1.2.0. changed seeds and its entry has no Seed changes section' "$body"
+check "same name, other object: the local v1.1.0 is not read as a release" \
+  bash -c "! grep -q 'Release .v1.1.0. changed seeds' '$body'"
+
+# 33. A name is matched whole: a local-only v1.1.10 is not origin's v1.1.1.
+new_case; new_consumer c1
+bump "$(m1 1)" fork; plain_entry v1.1.1; commit_all "docs: v1.1.1"; release v1.1.1
+bump AGENTS.md upstream-seed; seed_entry v1.1.10 upstream; commit_all "docs: upstream's v1.1.10"
+gq -C "$kit" tag -a v1.1.10 -m "only here"
+bump "$(m1 1)" fork2; plain_entry v1.2.0; commit_all "docs: v1.2.0"; release v1.2.0
+run "$case_dir/c1"
+check "whole name: a local-only v1.1.10 is not read because v1.1.1 is on origin" \
+  bash -c "! grep -q 'act-upstream' '$GH_SHIM_LOG/1.args' && ! grep -q 'From release .v1.1.10' '$GH_SHIM_LOG/1.args'"
+
+# 34. The previous release is the highest release tag that is an ancestor, not
+#     the first one listed: v1.2.0 changed no seed after v1.1.0 did.
+new_case; new_consumer c1
+bump AGENTS.md seedchange; seed_entry v1.1.0 only; commit_all "docs: v1.1.0"; release v1.1.0
+bump "$(m1 1)" second; plain_entry v1.2.0; commit_all "docs: v1.2.0"; release v1.2.0
+run "$case_dir/c1"
+body="$GH_SHIM_LOG/1.args"
+check "previous release: the section of the release that changed the seed is carried" \
+  grep -qxF -- '- **Action:** act-only' "$body"
+check "previous release: a release that changed no seed is not named" \
+  bash -c "! grep -q 'Release .v1.2.0. changed seeds' '$body'"
+
 echo
 if [ "$fails" -gt 0 ]; then echo "$fails of $total failed"; exit 1; fi
 echo "all $total passed"

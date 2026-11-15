@@ -6,12 +6,13 @@
 #                                               (default target: current directory)
 #
 # By default this installs a release, never this checkout as it stands: the
-# newest annotated tag vMAJOR.MINOR.PATCH, chosen and validated the way
-# bin/friday-propagate does (on origin as the same tag object, reachable from
-# main). The release's tree is exported to a temporary directory and its own
-# install.sh does the work, so a checkout on a feature branch, or with
+# annotated tag vMAJOR.MINOR.PATCH that is the highest on origin (not among the
+# local tags: a fork that fetched upstream's tags is not handed upstream's), chosen
+# and validated the way bin/friday-propagate does (on origin as the same tag
+# object, reachable from main). The release's tree is exported to a temporary
+# directory and its own install.sh does the work, so a checkout on a feature branch, or with
 # uncommitted edits, cannot reach the target; the lock records the release.
-#   --release vX.Y.Z   install that release instead of the newest
+#   --release vX.Y.Z   install that release instead of origin's highest
 #   --working-tree     install this checkout as it is -- for developing Friday,
 #                      not for a project; the lock names no tag unless the
 #                      payload happens to match one
@@ -176,9 +177,18 @@ if [ "$working_tree" != true ]; then
   no_release="Fetch the releases ('git -C $KIT_ROOT fetch --tags'), or cut one in $KIT_ROOT: an annotated tag on main, pushed to origin ('git tag -a vX.Y.Z -m <note> <commit>', then 'git push origin vX.Y.Z').$shallow Nothing was written."
 
   tag=$release_tag
+  origin_refs=
   if [ -z "$tag" ]; then
-    tag=$(git -C "$KIT_ROOT" tag -l 'v[0-9]*' --sort=-v:refname | grep -E "$RELEASE_RE" | sed -n 1p || true)
-    [ -n "$tag" ] || die "Friday has no release tag (vMAJOR.MINOR.PATCH). $no_release"
+    # The default is the highest release tag on origin, from one listing that the
+    # check below reuses. Read origin on its own: inside a pipeline a failure
+    # here would end the script under set -e before any message.
+    origin_refs=$(git -C "$KIT_ROOT" ls-remote --tags origin 2>&1) \
+      || die "cannot read origin of $KIT_ROOT, so its releases cannot be listed (offline, no access, or no remote named origin): $origin_refs. Nothing was written."
+    # A peeled ref (refs/tags/vX^{}) does not match, so it is never a tag.
+    tag=$(printf '%s\n' "$origin_refs" \
+      | awk '$2 ~ /^refs\/tags\/v[0-9]+\.[0-9]+\.[0-9]+$/ { sub("refs/tags/", "", $2); print $2 }' \
+      | sort -t. -k1.2,1n -k2,2n -k3,3n | sed -n '$p')
+    [ -n "$tag" ] || die "origin of $KIT_ROOT has no release tag (vMAJOR.MINOR.PATCH). $no_release"
   fi
   [[ $tag =~ $RELEASE_RE ]] || die "not a release tag (vMAJOR.MINOR.PATCH): $tag. Nothing was written."
   tree=$(git -C "$KIT_ROOT" rev-parse --verify -q "refs/tags/$tag^{commit}") \
@@ -190,10 +200,12 @@ if [ "$working_tree" != true ]; then
   [ "$(git -C "$KIT_ROOT" cat-file -t "refs/tags/$tag" 2>/dev/null)" = tag ] \
     || die "$tag is not an annotated tag. Nothing was written."
   local_tag_obj=$(git -C "$KIT_ROOT" rev-parse --verify -q "refs/tags/$tag") || die "cannot read tag $tag. Nothing was written."
-  # Read origin on its own: inside a pipeline a failure here would end the script
-  # under set -e before any message, with git's status.
-  origin_refs=$(git -C "$KIT_ROOT" ls-remote --tags origin "refs/tags/$tag" 2>&1) \
-    || die "cannot read origin of $KIT_ROOT, so $tag cannot be checked against it (offline, no access, or no remote named origin): $origin_refs. Nothing was written."
+  # An explicit --release asks origin about that one tag; the default already
+  # holds the listing. Either way origin is asked once.
+  if [ -n "$release_tag" ]; then
+    origin_refs=$(git -C "$KIT_ROOT" ls-remote --tags origin "refs/tags/$tag" 2>&1) \
+      || die "cannot read origin of $KIT_ROOT, so $tag cannot be checked against it (offline, no access, or no remote named origin): $origin_refs. Nothing was written."
+  fi
   origin_tag_obj=$(printf '%s\n' "$origin_refs" | awk -v r="refs/tags/$tag" '$2 == r { print $1 }')
   [ -n "$origin_tag_obj" ] || die "$tag is not on origin (push it: git push origin $tag). Nothing was written."
   [ "$origin_tag_obj" = "$local_tag_obj" ] \

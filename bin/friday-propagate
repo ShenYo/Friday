@@ -4,8 +4,9 @@
 #   bin/friday-propagate [--dry-run] [--tag vX.Y.Z] <consumer-path>...
 #
 # What it carries is a release: an annotated `vMAJOR.MINOR.PATCH` tag on a
-# commit of Friday's main. By default the newest tag by version order, or the
-# one named with --tag. A payload change merged to main and not yet tagged is
+# commit of Friday's main. By default the highest such tag on origin by version
+# order (not among the local tags, which may include another repository's), or
+# the one named with --tag. A payload change merged to main and not yet tagged is
 # not carried -- consumers only ever receive a released payload -- and the run
 # says so. The tag is refused when it does not exist or is not on main. The
 # commit the tag points at is the pin, and so the immutable record; the tag is
@@ -74,12 +75,21 @@ command -v gh >/dev/null || die "'gh' is required to open pull requests."
 [ "$(git -C "$KIT_ROOT" symbolic-ref --short -q HEAD)" = main ] \
   || die "run from Friday's main: the release carried out must be on the main checked out here."
 changelog_commit=$(git -C "$KIT_ROOT" rev-parse --verify -q HEAD) || die "cannot read Friday's HEAD"
+origin_refs=
 if [ -z "$tag" ]; then
-  tag=$(git -C "$KIT_ROOT" tag -l 'v[0-9]*' --sort=-v:refname | grep -E "$RELEASE_RE" | sed -n 1p)
-  [ -n "$tag" ] || die "Friday has no release tag (vMAJOR.MINOR.PATCH) -- cut one on main first. Nothing was written."
+  # The default is the highest release tag on origin, from one listing that the
+  # check below reuses; a fork that fetched upstream's tags is not handed them.
+  origin_refs=$(git -C "$KIT_ROOT" ls-remote --tags origin 2>&1) \
+    || die "cannot read origin of $KIT_ROOT, so its releases cannot be listed: $origin_refs. Nothing was written."
+  # A peeled ref (refs/tags/vX^{}) does not match, so it is never a tag.
+  tag=$(printf '%s\n' "$origin_refs" \
+    | awk '$2 ~ /^refs\/tags\/v[0-9]+\.[0-9]+\.[0-9]+$/ { sub("refs/tags/", "", $2); print $2 }' \
+    | sort -t. -k1.2,1n -k2,2n -k3,3n | sed -n '$p')
+  [ -n "$tag" ] || die "origin of $KIT_ROOT has no release tag (vMAJOR.MINOR.PATCH) -- cut one on main and push it. Nothing was written."
 fi
 [[ $tag =~ $RELEASE_RE ]] || die "not a release tag (vMAJOR.MINOR.PATCH): $tag"
-tree=$(git -C "$KIT_ROOT" rev-parse --verify -q "refs/tags/$tag^{commit}") || die "no such release tag: $tag"
+tree=$(git -C "$KIT_ROOT" rev-parse --verify -q "refs/tags/$tag^{commit}") \
+  || die "no such release tag: $tag (if it is on origin, fetch the tags: git -C $KIT_ROOT fetch --tags)"
 # A tag on a commit main does not contain is a release nobody merged.
 git -C "$KIT_ROOT" merge-base --is-ancestor "$tree" refs/heads/main 2>/dev/null \
   || die "$tag is not on Friday's main (its commit is not an ancestor of main). Nothing was written."
@@ -90,7 +100,10 @@ git -C "$KIT_ROOT" merge-base --is-ancestor "$tree" refs/heads/main 2>/dev/null 
 [ "$(git -C "$KIT_ROOT" cat-file -t "refs/tags/$tag" 2>/dev/null)" = tag ] \
   || die "$tag is not an annotated tag. Nothing was written."
 local_tag_obj=$(git -C "$KIT_ROOT" rev-parse --verify -q "refs/tags/$tag")
-origin_tag_obj=$(git -C "$KIT_ROOT" ls-remote --tags origin "refs/tags/$tag" 2>/dev/null | awk -v r="refs/tags/$tag" '$2 == r { print $1 }')
+# An explicit --tag asks origin about that one tag; the default already holds
+# the listing. Either way origin is asked once.
+[ -n "$origin_refs" ] || origin_refs=$(git -C "$KIT_ROOT" ls-remote --tags origin "refs/tags/$tag" 2>/dev/null)
+origin_tag_obj=$(printf '%s\n' "$origin_refs" | awk -v r="refs/tags/$tag" '$2 == r { print $1 }')
 [ -n "$origin_tag_obj" ] || die "$tag is not on origin (push it, or origin cannot be read). Nothing was written."
 [ "$origin_tag_obj" = "$local_tag_obj" ] \
   || die "origin's $tag points at a different tag object than this checkout's. Nothing was written."

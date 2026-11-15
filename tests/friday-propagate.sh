@@ -291,7 +291,7 @@ check "--tag: the lock records the named release" \
 # 14. Nothing is carried without a release, or from one that is not there.
 new_case; new_consumer c1
 bump "$(m1 1)" v2
-gq -C "$kit" tag -d v1.0.0 >/dev/null
+gq -C "$kit" tag -d v1.0.0 >/dev/null; git -C "$kit.git" tag -d v1.0.0 >/dev/null
 run "$case_dir/c1"; rc=$?
 check "no tag: refused" bash -c "[ $rc != 0 ] && grep -q 'no release tag' '$case_dir/run.log'"
 check "no tag: nothing written to the consumer" \
@@ -405,9 +405,52 @@ run --tag v1x "$case_dir/c1"; rc=$?
 check "malformed: --tag naming one is refused" bash -c "[ $rc != 0 ] && grep -q 'not a release tag' '$case_dir/run.log'"
 new_case; new_consumer c1
 bump "$(m1 1)" v2; release v1.2.0-rc1
-gq -C "$kit" tag -d v1.0.0 >/dev/null
+gq -C "$kit" tag -d v1.0.0 >/dev/null; git -C "$kit.git" tag -d v1.0.0 >/dev/null
 run "$case_dir/c1"; rc=$?
 check "pre-release only: counts as no release" bash -c "[ $rc != 0 ] && grep -q 'no release tag' '$case_dir/run.log'"
+
+# 21b. The default is the highest release tag on origin, not among the local tags
+#      (#82): a fork that fetched upstream's tags must not carry upstream's release.
+new_case; new_consumer c1
+bump "$(m1 1)" v2; release v1.1.0
+bump "$(m1 3)" v3; gq -C "$kit" tag -a v1.9.0 -m "only here, e.g. fetched from upstream"
+mkdir -p "$case_dir/gitwrap"
+cat > "$case_dir/gitwrap/git" <<EOF
+#!/bin/bash
+for a in "\$@"; do [ "\$a" = ls-remote ] && echo "\$*" >> "$case_dir/ls-remote.log"; done
+exec $(command -v git) "\$@"
+EOF
+chmod +x "$case_dir/gitwrap/git"
+PATH="$case_dir/gitwrap:$PATH" run "$case_dir/c1"; rc=$?
+check "origin default: a higher local-only tag is ignored, the highest on origin is carried" \
+  bash -c "[ $rc = 0 ] && git -C '$case_dir/c1' rev-parse -q --verify --quiet chore/sync-managed-core-v1.1.0 && ! git -C '$case_dir/c1' rev-parse -q --verify --quiet chore/sync-managed-core-v1.9.0"
+check "origin default: origin is listed with exactly one ls-remote call" \
+  bash -c "[ \"\$(grep -c -e '--tags' '$case_dir/ls-remote.log')\" = 1 ]"
+rm -f "$case_dir/ls-remote.log"
+PATH="$case_dir/gitwrap:$PATH" run --tag v1.1.0 "$case_dir/c1"
+check "--tag: origin is asked with exactly one ls-remote call too" \
+  bash -c "[ \"\$(grep -c -e '--tags' '$case_dir/ls-remote.log')\" = 1 ]"
+# The highest tag on origin is not in this checkout: refused, told to fetch, no fallback.
+new_case; new_consumer c1
+bump "$(m1 1)" v2; release v1.1.0
+gq -C "$kit" tag -d v1.1.0 >/dev/null
+run "$case_dir/c1"; rc=$?
+check "origin default: a highest origin tag missing locally is refused with 'fetch', no fallback to a lower tag" \
+  bash -c "[ $rc != 0 ] && grep -q 'no such release tag: v1.1.0' '$case_dir/run.log' && grep -q 'fetch' '$case_dir/run.log' && [ -z \"\$(git -C '$case_dir/c1' branch --list 'chore/*')\" ] && [ ! -e '$GH_SHIM_LOG/1.args' ]"
+# origin has no release tag, though this checkout has one: refused, naming origin.
+new_case; new_consumer c1
+bump "$(m1 1)" v2; gq -C "$kit" tag -a v1.1.0 -m "only here"
+git -C "$kit.git" tag -d v1.0.0 >/dev/null
+run "$case_dir/c1"; rc=$?
+check "origin default: no release tag on origin is refused, naming origin, nothing written" \
+  bash -c "[ $rc != 0 ] && grep -q 'origin.* has no release tag' '$case_dir/run.log' && [ -z \"\$(git -C '$case_dir/c1' branch --list 'chore/*')\" ] && [ ! -e '$GH_SHIM_LOG/1.args' ]"
+# origin unreadable: refused, nothing written.
+new_case; new_consumer c1
+bump "$(m1 1)" v2; release v1.1.0
+git -C "$kit" remote set-url origin "$case_dir/nonexistent.git"
+run "$case_dir/c1"; rc=$?
+check "origin default: unreadable origin is refused, nothing written" \
+  bash -c "[ $rc != 0 ] && grep -q 'cannot read origin' '$case_dir/run.log' && [ -z \"\$(git -C '$case_dir/c1' branch --list 'chore/*')\" ] && [ ! -e '$GH_SHIM_LOG/1.args' ]"
 
 # 22. The pinned tag must be annotated, and origin must hold that very tag.
 new_case; new_consumer c1
@@ -419,7 +462,7 @@ check "lightweight tag: refused, nothing written" \
 new_case; new_consumer c1
 bump "$(m1 1)" v2
 gq -C "$kit" tag -a v1.1.0 -m "local only"
-run "$case_dir/c1"; rc=$?
+run --tag v1.1.0 "$case_dir/c1"; rc=$?
 check "tag not on origin: refused, nothing written" \
   bash -c "[ $rc != 0 ] && grep -q 'is not on origin' '$case_dir/run.log' && [ -z \"\$(git -C '$case_dir/c1' branch --list 'chore/*')\" ] && [ ! -e '$GH_SHIM_LOG/1.args' ]"
 new_case; new_consumer c1

@@ -245,9 +245,43 @@ check "lightweight: the named annotated release still installs" rc_is 0
 
 new_kit; new_target c6
 gq -C "$kit" tag -a v1.2.0 -m "only here"
-inst "$t"
+inst --release v1.2.0 "$t"
 check "local only: refused, not on origin" refused_with 'not on origin'
 check "local only: nothing was written" untouched "$t"
+
+# 5b. The default is the highest release tag on origin, not among the local tags (#82):
+#     a fork that fetched upstream's tags must not install upstream's release.
+new_kit; new_target c6b
+gq -C "$kit" tag -a v1.9.0 -m "only here, e.g. fetched from upstream"
+mkdir -p "$case_dir/gitwrap"
+cat > "$case_dir/gitwrap/git" <<EOT
+#!/bin/bash
+for a in "\$@"; do [ "\$a" = ls-remote ] && echo "\$*" >> "$case_dir/ls-remote.log"; done
+exec $(command -v git) "\$@"
+EOT
+chmod +x "$case_dir/gitwrap/git"
+PATH="$case_dir/gitwrap:$PATH" inst "$t"
+check "origin default: a higher local-only tag is ignored" has '^release: v1.1.0 ' "$log"
+check "origin default: the highest tag on origin is what was installed" lock_is .friday.tag v1.1.0
+check "origin default: exactly one ls-remote call" bash -c "[ \"\$(wc -l < '$case_dir/ls-remote.log' | tr -d ' ')\" = 1 ]"
+rm -f "$case_dir/ls-remote.log"; new_target c6c
+PATH="$case_dir/gitwrap:$PATH" inst --release v1.1.0 "$t"
+check "--release: exactly one ls-remote call" bash -c "[ \"\$(wc -l < '$case_dir/ls-remote.log' | tr -d ' ')\" = 1 ]"
+
+# The highest tag on origin is not in this checkout: refused, told to fetch, no fallback.
+new_kit; new_target c6d
+gq -C "$kit" tag -d v1.1.0 >/dev/null
+inst "$t"
+check "origin default: a highest origin tag missing locally is refused" refused_with 'no such release tag: v1.1.0'
+check "origin default: it says to fetch the tags" has "fetch --tags" "$log"
+check "origin default: nothing was written, no fallback to the lower tag" untouched "$t"
+
+# Origin has no release tag, though this checkout has one.
+new_kit; new_target c6e
+git -C "$kit.git" tag -d v1.0.0 v1.1.0 >/dev/null
+inst "$t"
+check "origin without a release tag: refused, naming origin" refused_with 'origin of .* has no release tag'
+check "origin without a release tag: nothing was written" untouched "$t"
 
 new_kit; new_target c7
 gq -C "$kit" tag -a v1.2.0 -m "first"; git -C "$kit" push -q origin refs/tags/v1.2.0

@@ -62,8 +62,11 @@ gh release create vX.Y.Z --notes-from-tag
 bin/friday-propagate <consumer>...
 ```
 
-`install.sh` installs a release the same way: by default the newest, chosen and
-checked as below, or the one named with `--release vX.Y.Z`; it refuses, writing
+`install.sh` installs a release the same way: by default the highest release
+tag on `origin`, chosen and checked as below, or the one named with
+`--release vX.Y.Z`, which may be any valid release, old or new. When the
+highest tag on `origin` is not in the local checkout, it refuses and says to
+fetch the tags; it never falls back to a lower local tag. It refuses, writing
 nothing, when none qualifies, and says to fetch tags or cut one. A release
 older than the one that added `--working-tree` has no such flag; its own
 installer runs under its old interface and installs its own tree, which is
@@ -77,11 +80,14 @@ publishes a release, only when the user names the tag and its commit in the
 current turn. Neither Friday's guard nor `pre-push` checks it; it is enforced
 by instruction.
 
-`bin/friday-propagate` carries only releases: the newest tag of the exact form
-`vX.Y.Z` by default (a pre-release such as `v1.1.0-rc1` is never one), or the
-one named with `--tag vX.Y.Z`. It refuses, before any consumer is read, when
-Friday has no release tag, or the tag is not on `main`, is not annotated, or is
-not on `origin` as the same tag object. It notes, without carrying, payload
+`bin/friday-propagate` carries only releases: the highest tag of the exact form
+`vX.Y.Z` on `origin` by default (listed with one `git ls-remote --tags origin`,
+so a tag only this clone has is never the default; a pre-release such as
+`v1.1.0-rc1` is never one), or the one named with `--tag vX.Y.Z`, old or new.
+It refuses, before any consumer is read, when `origin` has no release tag or
+cannot be read, when the highest tag on `origin` is not in the local checkout
+(it does not fall back to a lower one), or when the tag is not on `main`, is
+not annotated, or is not on `origin` as the same tag object. It notes, without carrying, payload
 changes on `main` that no release holds yet. Each pull request lists the Friday
 commits that changed `payload/` or `bin/managed-core.txt` since the release
 (or, for an older lock, the commit) the consumer's lock recorded.

@@ -7,8 +7,8 @@
 ## Choose your path
 
 - **Consume `ShenYo/Friday` releases (the default).** You need nothing but the
-  upstream repository: clone it, and `install.sh` installs its newest annotated
-  release tag. Later releases reach your projects as pull requests that you
+  upstream repository: clone it, and `install.sh` installs the highest annotated
+  release tag on `origin`. Later releases reach your projects as pull requests that you
   open yourself: pull your Friday checkout and run `friday-propagate` (see
   [Staying current](#staying-current)); nobody upstream opens pull requests in
   your repositories. A release that changes a seed says so in its changelog
@@ -45,7 +45,7 @@ git clone https://github.com/ShenYo/Friday.git ~/.Friday
 
 That checkout is a development checkout, often on a feature branch or with
 uncommitted edits, so `install.sh` never installs what it holds. It installs a
-release: the newest annotated tag `vX.Y.Z`, chosen and checked the way
+release: the highest annotated tag `vX.Y.Z` on `origin`, chosen and checked the way
 `friday-propagate` does (on `origin` as the same tag object, reachable from
 `main`). It exports that release's tree and runs the release's own `install.sh`
 on it, so the lock records the release's commit and tag whatever the checkout
@@ -61,14 +61,14 @@ TARGET=<your new repo>
 git -C "$TARGET" init
 
 bash "$FRIDAY/install.sh" --check "$TARGET"   # preview; writes nothing
-bash "$FRIDAY/install.sh" "$TARGET"           # the newest release
+bash "$FRIDAY/install.sh" "$TARGET"           # the highest release on origin
 bash "$FRIDAY/install.sh" --check "$TARGET"   # every file line should read IDENTICAL
 ```
 
-To pin a release instead of taking the newest, add `--release vX.Y.Z` to the
-install. When no release qualifies (none exists, or the newest is not annotated,
-not on `origin`, or not on `main`) the install refuses and says how to fetch or
-cut one; it writes nothing.
+To pin a release instead of taking the highest on `origin`, add `--release vX.Y.Z` to
+the install. When no release qualifies (`origin` has none or cannot be read, or the
+highest release on `origin` is not in this checkout, not annotated, or not on `main`)
+the install refuses and says how to fetch or cut one; it writes nothing.
 
 The install ends by running the payload's own self-check, so broken runtime wiring
 fails now rather than the first time someone relies on the boundary.
@@ -458,23 +458,30 @@ one of them records the upstream producer. Do this in order:
    `main` (`docs/releases.md`), and Friday's `pre-push` hook refuses a push to
    the default branch when the hooks are wired (`docs/safety.md`).
 3. Number your first release above every release tag the fork already has
-   (upstream's newest is `v1.3.0`). Without `--release`, the installer, like
-   `friday-propagate`, picks the highest `vMAJOR.MINOR.PATCH` tag in the
-   checkout, and an upstream release names the upstream producer. For the
-   same reason, keep upstream's later tags out of the checkout:
-   `git remote add upstream <upstream URL>`, then
-   `git config remote.upstream.tagOpt --no-tags`
-   ([#82](https://github.com/ShenYo/Friday/issues/82) will make the tools
-   choose from the tags on `origin`, and this advice goes then). Bring in
-   upstream changes later through a branch and a pull request like any
-   change. A seed change that came from upstream must be written into your
-   own changelog entry as a Seed changes section, because
-   `bin/friday-seed-check` and `friday-propagate` read the fork's entries, by
-   the fork's tag names and its top entry.
+   (upstream's newest is `v1.3.0`), so that its version order is unambiguous.
+   Without `--release` (or `--tag` for `friday-propagate`), the installer and
+   `friday-propagate` choose the highest `vMAJOR.MINOR.PATCH` tag on `origin`,
+   read with one `git ls-remote --tags origin`; when choosing the default
+   release, tags that only your checkout has, such as ones fetched from an
+   upstream remote, are not considered. If
+   that tag is not in your checkout, the tool refuses and tells you to fetch
+   the tags; it does not fall back to a lower one. An explicit `--release` or
+   `--tag` accepts any valid release tag, old or new. Bring in upstream changes
+   later through a branch and a pull request like any change. A seed change
+   that came from upstream must be written into your own changelog entry as a
+   Seed changes section, because `bin/friday-seed-check` and
+   `friday-propagate` read the fork's entries, by the fork's tag names and its
+   top entry. When the merge brings release headings into
+   `docs/changelog/v1.md` that collide with the fork's own (both have
+   `## v1.4.0`, say), rename or drop upstream's colliding headings and write
+   any seed change into the fork's own entry: both tools select an entry by its
+   heading, so the fork's release would otherwise pick up upstream's Seed
+   changes section.
 4. After the release pull request merges, pull `main` and cut an annotated tag
    on the commit on `main` that holds the slug edit (normally the release
    commit, which renames the changelog entry):
-   `git tag -a vX.Y.Z <commit> -m <note>`,
+   `git tag -a vX.Y.Z <commit> -F <file with the changelog entry>` (the tag's
+   message is the entry, as `docs/releases.md` says),
    then push only the tag: `git push origin vX.Y.Z`. Cutting and pushing a
    release tag is a person's step (`docs/releases.md`). The tag must be
    annotated, on `main`, and the same tag object on `origin`.

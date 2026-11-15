@@ -226,7 +226,8 @@ check "newest: --check names the release too" has '^release: v1.10.0 ' "$log"
 new_unreleased_kit; new_target c4; inst "$t"
 check "no release: refused" rc_fails
 check "no release: says there is none" has 'no release tag' "$log"
-check "no release: says how to fetch or cut one" bash -c "grep -q 'fetch' '$log' && grep -q 'git tag -a' '$log'"
+check "no release: says how to cut one, with the entry as the tag message" bash -c "grep -q 'git tag -a vX.Y.Z <commit> -F' '$log' && grep -q 'git push origin' '$log'"
+check "no release: does not tell to fetch, which cannot help" lacks "fetch --tags" "$log"
 check "no release: nothing was written" untouched "$t"
 inst --check "$t"
 check "no release: --check refuses too" rc_fails
@@ -245,9 +246,44 @@ check "lightweight: the named annotated release still installs" rc_is 0
 
 new_kit; new_target c6
 gq -C "$kit" tag -a v1.2.0 -m "only here"
-inst "$t"
+inst --release v1.2.0 "$t"
 check "local only: refused, not on origin" refused_with 'not on origin'
 check "local only: nothing was written" untouched "$t"
+
+# 5b. The default is the highest release tag on origin, not among the local tags (#82):
+#     a fork that fetched upstream's tags must not install upstream's release.
+new_kit; new_target c6b
+gq -C "$kit" tag -a v1.9.0 -m "only here, e.g. fetched from upstream"
+mkdir -p "$case_dir/gitwrap"
+cat > "$case_dir/gitwrap/git" <<EOT
+#!/bin/bash
+for a in "\$@"; do [ "\$a" = ls-remote ] && echo "\$*" >> "$case_dir/ls-remote.log"; done
+exec $(command -v git) "\$@"
+EOT
+chmod +x "$case_dir/gitwrap/git"
+PATH="$case_dir/gitwrap:$PATH" inst "$t"
+check "origin default: a higher local-only tag is ignored" has '^release: v1.1.0 ' "$log"
+check "origin default: the highest tag on origin is what was installed" lock_is .friday.tag v1.1.0
+check "origin default: exactly one ls-remote call" bash -c "[ \"\$(wc -l < '$case_dir/ls-remote.log' | tr -d ' ')\" = 1 ]"
+rm -f "$case_dir/ls-remote.log"; new_target c6c
+PATH="$case_dir/gitwrap:$PATH" inst --release v1.1.0 "$t"
+check "--release: exactly one ls-remote call" bash -c "[ \"\$(wc -l < '$case_dir/ls-remote.log' | tr -d ' ')\" = 1 ]"
+
+# The highest tag on origin is not in this checkout: refused, told to fetch, no fallback.
+new_kit; new_target c6d
+gq -C "$kit" tag -d v1.1.0 >/dev/null
+inst "$t"
+check "origin default: a highest origin tag missing locally is refused" refused_with 'no such release tag: v1.1.0'
+check "origin default: it says to fetch the tags" has "fetch --tags" "$log"
+check "origin default: it does not say to cut one, the tag is on origin" lacks "cut one" "$log"
+check "origin default: nothing was written, no fallback to the lower tag" untouched "$t"
+
+# Origin has no release tag, though this checkout has one.
+new_kit; new_target c6e
+git -C "$kit.git" tag -d v1.0.0 v1.1.0 >/dev/null
+inst "$t"
+check "origin without a release tag: refused, naming origin" refused_with 'origin of .* has no release tag'
+check "origin without a release tag: nothing was written" untouched "$t"
 
 new_kit; new_target c7
 gq -C "$kit" tag -a v1.2.0 -m "first"; git -C "$kit" push -q origin refs/tags/v1.2.0
@@ -421,14 +457,14 @@ new_kit; new_target o1
 git -C "$kit" remote set-url origin "$case_dir/nonexistent.git"
 inst "$t"
 check "origin unreachable: refused with exit 1" rc_is 1
-check "origin unreachable: says origin cannot be read" has 'origin' "$log"
+check "origin unreachable: says origin cannot be read, not that it has no release" bash -c "grep -q 'cannot read origin' '$log' && ! grep -q 'has no release tag' '$log'"
 check "origin unreachable: nothing was written" untouched "$t"
 inst --release v1.1.0 "$t"
 check "origin unreachable: --release is refused the same way" bash -c "[ $rc -eq 1 ] && grep -q 'origin' '$log'"
 new_kit; new_target o2
 git -C "$kit" remote remove origin
 inst "$t"
-check "no origin: refused with exit 1 and a reason" bash -c "[ $rc -eq 1 ] && grep -q 'origin' '$log'"
+check "no origin: refused with exit 1 and a reason" bash -c "[ $rc -eq 1 ] && grep -q 'cannot read origin' '$log' && ! grep -q 'has no release tag' '$log'"
 check "no origin: nothing was written" untouched "$t"
 
 # 14. --as-release is the exported copy's flag. Misused, it must not label what it installs as a release.

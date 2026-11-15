@@ -103,9 +103,12 @@ git -C "$KIT_ROOT" merge-base --is-ancestor "$tree" refs/heads/main 2>/dev/null 
 # else sees as that release.
 [ "$(git -C "$KIT_ROOT" cat-file -t "$local_tag_obj" 2>/dev/null)" = tag ] \
   || die "$tag is not an annotated tag. Nothing was written."
-# An explicit --tag asks origin about that one tag; the default already holds
-# the listing. Either way origin is asked once.
-[ -n "$origin_refs" ] || origin_refs=$(git -C "$KIT_ROOT" ls-remote --tags origin "refs/tags/$tag" 2>/dev/null)
+# An explicit --tag lists origin's tags too; the default already holds the
+# listing. Either way origin is asked once, and the listing also says which
+# release tags the seed-note scans may read.
+[ -n "$origin_refs" ] || origin_refs=$(git -C "$KIT_ROOT" ls-remote --tags origin 2>/dev/null)
+origin_releases=$(printf '%s\n' "$origin_refs" \
+  | awk '$2 ~ /^refs\/tags\/v[0-9]+\.[0-9]+\.[0-9]+$/ { sub("refs/tags/", "", $2); print $2 }')
 origin_tag_obj=$(printf '%s\n' "$origin_refs" | awk -v r="refs/tags/$tag" '$2 == r { print $1 }')
 [ -n "$origin_tag_obj" ] || die "$tag is not on origin (push it, or origin cannot be read). Nothing was written."
 [ "$origin_tag_obj" = "$local_tag_obj" ] \
@@ -187,9 +190,17 @@ seeds_touched() {
   [ ${#paths[@]} -gt 0 ] || return 0
   git -C "$KIT_ROOT" diff --name-only "$1" "$2" -- "${paths[@]}" 2>/dev/null | sed 's#^payload/##'
 }
-# The release before a commit: the highest release tag that is an ancestor of it.
+# The release tags that are on origin, among the local ones. A tag only this
+# checkout has -- one a fork fetched from upstream -- is not a release of this
+# repository, so neither the previous-release lookup nor the seed-note scan
+# reads it.
+origin_release_tags() {
+  git -C "$KIT_ROOT" tag -l 'v[0-9]*' "$@" 2>/dev/null | grep -E "$RELEASE_RE" \
+    | grep -Fx -f <(printf '%s\n' "$origin_releases")
+}
+# The release before a commit: the highest release tag on origin that is an ancestor of it.
 prev_release() {
-  git -C "$KIT_ROOT" tag -l 'v[0-9]*' --merged "$1" --sort=-v:refname 2>/dev/null | grep -E "$RELEASE_RE" | sed -n 1p
+  origin_release_tags --merged "$1" --sort=-v:refname | sed -n 1p
 }
 
 opened=0; skipped=0; refused=0
@@ -424,7 +435,7 @@ Release \`$rel_tag\` changed seeds and its entry has no Seed changes section. As
 "
           fi
         fi
-      done < <(git -C "$KIT_ROOT" tag -l 'v[0-9]*' --sort=v:refname | grep -E "$RELEASE_RE" | while IFS= read -r t; do
+      done < <(origin_release_tags --sort=v:refname | while IFS= read -r t; do
         git -C "$KIT_ROOT" merge-base --is-ancestor "refs/tags/$t^{commit}" "refs/tags/$tag^{commit}" 2>/dev/null \
           && ! git -C "$KIT_ROOT" merge-base --is-ancestor "refs/tags/$t^{commit}" "$from_ref^{commit}" 2>/dev/null \
           && echo "$t"

@@ -82,7 +82,8 @@ by instruction.
 
 `bin/friday-propagate` carries only releases: the highest tag of the exact form
 `vX.Y.Z` on `origin` by default (listed with one `git ls-remote --tags origin`,
-so a tag only this clone has is never the default; a pre-release such as
+so a tag only this clone has is never the default, and never read for the
+seed notes or the previous release either; a pre-release such as
 `v1.1.0-rc1` is never one), or the one named with `--tag vX.Y.Z`, old or new.
 It refuses, before any consumer is read, when `origin` has no release tag or
 cannot be read, when the highest tag on `origin` is not in the local checkout

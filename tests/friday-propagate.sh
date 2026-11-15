@@ -638,6 +638,28 @@ check "next file: the section is carried" grep -qxF -- '- **Action:** act-only' 
 check "next file: its title and intro are not" \
   bash -c "! grep -q 'Friday changelog: v2' '$GH_SHIM_LOG/1.args' && ! grep -q 'INTRO-OF-V2' '$GH_SHIM_LOG/1.args'"
 
+# 31. The seed-note scans read the release tags on origin, not every local one
+#      (#84): a fork that fetched upstream's tags and merged upstream holds an
+#      upstream tag as an ancestor of its own release. Here v1.1.0 exists only in
+#      this checkout, on an ancestor of the fork's v1.2.0, with a heading and a
+#      Seed changes section of its own; v1.2.0 changed no section of its own.
+new_case; new_consumer c1; new_consumer c2
+bump AGENTS.md upstream-seed
+seed_entry v1.1.0 upstream; commit_all "docs: upstream's v1.1.0"
+gq -C "$kit" tag -a v1.1.0 -m "only here, fetched from upstream"
+bump "$(m1 1)" fork; plain_entry v1.2.0; commit_all "docs: the fork's v1.2.0"; release v1.2.0
+run "$case_dir/c1"; rc=$?
+body="$GH_SHIM_LOG/1.args"
+check "local-only tag: the run carries the fork's release" \
+  bash -c "[ $rc = 0 ] && git -C '$case_dir/c1' rev-parse -q --verify --quiet chore/sync-managed-core-v1.2.0"
+check "local-only tag: its Seed changes text does not reach the body" \
+  bash -c "! grep -q 'act-upstream' '$body' && ! grep -q 'From release .v1.1.0' '$body'"
+check "local-only tag: it is not the previous release, so the fork's missing section is named" \
+  grep -q 'Release .v1.2.0. changed seeds and its entry has no Seed changes section' "$body"
+GH_SHIM_LOG="$case_dir/gh2" run --tag v1.2.0 "$case_dir/c2"
+check "local-only tag, --tag: the same holds on the explicit path" \
+  bash -c "! grep -q 'act-upstream' '$case_dir/gh2/1.args' && grep -q 'Release .v1.2.0. changed seeds and its entry has no Seed changes section' '$case_dir/gh2/1.args'"
+
 echo
 if [ "$fails" -gt 0 ]; then echo "$fails of $total failed"; exit 1; fi
 echo "all $total passed"

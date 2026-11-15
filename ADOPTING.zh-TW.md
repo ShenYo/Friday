@@ -378,8 +378,10 @@ fork 本身就是 producer，而安裝程式執行的是它所安裝那個 relea
    hook 會拒絕推送到預設 branch（`docs/safety.md`）。
 3. 第一個 release 的版本號要高於 fork 已有的每個 release tag（upstream 最新的是 `v1.3.0`），讓版本順序
    沒有歧義。沒有 `--release`（`friday-propagate` 則是 `--tag`）時，安裝程式與 `friday-propagate` 會挑
-   `origin` 上最高的 `vMAJOR.MINOR.PATCH` tag，用一次 `git ls-remote --tags origin` 讀取；挑預設
-   release 時，只有你的 checkout 才有的 tag（例如從 upstream remote fetch 來的）不列入考慮。如果那個 tag
+   `origin` 上最高的 `vMAJOR.MINOR.PATCH` tag，用一次 `git ls-remote --tags origin` 讀取；只有你的
+   checkout 才有的 tag（例如從 upstream remote fetch 來的）不列入考慮，挑預設 release 不看它，
+   `friday-propagate` 放進 pull request 的 seed 說明也不看它（`bin/friday-seed-check` 不連網路，
+   會讀所有本機的 release tag）。如果那個 tag
    不在你的 checkout，工具會拒絕並要你 fetch tag，不會退而挑較低的。明確給 `--release` 或 `--tag` 時，
    任何有效的 release tag（新舊皆可）都接受。之後要帶入 upstream 的變更，和任何變更一樣經由 branch
    與 pull request。來自 upstream 的 seed 變更，必須在你自己的 changelog 條目裡寫成 Seed changes 段落，

@@ -189,15 +189,18 @@ if [ "$working_tree" != true ]; then
     tag=$(printf '%s\n' "$origin_refs" \
       | awk '$2 ~ /^refs\/tags\/v[0-9]+\.[0-9]+\.[0-9]+$/ { sub("refs/tags/", "", $2); print $2 }' \
       | sort -t. -k1.2,1n -k2,2n -k3,3n | sed -n '$p')
-    [ -n "$tag" ] || die "origin of $KIT_ROOT has no release tag (vMAJOR.MINOR.PATCH), and fetching cannot help: $cut_release.$shallow Nothing was written."
+    [ -n "$tag" ] || die "origin of $KIT_ROOT has no release tag (vMAJOR.MINOR.PATCH), and fetching cannot help: $cut_release. Nothing was written."
   fi
   [[ $tag =~ $RELEASE_RE ]] || die "not a release tag (vMAJOR.MINOR.PATCH): $tag. Nothing was written."
+  # On the default path the tag is known to be on origin, so only a fetch helps.
+  missing=$no_release
+  [ -n "$release_tag" ] || missing="It is on origin: fetch the tags ('git -C $KIT_ROOT fetch --tags').$shallow Nothing was written."
   # Read the local tag object once; the commit and the type come from it, so a
   # concurrent fetch cannot make the tree and the compared object differ.
   local_tag_obj=$(git -C "$KIT_ROOT" rev-parse --verify -q "refs/tags/$tag") \
-    || die "no such release tag: $tag. $no_release"
+    || die "no such release tag: $tag. $missing"
   tree=$(git -C "$KIT_ROOT" rev-parse --verify -q "$local_tag_obj^{commit}") \
-    || die "no such release tag: $tag. $no_release"
+    || die "no such release tag: $tag. $missing"
   git -C "$KIT_ROOT" rev-parse --verify -q refs/heads/main >/dev/null \
     || die "$KIT_ROOT has no local main branch to check $tag against. Create it ('git -C $KIT_ROOT branch main origin/main'). Nothing was written."
   git -C "$KIT_ROOT" merge-base --is-ancestor "$tree" refs/heads/main 2>/dev/null \

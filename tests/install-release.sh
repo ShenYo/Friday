@@ -275,6 +275,7 @@ gq -C "$kit" tag -d v1.1.0 >/dev/null
 inst "$t"
 check "origin default: a highest origin tag missing locally is refused" refused_with 'no such release tag: v1.1.0'
 check "origin default: it says to fetch the tags" has "fetch --tags" "$log"
+check "origin default: it does not say to cut one, the tag is on origin" lacks "cut one" "$log"
 check "origin default: nothing was written, no fallback to the lower tag" untouched "$t"
 
 # Origin has no release tag, though this checkout has one.

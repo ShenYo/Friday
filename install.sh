@@ -174,7 +174,8 @@ if [ "$working_tree" != true ]; then
   if [ "$(git -C "$KIT_ROOT" rev-parse --is-shallow-repository 2>/dev/null)" = true ]; then
     shallow=" $KIT_ROOT is a shallow clone, which can lack the history a release needs: run 'git -C $KIT_ROOT fetch --unshallow --tags'."
   fi
-  no_release="Fetch the releases ('git -C $KIT_ROOT fetch --tags'), or cut one in $KIT_ROOT: an annotated tag on main, pushed to origin ('git tag -a vX.Y.Z -m <note> <commit>', then 'git push origin vX.Y.Z').$shallow Nothing was written."
+  cut_release="cut one in $KIT_ROOT: an annotated tag on main, pushed to origin ('git tag -a vX.Y.Z <commit> -F <file with the changelog entry>', then 'git push origin vX.Y.Z')"
+  no_release="Fetch the releases ('git -C $KIT_ROOT fetch --tags'), or $cut_release.$shallow Nothing was written."
 
   tag=$release_tag
   origin_refs=
@@ -188,18 +189,21 @@ if [ "$working_tree" != true ]; then
     tag=$(printf '%s\n' "$origin_refs" \
       | awk '$2 ~ /^refs\/tags\/v[0-9]+\.[0-9]+\.[0-9]+$/ { sub("refs/tags/", "", $2); print $2 }' \
       | sort -t. -k1.2,1n -k2,2n -k3,3n | sed -n '$p')
-    [ -n "$tag" ] || die "origin of $KIT_ROOT has no release tag (vMAJOR.MINOR.PATCH). $no_release"
+    [ -n "$tag" ] || die "origin of $KIT_ROOT has no release tag (vMAJOR.MINOR.PATCH), and fetching cannot help: $cut_release.$shallow Nothing was written."
   fi
   [[ $tag =~ $RELEASE_RE ]] || die "not a release tag (vMAJOR.MINOR.PATCH): $tag. Nothing was written."
-  tree=$(git -C "$KIT_ROOT" rev-parse --verify -q "refs/tags/$tag^{commit}") \
+  # Read the local tag object once; the commit and the type come from it, so a
+  # concurrent fetch cannot make the tree and the compared object differ.
+  local_tag_obj=$(git -C "$KIT_ROOT" rev-parse --verify -q "refs/tags/$tag") \
+    || die "no such release tag: $tag. $no_release"
+  tree=$(git -C "$KIT_ROOT" rev-parse --verify -q "$local_tag_obj^{commit}") \
     || die "no such release tag: $tag. $no_release"
   git -C "$KIT_ROOT" rev-parse --verify -q refs/heads/main >/dev/null \
     || die "$KIT_ROOT has no local main branch to check $tag against. Create it ('git -C $KIT_ROOT branch main origin/main'). Nothing was written."
   git -C "$KIT_ROOT" merge-base --is-ancestor "$tree" refs/heads/main 2>/dev/null \
     || die "$tag is not on Friday's main (its commit is not an ancestor of the main branch in $KIT_ROOT; if main is behind origin, pull it).$shallow Nothing was written."
-  [ "$(git -C "$KIT_ROOT" cat-file -t "refs/tags/$tag" 2>/dev/null)" = tag ] \
+  [ "$(git -C "$KIT_ROOT" cat-file -t "$local_tag_obj" 2>/dev/null)" = tag ] \
     || die "$tag is not an annotated tag. Nothing was written."
-  local_tag_obj=$(git -C "$KIT_ROOT" rev-parse --verify -q "refs/tags/$tag") || die "cannot read tag $tag. Nothing was written."
   # An explicit --release asks origin about that one tag; the default already
   # holds the listing. Either way origin is asked once.
   if [ -n "$release_tag" ]; then

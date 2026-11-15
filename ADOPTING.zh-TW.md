@@ -7,7 +7,7 @@
 ## 選擇路徑
 
 - **使用 `ShenYo/Friday` 的 release（預設）。** 除了 upstream repository 之外你什麼都不需要：clone
-  它，`install.sh` 會安裝它最新的 annotated release tag。之後的 release 以 pull request 抵達你的專案，
+  它，`install.sh` 會安裝它 `origin` 上最高的 annotated release tag。之後的 release 以 pull request 抵達你的專案，
   而 pull request 是你自己開的：更新你的 Friday checkout，再執行 `friday-propagate`（見
   [持續保持最新](#持續保持最新)）；upstream 不會在你的 repository 開 pull request。改動 seed 的 release
   會在它的 changelog 條目中說明（[Seed changes](./CHANGELOG.md#seed-changes)，英文）。除了 fork
@@ -47,13 +47,13 @@ TARGET=<你的新 repo>
 git -C "$TARGET" init
 
 bash "$FRIDAY/install.sh" --check "$TARGET"   # 預覽，不寫入任何東西
-bash "$FRIDAY/install.sh" "$TARGET"           # 最新的 release
+bash "$FRIDAY/install.sh" "$TARGET"           # origin 上最高的 release
 bash "$FRIDAY/install.sh" --check "$TARGET"   # 每個檔案行都應該是 IDENTICAL
 ```
 
-要釘選某個 release 而不是取最新的，在安裝指令加上 `--release vX.Y.Z`。沒有合格的 release 時
-（完全沒有，或最新的不是 annotated、不在 `origin` 上、或不在 `main` 上），安裝會拒絕，並說明怎麼 fetch
-或建立一個；它不會寫入任何東西。
+要釘選某個 release 而不是取 `origin` 上最高的，在安裝指令加上 `--release vX.Y.Z`。沒有合格的 release 時
+（`origin` 上沒有或讀不到，或 `origin` 上最高的 release 不在這個 checkout、不是 annotated、或不在
+`main` 上），安裝會拒絕，並說明怎麼 fetch 或建立一個；它不會寫入任何東西。
 
 安裝最後會執行 payload 自己的 self-check，因此 runtime 接線出錯時會在當下就失敗，
 而不是等到有人真正依賴那個邊界時才出事。
@@ -378,17 +378,20 @@ fork 本身就是 producer，而安裝程式執行的是它所安裝那個 relea
    hook 會拒絕推送到預設 branch（`docs/safety.md`）。
 3. 第一個 release 的版本號要高於 fork 已有的每個 release tag（upstream 最新的是 `v1.3.0`），讓版本順序
    沒有歧義。沒有 `--release`（`friday-propagate` 則是 `--tag`）時，安裝程式與 `friday-propagate` 會挑
-   `origin` 上最高的 `vMAJOR.MINOR.PATCH` tag，用一次 `git ls-remote --tags origin` 讀取；只有你的
-   checkout 才有的 tag（例如從 upstream remote fetch 來的）不列入考慮。如果那個 tag 不在你的 checkout，
-   工具會拒絕並要你 fetch tag，不會退而挑較低的。明確給 `--release` 或 `--tag` 時，任何有效的 release tag（新舊皆可）都接受。之後要帶入 upstream 的變更，和任何變更一樣經由 branch
+   `origin` 上最高的 `vMAJOR.MINOR.PATCH` tag，用一次 `git ls-remote --tags origin` 讀取；挑預設
+   release 時，只有你的 checkout 才有的 tag（例如從 upstream remote fetch 來的）不列入考慮。如果那個 tag
+   不在你的 checkout，工具會拒絕並要你 fetch tag，不會退而挑較低的。明確給 `--release` 或 `--tag` 時，
+   任何有效的 release tag（新舊皆可）都接受。之後要帶入 upstream 的變更，和任何變更一樣經由 branch
    與 pull request。來自 upstream 的 seed 變更，必須在你自己的 changelog 條目裡寫成 Seed changes 段落，
    因為 `bin/friday-seed-check` 與 `friday-propagate` 讀的是 fork 的條目，依 fork 的 tag 名稱與最上面的條目
    查找。merge 帶進 `docs/changelog/v1.md` 的 release 標題若與 fork 自己的相撞（例如兩邊都有
    `## v1.4.0`），請改名或刪掉 upstream 那幾個相撞的標題，並把任何 seed 變更寫進 fork 自己的條目：
    兩個工具都依標題選條目，否則 fork 的 release 會帶到 upstream 的 Seed changes 段落。
 4. release 的 pull request merge 之後，pull `main`，在 `main` 上含有 slug 修改的 commit（通常就是把
-   changelog 條目改名的 release commit）上建立 annotated tag：`git tag -a vX.Y.Z <commit> -F <放 changelog 條目的檔案>`（tag 的訊息就是該條目，如
-   `docs/releases.md` 所說），然後只推送 tag：`git push origin vX.Y.Z`。建立並推送 release tag 是人的步驟（`docs/releases.md`）。
+   changelog 條目改名的 release commit）上建立 annotated tag：
+   `git tag -a vX.Y.Z <commit> -F <放 changelog 條目的檔案>`（tag 的訊息就是該條目，如
+   `docs/releases.md` 所說），然後只推送 tag：`git push origin vX.Y.Z`。建立並推送 release tag 是人的步驟
+   （`docs/releases.md`）。
    tag 必須是 annotated、在 `main` 上，且在 `origin` 上是同一個 tag object。
 5. 從那個 checkout 安裝，例如先 `bash install.sh --check <target>`，再 `bash install.sh <target>`。
 

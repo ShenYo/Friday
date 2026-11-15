@@ -88,7 +88,11 @@ if [ -z "$tag" ]; then
   [ -n "$tag" ] || die "origin of $KIT_ROOT has no release tag (vMAJOR.MINOR.PATCH) -- cut one on main and push it. Nothing was written."
 fi
 [[ $tag =~ $RELEASE_RE ]] || die "not a release tag (vMAJOR.MINOR.PATCH): $tag"
-tree=$(git -C "$KIT_ROOT" rev-parse --verify -q "refs/tags/$tag^{commit}") \
+# Read the local tag object once; the commit and the type come from it, so a
+# concurrent fetch cannot make the tree and the compared object differ.
+local_tag_obj=$(git -C "$KIT_ROOT" rev-parse --verify -q "refs/tags/$tag") \
+  || die "no such release tag: $tag (if it is on origin, fetch the tags: git -C $KIT_ROOT fetch --tags)"
+tree=$(git -C "$KIT_ROOT" rev-parse --verify -q "$local_tag_obj^{commit}") \
   || die "no such release tag: $tag (if it is on origin, fetch the tags: git -C $KIT_ROOT fetch --tags)"
 # A tag on a commit main does not contain is a release nobody merged.
 git -C "$KIT_ROOT" merge-base --is-ancestor "$tree" refs/heads/main 2>/dev/null \
@@ -97,9 +101,8 @@ git -C "$KIT_ROOT" merge-base --is-ancestor "$tree" refs/heads/main 2>/dev/null 
 # tag, and the same tag object on origin. A lightweight tag carries no author
 # or date, and a tag only this clone has -- or has moved -- is not what anyone
 # else sees as that release.
-[ "$(git -C "$KIT_ROOT" cat-file -t "refs/tags/$tag" 2>/dev/null)" = tag ] \
+[ "$(git -C "$KIT_ROOT" cat-file -t "$local_tag_obj" 2>/dev/null)" = tag ] \
   || die "$tag is not an annotated tag. Nothing was written."
-local_tag_obj=$(git -C "$KIT_ROOT" rev-parse --verify -q "refs/tags/$tag")
 # An explicit --tag asks origin about that one tag; the default already holds
 # the listing. Either way origin is asked once.
 [ -n "$origin_refs" ] || origin_refs=$(git -C "$KIT_ROOT" ls-remote --tags origin "refs/tags/$tag" 2>/dev/null)

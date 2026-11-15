@@ -226,7 +226,8 @@ check "newest: --check names the release too" has '^release: v1.10.0 ' "$log"
 new_unreleased_kit; new_target c4; inst "$t"
 check "no release: refused" rc_fails
 check "no release: says there is none" has 'no release tag' "$log"
-check "no release: says how to fetch or cut one" bash -c "grep -q 'fetch' '$log' && grep -q 'git tag -a' '$log'"
+check "no release: says how to cut one, with the entry as the tag message" bash -c "grep -q 'git tag -a vX.Y.Z <commit> -F' '$log' && grep -q 'git push origin' '$log'"
+check "no release: does not tell to fetch, which cannot help" lacks "fetch --tags" "$log"
 check "no release: nothing was written" untouched "$t"
 inst --check "$t"
 check "no release: --check refuses too" rc_fails
@@ -455,14 +456,14 @@ new_kit; new_target o1
 git -C "$kit" remote set-url origin "$case_dir/nonexistent.git"
 inst "$t"
 check "origin unreachable: refused with exit 1" rc_is 1
-check "origin unreachable: says origin cannot be read" has 'origin' "$log"
+check "origin unreachable: says origin cannot be read, not that it has no release" bash -c "grep -q 'cannot read origin' '$log' && ! grep -q 'has no release tag' '$log'"
 check "origin unreachable: nothing was written" untouched "$t"
 inst --release v1.1.0 "$t"
 check "origin unreachable: --release is refused the same way" bash -c "[ $rc -eq 1 ] && grep -q 'origin' '$log'"
 new_kit; new_target o2
 git -C "$kit" remote remove origin
 inst "$t"
-check "no origin: refused with exit 1 and a reason" bash -c "[ $rc -eq 1 ] && grep -q 'origin' '$log'"
+check "no origin: refused with exit 1 and a reason" bash -c "[ $rc -eq 1 ] && grep -q 'cannot read origin' '$log' && ! grep -q 'has no release tag' '$log'"
 check "no origin: nothing was written" untouched "$t"
 
 # 14. --as-release is the exported copy's flag. Misused, it must not label what it installs as a release.

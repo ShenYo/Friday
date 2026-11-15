@@ -436,21 +436,21 @@ bump "$(m1 1)" v2; release v1.1.0
 gq -C "$kit" tag -d v1.1.0 >/dev/null
 run "$case_dir/c1"; rc=$?
 check "origin default: a highest origin tag missing locally is refused with 'fetch', no fallback to a lower tag" \
-  bash -c "[ $rc != 0 ] && grep -q 'no such release tag: v1.1.0' '$case_dir/run.log' && grep -q 'fetch' '$case_dir/run.log' && [ -z \"\$(git -C '$case_dir/c1' branch --list 'chore/*')\" ] && [ ! -e '$GH_SHIM_LOG/1.args' ]"
+  bash -c "[ $rc != 0 ] && grep -q 'no such release tag: v1.1.0' '$case_dir/run.log' && grep -q 'fetch' '$case_dir/run.log' && [ -z \"\$(git -C '$case_dir/c1' branch --list 'chore/*')\" ] && [ -z \"\$(git -C '$case_dir/c1' status --porcelain)\" ] && [ ! -e '$GH_SHIM_LOG/1.args' ]"
 # origin has no release tag, though this checkout has one: refused, naming origin.
 new_case; new_consumer c1
 bump "$(m1 1)" v2; gq -C "$kit" tag -a v1.1.0 -m "only here"
 git -C "$kit.git" tag -d v1.0.0 >/dev/null
 run "$case_dir/c1"; rc=$?
 check "origin default: no release tag on origin is refused, naming origin, nothing written" \
-  bash -c "[ $rc != 0 ] && grep -q 'origin.* has no release tag' '$case_dir/run.log' && [ -z \"\$(git -C '$case_dir/c1' branch --list 'chore/*')\" ] && [ ! -e '$GH_SHIM_LOG/1.args' ]"
+  bash -c "[ $rc != 0 ] && grep -q 'origin.* has no release tag' '$case_dir/run.log' && [ -z \"\$(git -C '$case_dir/c1' branch --list 'chore/*')\" ] && [ -z \"\$(git -C '$case_dir/c1' status --porcelain)\" ] && [ ! -e '$GH_SHIM_LOG/1.args' ]"
 # origin unreadable: refused, nothing written.
 new_case; new_consumer c1
 bump "$(m1 1)" v2; release v1.1.0
 git -C "$kit" remote set-url origin "$case_dir/nonexistent.git"
 run "$case_dir/c1"; rc=$?
 check "origin default: unreadable origin is refused, nothing written" \
-  bash -c "[ $rc != 0 ] && grep -q 'cannot read origin' '$case_dir/run.log' && [ -z \"\$(git -C '$case_dir/c1' branch --list 'chore/*')\" ] && [ ! -e '$GH_SHIM_LOG/1.args' ]"
+  bash -c "[ $rc != 0 ] && grep -q 'cannot read origin' '$case_dir/run.log' && [ -z \"\$(git -C '$case_dir/c1' branch --list 'chore/*')\" ] && [ -z \"\$(git -C '$case_dir/c1' status --porcelain)\" ] && [ ! -e '$GH_SHIM_LOG/1.args' ]"
 
 # 22. The pinned tag must be annotated, and origin must hold that very tag.
 new_case; new_consumer c1

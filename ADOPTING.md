@@ -7,8 +7,8 @@
 ## Choose your path
 
 - **Consume `ShenYo/Friday` releases (the default).** You need nothing but the
-  upstream repository: clone it, and `install.sh` installs its newest annotated
-  release tag. Later releases reach your projects as pull requests that you
+  upstream repository: clone it, and `install.sh` installs the highest annotated
+  release tag on `origin`. Later releases reach your projects as pull requests that you
   open yourself: pull your Friday checkout and run `friday-propagate` (see
   [Staying current](#staying-current)); nobody upstream opens pull requests in
   your repositories. A release that changes a seed says so in its changelog
@@ -61,14 +61,14 @@ TARGET=<your new repo>
 git -C "$TARGET" init
 
 bash "$FRIDAY/install.sh" --check "$TARGET"   # preview; writes nothing
-bash "$FRIDAY/install.sh" "$TARGET"           # the newest release
+bash "$FRIDAY/install.sh" "$TARGET"           # the highest release on origin
 bash "$FRIDAY/install.sh" --check "$TARGET"   # every file line should read IDENTICAL
 ```
 
-To pin a release instead of taking the newest, add `--release vX.Y.Z` to the
-install. When no release qualifies (none exists, or the newest is not annotated,
-not on `origin`, or not on `main`) the install refuses and says how to fetch or
-cut one; it writes nothing.
+To pin a release instead of taking the highest on `origin`, add `--release vX.Y.Z` to
+the install. When no release qualifies (`origin` has none or cannot be read, or the
+highest release on `origin` is not in this checkout, not annotated, or not on `main`)
+the install refuses and says how to fetch or cut one; it writes nothing.
 
 The install ends by running the payload's own self-check, so broken runtime wiring
 fails now rather than the first time someone relies on the boundary.
@@ -461,8 +461,9 @@ one of them records the upstream producer. Do this in order:
    (upstream's newest is `v1.3.0`), so that its version order is unambiguous.
    Without `--release` (or `--tag` for `friday-propagate`), the installer and
    `friday-propagate` choose the highest `vMAJOR.MINOR.PATCH` tag on `origin`,
-   read with one `git ls-remote --tags origin`; tags that only your checkout
-   has, such as ones fetched from an upstream remote, are not considered. If
+   read with one `git ls-remote --tags origin`; when choosing the default
+   release, tags that only your checkout has, such as ones fetched from an
+   upstream remote, are not considered. If
    that tag is not in your checkout, the tool refuses and tells you to fetch
    the tags; it does not fall back to a lower one. An explicit `--release` or
    `--tag` accepts any valid release tag, old or new. Bring in upstream changes

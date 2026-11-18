@@ -124,9 +124,10 @@ origin_tag_obj=$(printf '%s\n' "$origin_refs" | awk -v r="refs/tags/$tag" '$2 ==
 [ "$origin_tag_obj" = "$local_tag_obj" ] \
   || die "origin's $tag points at a different tag object than this checkout's. Nothing was written."
 # Origin lists these release tags, and this checkout holds each as another object.
-tag_collisions=$(printf '%s\n' "$tag_scan" | awk '$1 == "differ" { print $2 }' | tr '\n' ' ' | sed 's/ $//; s/ /, /g')
+# A plain `fetch --tags` will not replace them, so the hint forces each one.
+tag_collisions=$(printf '%s\n' "$tag_scan" | awk '$1 == "differ" { print $2 }' | tr '\n' ' ' | sed 's/ $//')
 [ -z "$tag_collisions" ] \
-  || die "release tag(s) $tag_collisions here are not origin's (origin holds a different tag object under that name); make each local tag match origin's. Nothing was written."
+  || die "release tag(s) $(printf '%s' "$tag_collisions" | sed 's/ /, /g') here are not origin's (origin holds a different tag object under that name); replace each with origin's: git -C $KIT_ROOT fetch --force origin $(printf '%s\n' "$tag_collisions" | tr ' ' '\n' | sed 's#.*#refs/tags/&:refs/tags/&#' | tr '\n' ' ' | sed 's/ $//'). Nothing was written."
 payload_commit=$(git -C "$KIT_ROOT" log -1 --format=%H "$tree" -- payload/ 2>/dev/null)
 [ -n "$payload_commit" ] || die "cannot read Friday's payload history"
 export FRIDAY_TREE=$tree

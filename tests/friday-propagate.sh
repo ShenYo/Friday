@@ -712,6 +712,26 @@ check "R6: the run is refused, exit 2, naming v1.1.0" \
 check "R6: nothing is written to the consumer and no pull request is opened" \
   bash -c "[ -z \"\$(git -C '$case_dir/c1' branch --list 'chore/*')\" ] && [ -z \"\$(git -C '$case_dir/c1' status --porcelain)\" ] && [ ! -e '$GH_SHIM_LOG/1.args' ]"
 
+# 36. Two collisions are both named, and the command the refusal gives
+#     replaces both local tags with origin's, so the next run is not refused.
+new_case; new_consumer c1
+bump "$(m1 1)" fork; plain_entry v1.1.0; commit_all "docs: the fork's v1.1.0"; release v1.1.0
+bump "$(m1 1)" fork5; plain_entry v1.1.5; commit_all "docs: the fork's v1.1.5"; release v1.1.5
+for t in v1.1.0 v1.1.5; do
+  gq -C "$kit" tag -d "$t" >/dev/null; gq -C "$kit" tag -a "$t" -m "upstream's $t, same name"
+done
+bump "$(m1 1)" fork2; plain_entry v1.2.0; commit_all "docs: the fork's v1.2.0"; release v1.2.0
+run "$case_dir/c1"; rc=$?
+check "two collisions: both are named in one refusal" \
+  bash -c "[ $rc = 2 ] && grep -q 'release tag(s) v1.1.0, v1.1.5 here are not origin' '$case_dir/run.log'"
+hint=$(sed -n 's/.*replace each with origin.s: \(git .*\)\. Nothing was written\.$/\1/p' "$case_dir/run.log")
+check "two collisions: the hint forces both tags from origin" \
+  bash -c "printf '%s' '$hint' | grep -qF 'fetch --force origin refs/tags/v1.1.0:refs/tags/v1.1.0 refs/tags/v1.1.5:refs/tags/v1.1.5'"
+eval "$hint" >/dev/null 2>&1
+run "$case_dir/c1"
+check "two collisions: after the hint's command, the run is not refused and opens its pull request" \
+  bash -c "! grep -q 'here are not origin' '$case_dir/run.log' && [ -e '$GH_SHIM_LOG/1.args' ]"
+
 echo
 if [ "$fails" -gt 0 ]; then echo "$fails of $total failed"; exit 1; fi
 echo "all $total passed"

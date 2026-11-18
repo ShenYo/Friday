@@ -383,7 +383,8 @@ fork 本身就是 producer，而安裝程式執行的是它所安裝那個 relea
    不在你的 checkout，工具會拒絕並要你 fetch tag，不會退而挑較低的。明確給 `--release` 或 `--tag` 時，
    任何有效的 release tag（新舊皆可）都接受。不論有沒有 `--tag`，`friday-propagate` 放進 pull request 的
    seed 說明只讀 `origin` 上同一個 tag 物件的 release tag：只有你的 checkout 才有的 tag 不讀；
-   `origin` 上同名但是不同物件的 tag，`friday-propagate` 會拒絕執行（請讓本機 tag 與 `origin` 的一致）（`bin/friday-seed-check` 不連網路，會讀所有本機的 release tag）。之後要帶入 upstream 的變更，和任何變更一樣經由 branch
+   `origin` 上同名但是不同物件的 tag，`friday-propagate` 會拒絕執行，列出每個 tag，並給出用 `origin` 的版本取代它的指令
+   `git fetch --force origin refs/tags/vX:refs/tags/vX`（一般的 `fetch --tags` 不會取代）（`bin/friday-seed-check` 不連網路，會讀所有本機的 release tag）。之後要帶入 upstream 的變更，和任何變更一樣經由 branch
    與 pull request。來自 upstream 的 seed 變更，必須在你自己的 changelog 條目裡寫成 Seed changes 段落，
    因為 `bin/friday-seed-check` 與 `friday-propagate` 讀的是 fork 的條目，依 fork 的 tag 名稱與最上面的條目
    查找。merge 帶進 `docs/changelog/v1.md` 的 release 標題若與 fork 自己的相撞（例如兩邊都有

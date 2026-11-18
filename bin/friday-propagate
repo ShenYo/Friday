@@ -108,18 +108,25 @@ git -C "$KIT_ROOT" merge-base --is-ancestor "$tree" refs/heads/main 2>/dev/null 
 # release tags the seed-note scans may read.
 [ -n "$origin_refs" ] || origin_refs=$(git -C "$KIT_ROOT" ls-remote --tags origin 2>/dev/null)
 # The local release tags that are the same tag object as origin's tag of that
-# name: a tag only this checkout has, or one a fork fetched from upstream under
-# a name the fork also uses for another object, is not read.
-origin_releases=$(
+# name. A tag only this checkout has is not read. A tag origin lists that this
+# checkout holds as a different object (a fork fetched upstream's tags and uses
+# one name for its own release) would be read wrongly or dropped silently, so
+# it is refused below, before any consumer is touched.
+tag_scan=$(
   { printf '%s\n' "$origin_refs" \
       | awk '$2 ~ /^refs\/tags\/v[0-9]+\.[0-9]+\.[0-9]+$/ { sub("refs/tags/", "", $2); print $1 " " $2 }'
     printf '%s\n' '--local--'
     git -C "$KIT_ROOT" for-each-ref --format='%(objectname) %(refname:strip=2)' refs/tags 2>/dev/null
-  } | awk '/^--local--$/ { loc = 1; next } !loc { o[$0] = 1; next } ($0 in o) { print $2 }')
+  } | awk '/^--local--$/ { loc = 1; next } !loc { o[$0] = 1; n[$2] = 1; next } ($0 in o) { print "same " $2; next } ($2 in n) { print "differ " $2 }')
+origin_releases=$(printf '%s\n' "$tag_scan" | awk '$1 == "same" { print $2 }')
 origin_tag_obj=$(printf '%s\n' "$origin_refs" | awk -v r="refs/tags/$tag" '$2 == r { print $1 }')
 [ -n "$origin_tag_obj" ] || die "$tag is not on origin (push it, or origin cannot be read). Nothing was written."
 [ "$origin_tag_obj" = "$local_tag_obj" ] \
   || die "origin's $tag points at a different tag object than this checkout's. Nothing was written."
+# Origin lists these release tags, and this checkout holds each as another object.
+tag_collisions=$(printf '%s\n' "$tag_scan" | awk '$1 == "differ" { print $2 }' | tr '\n' ' ' | sed 's/ $//; s/ /, /g')
+[ -z "$tag_collisions" ] \
+  || die "release tag(s) $tag_collisions here are not origin's (origin holds a different tag object under that name); make each local tag match origin's. Nothing was written."
 payload_commit=$(git -C "$KIT_ROOT" log -1 --format=%H "$tree" -- payload/ 2>/dev/null)
 [ -n "$payload_commit" ] || die "cannot read Friday's payload history"
 export FRIDAY_TREE=$tree
@@ -198,9 +205,9 @@ seeds_touched() {
   git -C "$KIT_ROOT" diff --name-only "$1" "$2" -- "${paths[@]}" 2>/dev/null | sed 's#^payload/##'
 }
 # The local release tags that are on origin as the same tag object. A tag only
-# this checkout has, or one fetched from upstream under a name the fork also
-# uses, is not a release of this repository, so neither the previous-release
-# lookup nor the seed-note scan reads it. Takes git tag's own options.
+# this checkout has is not a release of this repository, so neither the
+# previous-release lookup nor the seed-note scan reads it. (A name origin holds
+# as another object never gets here: the run refuses it up front.) Takes git tag's own options.
 origin_release_tags() {
   git -C "$KIT_ROOT" tag -l 'v[0-9]*' "$@" 2>/dev/null | grep -E "$RELEASE_RE" \
     | grep -Fx -f <(printf '%s\n' "$origin_releases")

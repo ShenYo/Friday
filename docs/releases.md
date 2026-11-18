@@ -85,8 +85,9 @@ by instruction.
 so a tag only this clone has is never the default; a pre-release such as
 `v1.1.0-rc1` is never one), or the one named with `--tag vX.Y.Z`, old or new. Either way, the seed notes
 and the previous release are read only from release tags that are on `origin`
-as the same tag object; a tag only this clone has, or one `origin` holds as a
-different object, is not read.
+as the same tag object; a tag only this clone has is not read. It also refuses,
+before any consumer is touched, when `origin` lists a release tag that this clone
+holds as a different object, naming each; make the local tag match `origin`'s.
 It refuses, before any consumer is read, when `origin` has no release tag or
 cannot be read, when the highest tag on `origin` is not in the local checkout
 (it does not fall back to a lower one), or when the tag is not on `main`, is

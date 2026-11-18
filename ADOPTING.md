@@ -469,7 +469,8 @@ one of them records the upstream producer. Do this in order:
    `--tag` accepts any valid release tag, old or new. With or without `--tag`,
    the seed notes `friday-propagate` puts in a pull request come only from
    release tags that are on `origin`, as the same tag object: a tag only your
-   checkout has, or one `origin` holds as a different object, is not read
+   checkout has is not read, and `friday-propagate` refuses if `origin` holds a release tag as a
+   different object than your checkout's (make the local tag match `origin`'s)
    (`bin/friday-seed-check` has no network and reads every local release tag).
    Bring in upstream changes
    later through a branch and a pull request like any change. A seed change

@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+# Tell a consumer's owner that its managed core is behind a Friday release, by
+# an issue in the consumer's own repository.
+#
+#   bin/friday-behind-notice [--repo OWNER/NAME] <release-tag> [<consumer>]
+#
+# Run from a Friday checkout that holds <release-tag> and its history, with the
+# consumer checked out at <consumer> (default: the cwd). It runs
+#
+#   FRIDAY_KIT_ROOT=<this checkout> FRIDAY_TREE=<release-tag> friday-lock check
+#
+# and acts on the exit status, which is the whole contract:
+#
+#   0  in sync        print the state, open nothing, exit 0
+#   1  not in sync    (behind, drifted, tag-moved, retired, ahead, diverged)
+#                     open an issue titled $TITLE in the consumer's repository,
+#                     or, when one with that exact title is already open, edit
+#                     its body to the new check output. Exit 0: the notice is
+#                     the outcome. Nonzero only when `gh` fails.
+#   2+ tool error     print the error, open nothing, exit nonzero. A broken
+#                     check must not read as a notice, nor as "in sync".
+#
+# The title carries no release tag, so a later release updates the same issue
+# instead of opening a second one. The repository is --repo, else
+# $GITHUB_REPOSITORY; the token is the environment's (GH_TOKEN). Nothing else
+# is read or written: no Friday token, no other repository.
+set -uo pipefail
+
+TITLE='Friday: managed core is not in sync with the latest release'
+KIT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+
+die() { echo "friday-behind-notice: $*" >&2; exit 2; }
+
+repo=${GITHUB_REPOSITORY:-}
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --repo) [ $# -ge 2 ] || die "--repo needs OWNER/NAME"; repo=$2; shift 2 ;;
+    --) shift; break ;;
+    -*) die "unknown option: $1" ;;
+    *) break ;;
+  esac
+done
+[ $# -ge 1 ] && [ $# -le 2 ] || die "usage: friday-behind-notice [--repo OWNER/NAME] <release-tag> [<consumer>]"
+tag=$1
+consumer=${2:-.}
+[[ $tag =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "not a release tag (vMAJOR.MINOR.PATCH): $tag"
+[[ $repo =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]] || die "no repository: pass --repo OWNER/NAME or set GITHUB_REPOSITORY"
+command -v jq >/dev/null || die "'jq' is required."
+command -v gh >/dev/null || die "'gh' is required."
+
+out=$(FRIDAY_KIT_ROOT=$KIT_ROOT FRIDAY_TREE=$tag bash "$KIT_ROOT/bin/friday-lock" check "$consumer" 2>&1)
+rc=$?
+printf '%s\n' "$out"
+
+case "$rc" in
+  0) echo "friday-behind-notice: in sync with $tag; nothing to open."; exit 0 ;;
+  1) ;;
+  *) echo "friday-behind-notice: friday-lock failed (exit $rc); no issue opened." >&2; exit 2 ;;
+esac
+
+body=$(printf 'This repository'"'"'s managed core is not in sync with Friday %s. `bin/friday-lock check` reports:\n\n```text\n%s\n```\n\nTake the change in a reviewed commit (see the Friday release notes for %s), then run `friday-lock write`. This issue is kept up to date by the weekly `friday-behind` workflow, and one open issue per repository is enough: close it once the lock is in sync.\n' "$tag" "$out" "$tag")
+
+# Every open issue, matched on the exact title below: no search index, which
+# can lag or tokenise the title, decides whether a duplicate is opened.
+listing=$(gh issue list -R "$repo" --state open --json number,title --limit 1000) \
+  || { echo "friday-behind-notice: gh could not list issues in $repo." >&2; exit 3; }
+number=$(printf '%s' "$listing" | jq -r --arg t "$TITLE" '[.[] | select(.title == $t)][0].number // empty') \
+  || { echo "friday-behind-notice: could not read the issue list." >&2; exit 3; }
+
+if [ -n "$number" ]; then
+  gh issue edit "$number" -R "$repo" --body "$body" \
+    || { echo "friday-behind-notice: gh could not update issue #$number." >&2; exit 3; }
+  echo "friday-behind-notice: updated open issue #$number in $repo."
+else
+  gh issue create -R "$repo" --title "$TITLE" --body "$body" \
+    || { echo "friday-behind-notice: gh could not create the issue." >&2; exit 3; }
+  echo "friday-behind-notice: opened an issue in $repo."
+fi

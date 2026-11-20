@@ -376,6 +376,7 @@ new_case; new_consumer c1
 a=$(m1 1)
 bump "$a" v2; release v1.1.0
 gq -C "$kit" tag -f -a v1.0.0 -m "moved" >/dev/null
+gq -C "$kit" push -q -f origin refs/tags/v1.0.0  # origin agrees, so only the consumer's lock sees the move
 run "$case_dir/c1"; rc=$?
 check "tag moved: reported by name, and the run is not clean" \
   bash -c "[ $rc != 0 ] && grep -q 'TAG MOVED — this lock records release v1.0.0' '$case_dir/run.log' && grep -q 'refused=1' '$case_dir/run.log'"
@@ -637,6 +638,99 @@ run "$case_dir/c1"
 check "next file: the section is carried" grep -qxF -- '- **Action:** act-only' "$GH_SHIM_LOG/1.args"
 check "next file: its title and intro are not" \
   bash -c "! grep -q 'Friday changelog: v2' '$GH_SHIM_LOG/1.args' && ! grep -q 'INTRO-OF-V2' '$GH_SHIM_LOG/1.args'"
+
+# 31. The seed-note scans read the release tags on origin, not every local one
+#      (#84): a fork that fetched upstream's tags and merged upstream holds an
+#      upstream tag as an ancestor of its own release. Here v1.1.0 exists only in
+#      this checkout, on an ancestor of the fork's v1.2.0, with a heading and a
+#      Seed changes section of its own; v1.2.0 changed no section of its own.
+new_case; new_consumer c1; new_consumer c2
+bump AGENTS.md upstream-seed
+seed_entry v1.1.0 upstream; commit_all "docs: upstream's v1.1.0"
+gq -C "$kit" tag -a v1.1.0 -m "only here, fetched from upstream"
+bump "$(m1 1)" fork; plain_entry v1.2.0; commit_all "docs: the fork's v1.2.0"; release v1.2.0
+run "$case_dir/c1"; rc=$?
+body="$GH_SHIM_LOG/1.args"
+check "local-only tag: the run carries the fork's release" \
+  bash -c "[ $rc = 0 ] && git -C '$case_dir/c1' rev-parse -q --verify --quiet chore/sync-managed-core-v1.2.0"
+check "local-only tag: its Seed changes text does not reach the body" \
+  bash -c "! grep -q 'act-upstream' '$body' && ! grep -q 'From release .v1.1.0' '$body'"
+check "local-only tag: it is not the previous release, so the fork's missing section is named" \
+  grep -q 'Release .v1.2.0. changed seeds and its entry has no Seed changes section' "$body"
+GH_SHIM_LOG="$case_dir/gh2" run --tag v1.2.0 "$case_dir/c2"
+check "local-only tag, --tag: the same holds on the explicit path" \
+  bash -c "! grep -q 'act-upstream' '$case_dir/gh2/1.args' && grep -q 'Release .v1.2.0. changed seeds and its entry has no Seed changes section' '$case_dir/gh2/1.args'"
+
+
+# 32. A release tag origin holds as a different object is refused (#84, round 2).
+#     origin's v1.1.0 is the fork's own release and changed no seed; this
+#     checkout holds upstream's v1.1.0, a different object under the same name.
+#     The run dies before any consumer is touched, naming the tag.
+new_case; new_consumer c1
+bump "$(m1 1)" fork; plain_entry v1.1.0; commit_all "docs: the fork's v1.1.0"; release v1.1.0
+bump AGENTS.md upstream-seed; commit_all "payload: a seed change"
+gq -C "$kit" tag -d v1.1.0 >/dev/null; gq -C "$kit" tag -a v1.1.0 -m "upstream's v1.1.0, same name"
+bump "$(m1 1)" fork2; plain_entry v1.2.0; commit_all "docs: the fork's v1.2.0"; release v1.2.0
+run "$case_dir/c1"; rc=$?
+check "same name, other object: the run is refused, exit 2, naming v1.1.0" \
+  bash -c "[ $rc = 2 ] && grep -q 'release tag(s) v1.1.0 here are not origin' '$case_dir/run.log' && grep -q 'Nothing was written' '$case_dir/run.log'"
+check "same name, other object: no branch, no change, no pull request in the consumer" \
+  bash -c "[ -z \"\$(git -C '$case_dir/c1' branch --list 'chore/*')\" ] && [ -z \"\$(git -C '$case_dir/c1' status --porcelain)\" ] && [ ! -e '$GH_SHIM_LOG/1.args' ]"
+
+# 33. A name is matched whole: a local-only v1.1.10 is not origin's v1.1.1.
+new_case; new_consumer c1
+bump "$(m1 1)" fork; plain_entry v1.1.1; commit_all "docs: v1.1.1"; release v1.1.1
+bump AGENTS.md upstream-seed; seed_entry v1.1.10 upstream; commit_all "docs: upstream's v1.1.10"
+gq -C "$kit" tag -a v1.1.10 -m "only here"
+bump "$(m1 1)" fork2; plain_entry v1.2.0; commit_all "docs: v1.2.0"; release v1.2.0
+run "$case_dir/c1"
+check "whole name: a local-only v1.1.10 is not read because v1.1.1 is on origin" \
+  bash -c "! grep -q 'act-upstream' '$GH_SHIM_LOG/1.args' && ! grep -q 'From release .v1.1.10' '$GH_SHIM_LOG/1.args'"
+
+# 34. The previous release is the highest release tag that is an ancestor, not
+#     the first one listed: v1.2.0 changed no seed after v1.1.0 did.
+new_case; new_consumer c1
+bump AGENTS.md seedchange; seed_entry v1.1.0 only; commit_all "docs: v1.1.0"; release v1.1.0
+bump "$(m1 1)" second; plain_entry v1.2.0; commit_all "docs: v1.2.0"; release v1.2.0
+run "$case_dir/c1"
+body="$GH_SHIM_LOG/1.args"
+check "previous release: the section of the release that changed the seed is carried" \
+  grep -qxF -- '- **Action:** act-only' "$body"
+check "previous release: a release that changed no seed is not named" \
+  bash -c "! grep -q 'Release .v1.2.0. changed seeds' '$body'"
+
+# 35. R6 (#84, round 2): origin's v1.1.0 is the fork's own release and changed a
+#     seed, with a Seed changes section; the local v1.1.0 is another object.
+#     Silently dropping that section would blame v1.2.0 for it; the run refuses.
+new_case; new_consumer c1
+bump AGENTS.md fork-seed; seed_entry v1.1.0 fork; commit_all "docs: the fork's v1.1.0"; release v1.1.0
+gq -C "$kit" tag -d v1.1.0 >/dev/null; gq -C "$kit" tag -a v1.1.0 -m "upstream's v1.1.0, same name"
+bump "$(m1 1)" fork2; plain_entry v1.2.0; commit_all "docs: the fork's v1.2.0"; release v1.2.0
+run "$case_dir/c1"; rc=$?
+check "R6: the run is refused, exit 2, naming v1.1.0" \
+  bash -c "[ $rc = 2 ] && grep -q 'release tag(s) v1.1.0 here are not origin' '$case_dir/run.log' && grep -q 'Nothing was written' '$case_dir/run.log'"
+check "R6: nothing is written to the consumer and no pull request is opened" \
+  bash -c "[ -z \"\$(git -C '$case_dir/c1' branch --list 'chore/*')\" ] && [ -z \"\$(git -C '$case_dir/c1' status --porcelain)\" ] && [ ! -e '$GH_SHIM_LOG/1.args' ]"
+
+# 36. Two collisions are both named, and the command the refusal gives
+#     replaces both local tags with origin's, so the next run is not refused.
+new_case; new_consumer c1
+bump "$(m1 1)" fork; plain_entry v1.1.0; commit_all "docs: the fork's v1.1.0"; release v1.1.0
+bump "$(m1 1)" fork5; plain_entry v1.1.5; commit_all "docs: the fork's v1.1.5"; release v1.1.5
+for t in v1.1.0 v1.1.5; do
+  gq -C "$kit" tag -d "$t" >/dev/null; gq -C "$kit" tag -a "$t" -m "upstream's $t, same name"
+done
+bump "$(m1 1)" fork2; plain_entry v1.2.0; commit_all "docs: the fork's v1.2.0"; release v1.2.0
+run "$case_dir/c1"; rc=$?
+check "two collisions: both are named in one refusal" \
+  bash -c "[ $rc = 2 ] && grep -q 'release tag(s) v1.1.0, v1.1.5 here are not origin' '$case_dir/run.log'"
+hint=$(sed -n 's/.*replace each with origin.s: \(git .*\)\. Nothing was written\.$/\1/p' "$case_dir/run.log")
+check "two collisions: the hint forces both tags from origin" \
+  bash -c "printf '%s' '$hint' | grep -qF 'fetch --force origin refs/tags/v1.1.0:refs/tags/v1.1.0 refs/tags/v1.1.5:refs/tags/v1.1.5'"
+eval "$hint" >/dev/null 2>&1
+run "$case_dir/c1"
+check "two collisions: after the hint's command, the run is not refused and opens its pull request" \
+  bash -c "! grep -q 'here are not origin' '$case_dir/run.log' && [ -e '$GH_SHIM_LOG/1.args' ]"
 
 echo
 if [ "$fails" -gt 0 ]; then echo "$fails of $total failed"; exit 1; fi

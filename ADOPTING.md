@@ -461,12 +461,20 @@ one of them records the upstream producer. Do this in order:
    (upstream's newest is `v1.3.0`), so that its version order is unambiguous.
    Without `--release` (or `--tag` for `friday-propagate`), the installer and
    `friday-propagate` choose the highest `vMAJOR.MINOR.PATCH` tag on `origin`,
-   read with one `git ls-remote --tags origin`; when choosing the default
-   release, tags that only your checkout has, such as ones fetched from an
-   upstream remote, are not considered. If
+   read with one `git ls-remote --tags origin`; tags that only your checkout
+   has, such as ones fetched from an upstream remote, are not considered for
+   choosing the default release. If
    that tag is not in your checkout, the tool refuses and tells you to fetch
    the tags; it does not fall back to a lower one. An explicit `--release` or
-   `--tag` accepts any valid release tag, old or new. Bring in upstream changes
+   `--tag` accepts any valid release tag, old or new. With or without `--tag`,
+   the seed notes `friday-propagate` puts in a pull request come only from
+   release tags that are on `origin`, as the same tag object: a tag only your
+   checkout has is not read, and `friday-propagate` refuses if `origin` holds a release tag as a
+   different object than your checkout's; it names each one and gives the
+   `git fetch --force origin refs/tags/vX:refs/tags/vX` command that replaces it with `origin`'s
+   (a plain `fetch --tags` does not)
+   (`bin/friday-seed-check` has no network and reads every local release tag).
+   Bring in upstream changes
    later through a branch and a pull request like any change. A seed change
    that came from upstream must be written into your own changelog entry as a
    Seed changes section, because `bin/friday-seed-check` and

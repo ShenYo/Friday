@@ -118,6 +118,14 @@ stands, and **only when it is `behind`** branches from its `main`, copies the
 managed-core files whose content actually moved, refreshes the lock, commits,
 pushes and opens a pull request.
 
+To see where every consumer stands after a release, without changing anything,
+run `bin/friday-propagate --status <consumer>...`. It prints one row per consumer: the release tag
+(checked on `origin`), the `friday-lock` state read from the consumer's `origin/main` (after a
+`git fetch origin main`, the only write), and the open sync pull request with its URL. A consumer on
+a feature branch is marked `on <branch>, not main`; a path that cannot be read is a row with the
+reason. Exit status: `0` all in sync, `3` something is not in sync, `2` a tool error or an
+unreadable row.
+
 It refuses rather than guesses:
 
 | situation | what happens |

@@ -378,7 +378,7 @@ fork 本身就是 producer，而安裝程式執行的是它所安裝那個 relea
 2. 在 branch 上設定 producer slug（見下），並透過 pull request merge 進 fork 的 `main`：release 是在
    `main` 上經審查的 commit 上建立的（`docs/releases.md`），而且 hook 接好線時，Friday 的 `pre-push`
    hook 會拒絕推送到預設 branch（`docs/safety.md`）。
-3. 第一個 release 的版本號要高於 fork 已有的每個 release tag（upstream 最新的是 `v1.3.0`），讓版本順序
+3. 第一個 release 的版本號要高於 fork 已有的每個 release tag（upstream 最新的是 `v1.4.0`），讓版本順序
    沒有歧義。沒有 `--release`（`friday-propagate` 則是 `--tag`）時，安裝程式與 `friday-propagate` 會挑
    `origin` 上最高的 `vMAJOR.MINOR.PATCH` tag，用一次 `git ls-remote --tags origin` 讀取；只有你的
    checkout 才有的 tag（例如從 upstream remote fetch 來的）挑預設 release 時不列入考慮。如果那個 tag

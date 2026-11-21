@@ -185,7 +185,11 @@ wf_ok() { # file: permissions exactly contents: read + issues: write, one block,
 out=""
 check "workflow: permissions are exactly contents: read, issues: write" 'wf_ok "$source_root/payload/$wf"'
 check "workflow: listed as a consumer-owned seed" 'grep -qxF "!$wf" "$source_root/bin/managed-core.txt"'
-check "workflow: triggers schedule and workflow_dispatch" 'grep -q "^  schedule:" "$source_root/payload/$wf" && grep -q "^  workflow_dispatch:" "$source_root/payload/$wf"'
+triggers() { # the keys directly under the top-level on:, sorted
+  awk '/^on:/ {p=1; next} p && /^[^ #]/ {p=0} p && /^  [A-Za-z_]+:/ {sub(/^  /,""); sub(/:.*/,""); print}' "$1" | sort
+}
+trig_ok() { [ "$(triggers "$1")" = "$(printf 'schedule\nworkflow_dispatch')" ]; }
+check "workflow: triggers schedule and workflow_dispatch under on:" 'trig_ok "$source_root/payload/$wf"'
 mut="$root/mutant.yml"
 sed 's/issues: write/contents: write/' "$source_root/payload/$wf" > "$mut"
 check "workflow check: rejects a widened permission" '! wf_ok "$mut"'
@@ -193,6 +197,8 @@ check "workflow check: rejects a widened permission" '! wf_ok "$mut"'
 check "workflow check: rejects a secret"            '! wf_ok "$mut"'
 { cat "$source_root/payload/$wf"; printf "  x: \${{ secrets['TOKEN'] }}\n"; } > "$mut"
 check "workflow check: rejects an indexed secret"   '! wf_ok "$mut"'
+sed 's/^on:/true:/' "$source_root/payload/$wf" > "$mut"
+check "workflow check: rejects triggers outside on:" '! trig_ok "$mut"'
 
 echo
 if [ "$fails" -eq 0 ]; then echo "all $total passed"; else echo "$fails of $total FAILED"; exit 1; fi

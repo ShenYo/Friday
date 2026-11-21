@@ -1,0 +1,55 @@
+name: Friday behind check
+
+# Weekly, tells this repository whether its managed core is behind Friday's
+# latest release, by opening (or updating) one issue. It never opens a pull
+# request and never changes a file. Seed: this repository owns the file, and
+# the schedule below is yours to change. Needs no secret; Friday is public.
+# The job runs the code at Friday's highest release tag in this repository's
+# Actions, so this repository trusts Friday's release tags.
+
+on:
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+# One run at a time, so two runs never both open the notice.
+concurrency:
+  group: friday-behind
+  cancel-in-progress: false
+
+env:
+  # A fork of Friday changes this one line.
+  FRIDAY_REPO: ShenYo/Friday
+
+jobs:
+  behind:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Find the latest Friday release
+        id: release
+        run: |
+          origin_refs=$(git ls-remote --tags "https://github.com/$FRIDAY_REPO")
+          tag=$(printf '%s\n' "$origin_refs" \
+            | awk '$2 ~ /^refs\/tags\/v[0-9]+\.[0-9]+\.[0-9]+$/ { sub("refs/tags/", "", $2); print $2 }' \
+            | sort -t. -k1.2,1n -k2,2n -k3,3n | sed -n '$p')
+          [ -n "$tag" ] || { echo "::error::$FRIDAY_REPO has no release tag"; exit 1; }
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.FRIDAY_REPO }}
+          ref: ${{ steps.release.outputs.tag }}
+          path: .friday-kit
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check against the release, and open or update the issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+        run: bash .friday-kit/bin/friday-behind-notice "$TAG" .

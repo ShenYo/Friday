@@ -40,7 +40,8 @@ CLAUDE.md
 .agents/skills/git/push/SKILL.md
 .gitignore
 .claude/settings.json
-.codex/hooks.json'
+.codex/hooks.json
+.github/workflows/friday-behind.yml'
 links='.claude/hooks/guard-collaborative-git.sh .claude/hooks/guard-protected-paths.sh .codex/hooks/guard-collaborative-git.sh'
 
 # Compare `expected` with what the installer actually listed or wrote, and say
@@ -494,7 +495,7 @@ touch "$run/fresh/docs/temp/probe/file.md"
 git -C "$run/fresh" check-ignore -v docs/temp/probe/file.md > "$run/ignore.log"
 grep -q 'docs/temp/' "$run/ignore.log"
 # The Skill links setup.sh makes are not payload files; they are asserted below.
-actual=$(cd "$run/fresh" && { printf '%s\n' AGENTS.md CLAUDE.md .gitignore; find .agents .claude .codex -path .claude/skills -prune -o \( -type f -o -type l \) -print; })
+actual=$(cd "$run/fresh" && { printf '%s\n' AGENTS.md CLAUDE.md .gitignore; find .agents .claude .codex .github -path .claude/skills -prune -o \( -type f -o -type l \) -print; })
 inventory_check "the installed tree" "$actual"
 printf 'local overlay\n' > "$run/fresh/local.txt"
 printf '# local hook\n' > "$run/fresh/.agents/hooks/local.sh"

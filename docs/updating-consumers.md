@@ -87,7 +87,8 @@ The states, and the distinction is the point:
 
 **`behind` is decided by content, never by comparing commits.** A Friday commit
 that only touches a README moves no payload hash and so raises nothing. That is
-what makes a daily scheduled check quiet enough to be worth running.
+what makes a scheduled check quiet enough to be worth running; the seed workflow
+in [Being told you are behind](#being-told-you-are-behind) runs one weekly.
 
 [`bin/managed-core.txt`](../bin/managed-core.txt) is the single source of truth
 for which files are managed and which are consumer-owned. A payload file listed
@@ -138,6 +139,46 @@ It refuses rather than guesses:
 platform that has never been bypassed, and a propagation tool is a poor place
 to start.
 
+### Being told you are behind
+
+A consumer does not need the owner to run anything to learn that it is behind.
+The seed [`friday-behind.yml`](../payload/.github/workflows/friday-behind.yml)
+runs weekly (and on `workflow_dispatch`) in the consumer's own repository:
+
+1. It lists Friday's tags with `git ls-remote --tags` and takes the highest
+   `vMAJOR.MINOR.PATCH`, the way `install.sh` does, and checks Friday out at that
+   tag. Friday is public, so this needs no token.
+2. It runs [`bin/friday-behind-notice`](../bin/friday-behind-notice), which runs
+   `friday-lock check` against that tag and acts on the exit status:
+
+   | `friday-lock check` | notice |
+   | --- | --- |
+   | exit 0, `in sync` | nothing opened, exit 0; if the notice issue is still open, the run says so and a person closes it |
+   | exit 1 (`behind`, `drifted`, `tag-moved`, `retired`, `ahead`, `diverged`) | opens an issue titled `Friday: managed core is not in sync with the latest release`, or edits the body of the open issue with that exact title, so a second run never opens a duplicate; the issue is closed by a person once the lock is in sync |
+   | exit 2 or anything else | the tool's error is printed, nothing is opened, the job fails |
+
+   A `gh` failure also fails the job. The title names no release, so a later
+   release updates the same issue.
+
+Issues must be enabled in the consumer, otherwise `gh issue list` fails and the
+run fails every week. The job runs the code at Friday's highest release tag in
+the consumer's Actions, so the consumer trusts Friday's release tags.
+
+The workflow has `contents: read` and `issues: write` and uses only the job's
+`GITHUB_TOKEN`; `tests/friday-behind-notice.sh` checks that statically. It only
+reports: it opens no pull request and changes no file, so carrying the change is
+still `friday-propagate` (above). It is a **seed**, a `!` entry of
+[`bin/managed-core.txt`](../bin/managed-core.txt), so the lock never compares it
+and the consumer may change its schedule. A fork changes the `FRIDAY_REPO` line
+at its top. The workflow itself can only be exercised on GitHub (run it with
+`workflow_dispatch`); the script's three outcomes are proven locally with a
+shim `gh`.
+
+An existing consumer takes the seed by hand: copy
+`payload/.github/workflows/friday-behind.yml` from the release into the
+consumer in a reviewed commit; the release's `### Seed changes` section says
+the same.
+
 ### Why this is a local command and not a CI bot
 
 The consumers are private and sit in two other accounts than Friday's, so a
@@ -146,3 +187,5 @@ living in a secret. A developer machine's `gh` already has that access — scope
 person rather than to an always-on workflow — and the end result is identical:
 pull requests a human still merges. [Issue #7](https://github.com/ShenYo/Friday/issues/7)
 covers the CI-hosted variant if the consumers ever go public or a token is issued.
+The part that needs no cross-repository token, a consumer learning that it is
+behind, is [Being told you are behind](#being-told-you-are-behind).

@@ -35,8 +35,8 @@
 # request (a head branch starting with chore/sync-managed-core) with its URL.
 # It never branches, commits, pushes, opens a pull request or touches a
 # consumer's working tree, so it works on a dirty tree or a feature branch. The
-# one write is `git fetch origin main` in each consumer, which moves only its
-# origin/main ref. The lock is judged on what origin/main holds -- the lock and
+# one write is `git fetch origin +refs/heads/main:refs/remotes/origin/main` in
+# each consumer, which updates its origin/main (and FETCH_HEAD). The lock is judged on what origin/main holds -- the lock and
 # the files it records are read with `git show origin/main:<path>` into a scratch
 # directory -- not on whatever is checked out; a consumer on another branch is
 # marked `on <branch>, not main` in its row. A path that does not exist, has no
@@ -195,23 +195,31 @@ if $status_mode; then
       add_row "$name" "$tag_cell" "unreadable: not a git repository" "-"
       unreadable=$((unreadable + 1)); continue
     }
-    ferr=$(git -C "$target" fetch -q origin main 2>&1) || {
+    ferr=$(git -C "$target" fetch -q origin +refs/heads/main:refs/remotes/origin/main 2>&1) || {
       add_row "$name" "$tag_cell" "unreadable: cannot fetch origin main: $(first_line "$ferr")" "-"
       unreadable=$((unreadable + 1)); continue
     }
-    git -C "$target" cat-file -e "refs/remotes/origin/main:$CONSUMER_LOCK" 2>/dev/null || {
+    # Resolve origin/main once; every read below uses this commit, so a fetch
+    # that lands in between cannot mix two states in one row.
+    om=$(git -C "$target" rev-parse --verify -q "refs/remotes/origin/main^{commit}" 2>/dev/null) || {
+      add_row "$name" "$tag_cell" "unreadable: no origin/main after fetch" "-"
+      unreadable=$((unreadable + 1)); continue
+    }
+    git -C "$target" cat-file -e "$om:$CONSUMER_LOCK" 2>/dev/null || {
       add_row "$name" "$tag_cell" "unreadable: no $CONSUMER_LOCK on origin/main" "-"
       unreadable=$((unreadable + 1)); continue
     }
     # The lock and every file it records, as origin/main holds them. Nothing is
     # checked out: the consumer's working tree and branches are not touched.
     scratch=$(mktemp -d "${TMPDIR:-/tmp}/friday-status.XXXXXX") || die "cannot create a temporary directory"
-    git -C "$target" show "refs/remotes/origin/main:$CONSUMER_LOCK" > "$scratch/$CONSUMER_LOCK"
+    # Physical path, as friday-lock prints it, so the rewrite below matches.
+    scratch=$(cd "$scratch" && pwd -P) || die "cannot resolve the temporary directory"
+    git -C "$target" show "$om:$CONSUMER_LOCK" > "$scratch/$CONSUMER_LOCK"
     while IFS= read -r rel; do
       case "$rel" in ''|/*|..|../*|*/..|*/../*) continue ;; esac
-      git -C "$target" cat-file -e "refs/remotes/origin/main:$rel" 2>/dev/null || continue
+      git -C "$target" cat-file -e "$om:$rel" 2>/dev/null || continue
       mkdir -p "$scratch/$(dirname "$rel")"
-      git -C "$target" show "refs/remotes/origin/main:$rel" > "$scratch/$rel"
+      git -C "$target" show "$om:$rel" > "$scratch/$rel"
     done < <(jq -r '.managed_core? // {} | keys[]?' "$scratch/$CONSUMER_LOCK" 2>/dev/null)
     out=$(bash "$LOCK" check "$scratch" 2>&1)
     state=$(printf '%s\n' "$out" | sed -n 's/^status: //p')

@@ -362,6 +362,8 @@ on [Releases](https://github.com/ShenYo/Friday/releases).
 bash "$FRIDAY/bin/friday-lock" check "$CONSUMER"
 ```
 
+To see several consumers at once, run `bash "$FRIDAY/bin/friday-propagate" --status <consumer>...`: a read-only table of release tag, lock state and open sync pull request.
+
 `in sync` means current. Every other state, such as `behind` or `tag-moved`, and
 what to do about it, is in
 [Knowing where a consumer stands](./docs/updating-consumers.md#knowing-where-a-consumer-stands).

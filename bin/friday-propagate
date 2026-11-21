@@ -195,7 +195,7 @@ if $status_mode; then
       add_row "$name" "$tag_cell" "unreadable: not a git repository" "-"
       unreadable=$((unreadable + 1)); continue
     }
-    ferr=$(git -C "$target" fetch -q origin +refs/heads/main:refs/remotes/origin/main 2>&1) || {
+    ferr=$(git -C "$target" fetch -q --no-tags origin +refs/heads/main:refs/remotes/origin/main 2>&1) || {
       add_row "$name" "$tag_cell" "unreadable: cannot fetch origin main: $(first_line "$ferr")" "-"
       unreadable=$((unreadable + 1)); continue
     }
@@ -223,7 +223,7 @@ if $status_mode; then
     done < <(jq -r '.managed_core? // {} | keys[]?' "$scratch/$CONSUMER_LOCK" 2>/dev/null)
     out=$(bash "$LOCK" check "$scratch" 2>&1)
     state=$(printf '%s\n' "$out" | sed -n 's/^status: //p')
-    detail=$(first_line "$(printf '%s\n' "$out" | sed "s#$scratch#origin/main#g")")
+    detail=$(first_line "$(printf '%s\n' "$out" | sed "s#$scratch#<consumer>#g")")
     rm -rf "$scratch"
     branch=$(git -C "$target" branch --show-current 2>/dev/null)
     if [ -z "$state" ]; then

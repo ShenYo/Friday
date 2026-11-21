@@ -291,7 +291,7 @@ bash "$FRIDAY/bin/friday-lock" check "$CONSUMER"
 
 `in sync` 表示已經是最新的。其他狀態，例如 `behind` 或 `tag-moved`，以及各自該怎麼處理，見[查看 consumer 目前的狀態](./docs/updating-consumers.md#knowing-where-a-consumer-stands)。
 
-新安裝還會帶一個 seed：`.github/workflows/friday-behind.yml`。它每週用 Friday 最新的 release 跑一次這個檢查，只要不是 `in sync`，就在 consumer 自己的 repository 開一個 issue（已有就更新它，不重複開；工具本身出錯時讓該次 run 失敗）。它不需要任何 secret，只有 `contents: read` 與 `issues: write`；檔案歸 consumer 所有，排程可以自行調整。在這個檔案出現之前安裝的 consumer 要手動取得：在 reviewed commit 裡把該 release 的這個檔案複製進 consumer。fork 只要改檔案最上方的 `FRIDAY_REPO` 那一行。細節見[被通知自己落後了](./docs/updating-consumers.md#being-told-you-are-behind)（英文）。
+新安裝還會帶一個 seed：`.github/workflows/friday-behind.yml`。它每週用 Friday 最新的 release 跑一次這個檢查，只要不是 `in sync`，就在 consumer 自己的 repository 開一個 issue（已有就更新它，不重複開；工具本身出錯時讓該次 run 失敗）。它不需要任何 secret，只有 `contents: read` 與 `issues: write`；檔案歸 consumer 所有，排程可以自行調整。consumer 必須啟用 Issues（否則該 run 每週都會失敗），也等於信任 Friday 的 release tag，因為這個 job 會在 consumer 的 Actions 裡執行該 tag 的程式碼。在這個檔案出現之前安裝的 consumer 要手動取得：在 reviewed commit 裡把該 release 的這個檔案複製進 consumer。fork 只要改檔案最上方的 `FRIDAY_REPO` 那一行。細節見[被通知自己落後了](./docs/updating-consumers.md#being-told-you-are-behind)（英文）。
 
 ## 每次 clone 之後
 

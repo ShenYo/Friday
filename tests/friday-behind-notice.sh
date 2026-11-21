@@ -24,12 +24,33 @@ gq() { git -c user.name=t -c user.email=t@example.invalid "$@"; }
 shim="$root/shim"; mkdir -p "$shim"
 cat > "$shim/gh" <<'SHIM'
 #!/usr/bin/env bash
-# Records the call, then answers from the case's environment.
+# Stateful shim. Records the call; keeps the repository's issues in $GH_STATE (a
+# JSON array of {number,title,state}). `issue list` honours --state (closed
+# issues are returned unless `--state open`) and --limit (30 unless given),
+# newest (highest number) first, like gh. `issue create` appends an open issue.
 printf '%s\n' "$*" >> "$GH_LOG"
+state=""; limit=30; title=""; body=""; prev=""
+for a in "$@"; do
+  case "$prev" in
+    --state) state=$a ;; --limit) limit=$a ;; --title) title=$a ;; --body) body=$a ;;
+  esac
+  prev=$a
+done
 case "$1 $2" in
-  "issue list")   [ "${GH_FAIL:-}" = list ] && exit 1; printf '%s\n' "${GH_LIST_JSON:-[]}"; exit 0 ;;
-  "issue create") [ "${GH_FAIL:-}" = create ] && exit 1; echo "https://github.com/o/r/issues/1"; exit 0 ;;
-  "issue edit")   [ "${GH_FAIL:-}" = edit ] && exit 1; exit 0 ;;
+  "issue list")
+    [ "${GH_FAIL:-}" = list ] && exit 1
+    jq -c --arg s "$state" --argjson l "$limit" \
+      '[.[] | select($s != "open" or .state == "OPEN")] | sort_by(-.number) | .[0:$l] | map({number,title})' "$GH_STATE"
+    exit 0 ;;
+  "issue create")
+    [ "${GH_FAIL:-}" = create ] && exit 1
+    printf '%s\n' "$title" >> "$GH_LOG.titles"; printf '%s' "$body" > "$GH_LOG.body"
+    jq -c --arg t "$title" '. + [{number: (([.[].number] | max // 0) + 1), title: $t, state: "OPEN"}]' "$GH_STATE" > "$GH_STATE.new" \
+      && mv "$GH_STATE.new" "$GH_STATE"
+    echo "https://github.com/o/r/issues/1"; exit 0 ;;
+  "issue edit")
+    [ "${GH_FAIL:-}" = edit ] && exit 1
+    printf '%s' "$body" > "$GH_LOG.body"; exit 0 ;;
 esac
 exit 0
 SHIM
@@ -38,8 +59,8 @@ chmod +x "$shim/gh"
 # A kit with release v1.0.0, and a consumer in sync with it.
 setup() {
   n=$((n + 1))
-  kit="$root/$n/kit"; consumer="$root/$n/consumer"; log="$root/$n/gh.log"
-  mkdir -p "$kit/bin" "$consumer"; : > "$log"
+  kit="$root/$n/kit"; consumer="$root/$n/consumer"; log="$root/$n/gh.log"; state="$root/$n/issues.json"
+  mkdir -p "$kit/bin" "$consumer"; : > "$log"; echo '[]' > "$state"
   cp "$source_root/bin/friday-lock" "$kit/bin/"
   cp "${NOTICE_UNDER_TEST:-$source_root/bin/friday-behind-notice}" "$kit/bin/friday-behind-notice"
   cp "$source_root/bin/managed-core.txt" "$kit/bin/"
@@ -62,7 +83,7 @@ release_change() {
 }
 # shellcheck disable=SC2034  # rc and out are read by the check strings
 run() { # <args...>; sets rc and out
-  out=$(cd "$consumer" && PATH="$shim:$PATH" GH_LOG="$log" GH_TOKEN=x GITHUB_REPOSITORY=o/r \
+  out=$(cd "$consumer" && PATH="$shim:$PATH" GH_LOG="$log" GH_STATE="$state" GH_TOKEN=x GITHUB_REPOSITORY=o/r \
         bash "$kit/bin/friday-behind-notice" "$@" 2>&1)
   rc=$?
 }
@@ -72,6 +93,7 @@ check() { # name, command that must succeed
     echo "FAIL $1"; printf '%s\n' "$out" | sed 's/^/     /' | tail -6; echo "     gh: $(tr '\n' '|' < "$log" | cut -c1-200)"
     fails=$((fails + 1)); fi
 }
+seed() { printf '%s\n' "$1" > "$state"; } # the repository's issues before the run
 creates() { grep -q '^issue create' "$log"; }
 edits()   { grep -q '^issue edit' "$log"; }
 writes()  { grep -q -e '^issue create' -e '^issue edit' "$log"; }
@@ -81,27 +103,51 @@ setup; release_change; run v1.0.1 .
 check "stale lock: exit 0"              '[ "$rc" -eq 0 ]'
 check "stale lock: reports BEHIND"      'printf "%s" "$out" | grep -q "status: behind"'
 check "stale lock: creates the issue"   'creates'
-check "stale lock: fixed title, repo"   'grep -qF -- "issue create -R o/r --title $TITLE" "$log"'
-check "stale lock: body carries output" 'grep -q "BEHIND" "$log"'
+check "stale lock: exact title"         '[ "$(cat "$log.titles")" = "$TITLE" ]'
+check "stale lock: create names the repo" 'grep -q "^issue create -R o/r " "$log"'
+check "stale lock: body carries output" 'grep -q "BEHIND" "$log.body"'
+check "stale lock: body has the status line, four-backtick fence" 'grep -q "status: behind" "$log.body" && grep -q "^\`\`\`\`text" "$log.body"'
 
 # 2. An in-sync lock opens nothing.
 setup; release_change; run v1.0.0 .
 check "in sync: exit 0"                 '[ "$rc" -eq 0 ]'
 check "in sync: no issue written"       '! writes'
-check "in sync: gh not called at all"   '[ ! -s "$log" ]'
+check "in sync: no notice issue, no hint" '! printf "%s" "$out" | grep -q "still open"'
+# 2b. In sync while the notice issue is open: say so, change nothing, exit 0.
+setup; release_change
+seed "[{\"number\":7,\"title\":\"$TITLE\",\"state\":\"OPEN\"}]"; run v1.0.0 .
+check "in sync, issue open: exit 0"     '[ "$rc" -eq 0 ]'
+check "in sync, issue open: hint names #7" 'printf "%s" "$out" | grep -qF "issue #7 is still open; close it now that the lock is in sync."'
+check "in sync, issue open: nothing written" '! writes'
+setup; release_change
+seed "[{\"number\":7,\"title\":\"$TITLE\",\"state\":\"OPEN\"}]"; GH_FAIL=list run v1.0.0 .
+check "in sync, list fails: still exit 0, warns" '[ "$rc" -eq 0 ] && printf "%s" "$out" | grep -q "warning"'
 
 # 3. An open issue with the same title is updated, never duplicated.
 setup; release_change
-export GH_LIST_JSON="[{\"number\":4,\"title\":\"unrelated\"},{\"number\":7,\"title\":\"$TITLE\"}]"
-: > "$log"; run v1.0.1 .
+seed "[{\"number\":4,\"title\":\"unrelated\",\"state\":\"OPEN\"},{\"number\":7,\"title\":\"$TITLE\",\"state\":\"OPEN\"}]"
+run v1.0.1 .
 check "open issue: exit 0"              '[ "$rc" -eq 0 ]'
 check "open issue: no create"           '! creates'
 check "open issue: edits that number"   'grep -q "^issue edit 7 -R o/r" "$log"'
 # 3b. Only an exact title match counts.
-export GH_LIST_JSON='[{"number":4,"title":"Friday: something else"}]'
+seed '[{"number":4,"title":"Friday: something else","state":"OPEN"}]'
 : > "$log"; run v1.0.1 .
 check "other title: creates, no edit"   'creates && ! edits'
-unset GH_LIST_JSON
+# 3c. A closed issue with the same title is not reopened or edited: a new one opens.
+seed "[{\"number\":9,\"title\":\"$TITLE\",\"state\":\"CLOSED\"}]"
+: > "$log"; run v1.0.1 .
+check "closed same title: creates, no edit" 'creates && ! edits'
+# 3d. More than 30 open issues, the notice not among the newest 30: still one issue.
+fixture=$(jq -nc --arg t "$TITLE" '[{number:1,title:$t,state:"OPEN"}] + [range(2;42) | {number:., title:"other \(.)", state:"OPEN"}]')
+seed "$fixture"
+: > "$log"; run v1.0.1 .
+check "41 open issues: edits #1, no create" 'edits && ! creates && grep -q "^issue edit 1 -R o/r" "$log"'
+# 3e. Two runs on one repository: one create, then one edit, never two creates.
+setup; release_change
+run v1.0.1 .; run v1.0.1 .
+check "two runs: exactly one create"    '[ "$(grep -c "^issue create" "$log")" -eq 1 ]'
+check "two runs: then one edit"         '[ "$(grep -c "^issue edit" "$log")" -eq 1 ] && [ "$(wc -l < "$log.titles")" -eq 1 ]'
 
 # 4. A tool error (exit 2: no lock) fails and writes nothing.
 setup; release_change; rm "$consumer/.friday-lock.json"; run v1.0.1 .
@@ -115,12 +161,13 @@ check "gh create fails: nonzero"        '[ "$rc" -ne 0 ]'
 setup; release_change; GH_FAIL=list run v1.0.1 .
 check "gh list fails: nonzero"          '[ "$rc" -ne 0 ]'
 check "gh list fails: nothing written"  '! writes'
-setup; release_change; GH_LIST_JSON="[{\"number\":7,\"title\":\"$TITLE\"}]" GH_FAIL=edit run v1.0.1 .
+setup; release_change; seed "[{\"number\":7,\"title\":\"$TITLE\",\"state\":\"OPEN\"}]"; GH_FAIL=edit run v1.0.1 .
 check "gh edit fails: nonzero"          '[ "$rc" -ne 0 ]'
 
 # 6. A drifted consumer is also a notice, and a bad argument is refused.
 setup; printf '\n# local\n' >> "$consumer/$(grep -v -e '^#' -e '^!' -e '^[[:space:]]*$' "$kit/bin/managed-core.txt" | sed -n 1p)"; run v1.0.0 .
 check "drifted: creates the issue"      'creates && [ "$rc" -eq 0 ]'
+check "drifted: body has the status line, not the behind advice" 'grep -q "status: drifted" "$log.body" && ! grep -q "Take the change" "$log.body"'
 setup; run main .
 check "not a release tag: refused"      '[ "$rc" -ne 0 ] && [ ! -s "$log" ]'
 setup; run v9.9.9 .

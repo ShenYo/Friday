@@ -4,6 +4,8 @@ name: Friday behind check
 # latest release, by opening (or updating) one issue. It never opens a pull
 # request and never changes a file. Seed: this repository owns the file, and
 # the schedule below is yours to change. Needs no secret; Friday is public.
+# The job runs the code at Friday's highest release tag in this repository's
+# Actions, so this repository trusts Friday's release tags.
 
 on:
   schedule:
@@ -23,6 +25,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Find the latest Friday release
         id: release
         run: |
@@ -38,6 +42,7 @@ jobs:
           ref: ${{ steps.release.outputs.tag }}
           path: .friday-kit
           fetch-depth: 0
+          persist-credentials: false
       - name: Check against the release, and open or update the issue
         env:
           GH_TOKEN: ${{ github.token }}

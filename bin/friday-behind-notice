@@ -11,7 +11,9 @@
 #
 # and acts on the exit status, which is the whole contract:
 #
-#   0  in sync        print the state, open nothing, exit 0
+#   0  in sync        print the state, open nothing, exit 0. If the notice issue
+#                     is still open, say so (read-only; a failed list is only a
+#                     warning, an in-sync run never goes red because of it).
 #   1  not in sync    (behind, drifted, tag-moved, retired, ahead, diverged)
 #                     open an issue titled $TITLE in the consumer's repository,
 #                     or, when one with that exact title is already open, edit
@@ -52,20 +54,30 @@ out=$(FRIDAY_KIT_ROOT=$KIT_ROOT FRIDAY_TREE=$tag bash "$KIT_ROOT/bin/friday-lock
 rc=$?
 printf '%s\n' "$out"
 
+# Every open issue, matched on the exact title below: no search index, which
+# can lag or tokenise the title, decides whether a duplicate is opened.
+find_open_notice() { # sets listing and number; returns 1 when gh or jq fails
+  listing=$(gh issue list -R "$repo" --state open --json number,title --limit 1000) || return 1
+  number=$(printf '%s' "$listing" | jq -r --arg t "$TITLE" '[.[] | select(.title == $t)][0].number // empty') || return 1
+}
+
 case "$rc" in
-  0) echo "friday-behind-notice: in sync with $tag; nothing to open."; exit 0 ;;
+  0)
+    echo "friday-behind-notice: in sync with $tag; nothing to open."
+    if find_open_notice; then
+      [ -z "$number" ] || echo "friday-behind-notice: issue #$number is still open; close it now that the lock is in sync."
+    else
+      echo "friday-behind-notice: warning: could not check for an open notice issue in $repo." >&2
+    fi
+    exit 0 ;;
   1) ;;
   *) echo "friday-behind-notice: friday-lock failed (exit $rc); no issue opened." >&2; exit 2 ;;
 esac
 
-body=$(printf 'This repository'"'"'s managed core is not in sync with Friday %s. `bin/friday-lock check` reports:\n\n```text\n%s\n```\n\nTake the change in a reviewed commit (see the Friday release notes for %s), then run `friday-lock write`. This issue is kept up to date by the weekly `friday-behind` workflow, and one open issue per repository is enough: close it once the lock is in sync.\n' "$tag" "$out" "$tag")
+body=$(printf 'This repository'"'"'s managed core is not in sync with Friday %s. `bin/friday-lock check` reports:\n\n````text\n%s\n````\n\nAct on the `status:` line above and the instruction friday-lock prints under it. This issue is kept up to date weekly by the `friday-behind` workflow, and one issue per repository is enough. A person closes it once the lock is in sync; resolution is not detected automatically.\n' "$tag" "$out")
 
-# Every open issue, matched on the exact title below: no search index, which
-# can lag or tokenise the title, decides whether a duplicate is opened.
-listing=$(gh issue list -R "$repo" --state open --json number,title --limit 1000) \
+find_open_notice \
   || { echo "friday-behind-notice: gh could not list issues in $repo." >&2; exit 3; }
-number=$(printf '%s' "$listing" | jq -r --arg t "$TITLE" '[.[] | select(.title == $t)][0].number // empty') \
-  || { echo "friday-behind-notice: could not read the issue list." >&2; exit 3; }
 
 if [ -n "$number" ]; then
   gh issue edit "$number" -R "$repo" --body "$body" \

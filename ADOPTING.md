@@ -366,7 +366,9 @@ runs this check weekly against Friday's latest release and opens one issue in th
 consumer's own repository while it is not `in sync` (it updates that issue
 instead of opening another, and fails the run on a tool error). It needs no
 secret, only `contents: read` and `issues: write`, and the consumer owns the
-file, so change the schedule freely. A consumer installed before it existed
+file, so change the schedule freely. Issues must be enabled in the consumer
+(otherwise the run fails weekly), and the consumer trusts Friday's release tags,
+since the job runs their code in its Actions. A consumer installed before it existed
 takes it by hand: copy the file from the release into the consumer in a reviewed
 commit. A fork changes the `FRIDAY_REPO` line at the top of it. More in
 [Being told you are behind](./docs/updating-consumers.md#being-told-you-are-behind).

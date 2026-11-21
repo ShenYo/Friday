@@ -153,12 +153,16 @@ runs weekly (and on `workflow_dispatch`) in the consumer's own repository:
 
    | `friday-lock check` | notice |
    | --- | --- |
-   | exit 0, `in sync` | nothing opened, exit 0 |
+   | exit 0, `in sync` | nothing opened, exit 0; if the notice issue is still open, the run says so and a person closes it |
    | exit 1 (`behind`, `drifted`, `tag-moved`, `retired`, `ahead`, `diverged`) | opens an issue titled `Friday: managed core is not in sync with the latest release`, or edits the body of the open issue with that exact title, so a second run never opens a duplicate; the issue is closed by a person once the lock is in sync |
    | exit 2 or anything else | the tool's error is printed, nothing is opened, the job fails |
 
    A `gh` failure also fails the job. The title names no release, so a later
    release updates the same issue.
+
+Issues must be enabled in the consumer, otherwise `gh issue list` fails and the
+run fails every week. The job runs the code at Friday's highest release tag in
+the consumer's Actions, so the consumer trusts Friday's release tags.
 
 The workflow has `contents: read` and `issues: write` and uses only the job's
 `GITHUB_TOKEN`; `tests/friday-behind-notice.sh` checks that statically. It only

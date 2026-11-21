@@ -151,18 +151,18 @@ check "two runs: then one edit"         '[ "$(grep -c "^issue edit" "$log")" -eq
 
 # 4. A tool error (exit 2: no lock) fails and writes nothing.
 setup; release_change; rm "$consumer/.friday-lock.json"; run v1.0.1 .
-check "no lock: nonzero"                '[ "$rc" -ne 0 ]'
+check "no lock: exit 2"                 '[ "$rc" -eq 2 ]'
 check "no lock: no issue written"       '! writes'
 check "no lock: gh not called"          '[ ! -s "$log" ]'
 
 # 5. gh failing on create fails the run; failing on list writes nothing.
 setup; release_change; GH_FAIL=create run v1.0.1 .
-check "gh create fails: nonzero"        '[ "$rc" -ne 0 ]'
+check "gh create fails: exit 3"         '[ "$rc" -eq 3 ]'
 setup; release_change; GH_FAIL=list run v1.0.1 .
-check "gh list fails: nonzero"          '[ "$rc" -ne 0 ]'
+check "gh list fails: exit 3"           '[ "$rc" -eq 3 ]'
 check "gh list fails: nothing written"  '! writes'
 setup; release_change; seed "[{\"number\":7,\"title\":\"$TITLE\",\"state\":\"OPEN\"}]"; GH_FAIL=edit run v1.0.1 .
-check "gh edit fails: nonzero"          '[ "$rc" -ne 0 ]'
+check "gh edit fails: exit 3"           '[ "$rc" -eq 3 ]'
 
 # 6. A drifted consumer is also a notice, and a bad argument is refused.
 setup; printf '\n# local\n' >> "$consumer/$(grep -v -e '^#' -e '^!' -e '^[[:space:]]*$' "$kit/bin/managed-core.txt" | sed -n 1p)"; run v1.0.0 .
@@ -180,7 +180,7 @@ wf_ok() { # file: permissions exactly contents: read + issues: write, one block,
   [ "$(perms "$1")" = "$(printf 'contents: read\nissues: write')" ] \
     && [ "$(grep -c '^permissions:' "$1")" -eq 1 ] \
     && ! grep -qE '^[[:space:]]+permissions:' "$1" \
-    && ! grep -q 'secrets\.' "$1"
+    && ! grep -qE 'secrets[[:space:]]*[.[]' "$1"
 }
 out=""
 check "workflow: permissions are exactly contents: read, issues: write" 'wf_ok "$source_root/payload/$wf"'
@@ -191,6 +191,8 @@ sed 's/issues: write/contents: write/' "$source_root/payload/$wf" > "$mut"
 check "workflow check: rejects a widened permission" '! wf_ok "$mut"'
 { cat "$source_root/payload/$wf"; printf '  x: ${{ secrets.TOKEN }}\n'; } > "$mut"
 check "workflow check: rejects a secret"            '! wf_ok "$mut"'
+{ cat "$source_root/payload/$wf"; printf "  x: \${{ secrets['TOKEN'] }}\n"; } > "$mut"
+check "workflow check: rejects an indexed secret"   '! wf_ok "$mut"'
 
 echo
 if [ "$fails" -eq 0 ]; then echo "all $total passed"; else echo "$fails of $total FAILED"; exit 1; fi

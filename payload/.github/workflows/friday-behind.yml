@@ -16,6 +16,11 @@ permissions:
   contents: read
   issues: write
 
+# One run at a time, so two runs never both open the notice.
+concurrency:
+  group: friday-behind
+  cancel-in-progress: false
+
 env:
   # A fork of Friday changes this one line.
   FRIDAY_REPO: ShenYo/Friday

@@ -1,9 +1,6 @@
 #!/usr/bin/env python3
 """Check that two language versions of a document stayed in step.
 
-Ported from Jarvis's scripts/check-readme-parity.py (Jarvis commit 9d3628b),
-with the differences listed at the end of this note.
-
 CI runs it once per pair: README.md with README.zh-TW.md, and ADOPTING.md with
 ADOPTING.zh-TW.md. A link from one file to a document's own other-language
 version (ADOPTING.md in the English README, ADOPTING.zh-TW.md in the Chinese
@@ -19,7 +16,7 @@ What this refuses, and why each check exists:
               added or dropped on one side.
   numbers     the set of numbers appearing must match. Catches a count
               corrected in one file only.
-  links       the set of relative links must match, and every one must
+  links       the set of relative link paths must match, and every one must
               resolve. Catches a path renamed on one side, and dead links on
               both.
   stale       a term listed in the stale-terms file must appear in NEITHER
@@ -30,16 +27,20 @@ What this refuses, and why each check exists:
               because a check that looks for the English word only in the
               English file cannot see a stale sentence in the other one.
 
-Differences from the Jarvis script:
+Known limits:
 
-  numbers     An ordinal ("the 15th" / "第 15 個") and a number that ends
-              a sentence ("Bash 5.") count as the number. Jarvis's pattern
-              missed both, so Friday's README, which counts the managed core
-              as "the 15th, 16th, 17th" in English and "第 15 個" in
-              Chinese, failed on text that agrees. A version such as 1.4.0 is
-              still not a number.
-  summary     Unchanged: the Chinese summary block is not checked for wording, so
-              the `> **摘要**` of ADOPTING.zh-TW.md passes.
+  numbers     An ordinal ("the 15th" / "第 15 個") and a number that ends a
+              sentence ("Bash 5.") count as the number. A version such as
+              1.4.0 is not a number. Ordered-list and numbered-heading markers
+              ("1.", "### 2.") are not counted. A number written next to Han
+              text without a space is not separated from it.
+  links       Only the path of a link is compared and resolved; the `#anchor`
+              is not, because anchors differ between languages. A dead anchor
+              on a live path passes.
+  structure   Only column-0 ``` fences are counted, and a `##` line inside a
+              code block counts as a heading.
+  summary     The wording of the Chinese summary block is not checked, and
+              neither is whether the two files say the same thing.
 """
 import re
 import sys
@@ -57,11 +58,15 @@ def fences(text):
 def numbers(text):
     # Standalone numbers only: 36, 14, the 15th, "Bash 5." Not the 2 in `h2`,
     # not a version's parts (1.4.0).
+    # Ordered-list and numbered-heading markers are not numbers in the prose.
+    text = re.sub(r"^[ \t]*(#+[ \t]+)?\d+\.(?=\s)", r"\1", text, flags=re.M)
     return sorted(set(re.findall(r"(?<![\w.])(\d+)(?:st|nd|rd|th)?(?!\w)(?!\.\d)", text)))
 
 
 def rel_links(text):
-    return sorted(set(re.findall(r"\]\((\./[^)#\s]+|[^):#\s/][^)#\s]*\.(?:md|sh|json|txt))\)", text)))
+    # The path part of a relative link; a `#anchor` after it is dropped.
+    return sorted(set(re.findall(
+        r"\]\((\.\.?/[^)#\s]+|[^):#\s/][^)#\s]*\.(?:md|sh|json|txt))(?:#[^)\s]*)?\)", text)))
 
 
 def same_doc(link):
@@ -125,7 +130,10 @@ def main():
             if not (root / link).exists():
                 problems.append(f"{path.name}: link does not resolve: {link}")
 
-    if stale_path and stale_path.is_file():
+    if stale_path is not None and not stale_path.is_file():
+        print(f"missing stale-terms file: {stale_path}", file=sys.stderr)
+        return 2
+    if stale_path:
         terms = [t.split("#", 1)[0].strip() for t in stale_path.read_text(encoding="utf-8").splitlines()]
         for term in [t for t in terms if t]:
             # Every term against every file. The point of the check.

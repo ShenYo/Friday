@@ -5,10 +5,14 @@
 # sentences were not, in both languages; it has since grown to seventeen, and
 # the fourteen-file wording is as stale as the eleven-file was.
 #
-# Checked against every file, not one term per file.
+# Checked against every file, not one term per file. A match is a plain
+# substring, so a Chinese term carries enough context not to sit inside a
+# longer number (十一檔 is inside 二十一檔).
 eleven-file
-十一檔
+eleven managed-core
+封閉的十一檔
 十一個 managed-core
 fourteen-file
-十四檔
+fourteen managed-core
+封閉的十四檔
 十四個 managed-core

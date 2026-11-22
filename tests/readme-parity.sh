@@ -12,6 +12,9 @@ set -uo pipefail
 
 source_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 script=${PARITY_UNDER_TEST:-$source_root/bin/check-readme-parity.py}
+# Absolute before any cd: the cases run the script from a scratch directory.
+script=$(cd "$(dirname "$script")" && pwd)/$(basename "$script")
+terms=${PARITY_TERMS_UNDER_TEST:-$source_root/bin/readme-stale-terms.txt}
 base=${1:-${TMPDIR:-/tmp}}
 mkdir -p "$base"
 root=$(mktemp -d "$base/readme-parity-test.XXXXXX")
@@ -70,6 +73,51 @@ cases() {
   new_pair; sed 's/^\[a\].*/[a](.\/B.md)/' "$d/A.md" > "$d/t" && mv "$d/t" "$d/A.md"; run "$s"
   c "a language switcher pointing nowhere fails" bash -c "[ $rc = 1 ] && grep -q 'does not resolve' '$d/out'"
 
+  new_pair; printf '[y](./y.md#sec)\n' >> "$d/A.md"; printf '[y](./y.md#節)\n' >> "$d/A.zh-TW.md"; run "$s"
+  c "a dead link with an anchor fails" bash -c "[ $rc = 1 ] && grep -q 'link does not resolve: ./y.md' '$d/out'"
+
+  new_pair; printf '[q](../q.md)\n' >> "$d/A.md"; printf '[q](../q.md)\n' >> "$d/A.zh-TW.md"; run "$s"
+  c "a dead ../ link fails" bash -c "[ $rc = 1 ] && grep -q 'link does not resolve: ../q.md' '$d/out'"
+
+  new_pair; printf '[x](./x.md#one)\n' >> "$d/A.md"; printf '[x](./x.md#一)\n' >> "$d/A.zh-TW.md"
+  sed -i.bak 's/(\.\/A\.zh-TW\.md)/(.\/A.zh-TW.md#top)/' "$d/A.md"; run "$s"
+  c "anchors that differ between the languages pass, a switcher anchor included" bash -c "[ $rc = 0 ] && grep -q '^Parity ok' '$d/out'"
+
+  new_pair; printf '\nTakes 5 steps.\n\n1. a\n2. b\n3. c\n4. d\n5. e\n' >> "$d/A.md"
+  printf '\n共 4 個步驟。\n\n1. a\n2. b\n3. c\n4. d\n5. e\n' >> "$d/A.zh-TW.md"; run "$s"
+  c "a prose number drift beside a numbered list fails" bash -c "[ $rc = 1 ] && grep -q 'numbers differ -- only in A.md: 5; only in A.zh-TW.md: 4' '$d/out'"
+
+  new_pair; printf '\nTakes 5 steps.\n\n1. a\n2. b\n3. c\n4. d\n5. e\n\n### 2. Two\n' >> "$d/A.md"
+  printf '\n共 5 個步驟。\n\n1. a\n2. b\n3. c\n4. d\n5. e\n\n### 2. 二\n' >> "$d/A.zh-TW.md"; run "$s"
+  c "a numbered list and numbered heading with agreeing prose pass" bash -c "[ $rc = 0 ] && grep -q '^Parity ok' '$d/out'"
+
+  new_pair; printf '\n### Extra\n' >> "$d/A.md"; run "$s"
+  c "a dropped ### section fails" bash -c "[ $rc = 1 ] && grep -q '### sections: A.md has 2, A.zh-TW.md has 1' '$d/out' && ! grep -q '^  ## sections' '$d/out'"
+
+  new_pair; printf '\nversion 7.4.0\n' >> "$d/A.md"; printf '\nversion 8.4.0\n' >> "$d/A.zh-TW.md"; run "$s"
+  c "versions that differ do not count as numbers" bash -c "[ $rc = 0 ] && grep -q '^Parity ok' '$d/out'"
+
+  new_pair; printf 'The eleven managed-core files.\n' >> "$d/A.md"; run "$s" "$terms"
+  c "the English eleven managed-core twin is stale" bash -c "[ $rc = 1 ] && grep -q 'stale term present: .eleven managed-core' '$d/out'"
+
+  new_pair; printf 'The fourteen managed-core files.\n' >> "$d/A.md"; run "$s" "$terms"
+  c "the English fourteen managed-core twin is stale" bash -c "[ $rc = 1 ] && grep -q 'stale term present: .fourteen managed-core' '$d/out'"
+
+  new_pair; printf '封閉的十一檔 core\n' >> "$d/A.zh-TW.md"; run "$s" "$terms"
+  c "the Chinese eleven-file phrase is stale" bash -c "[ $rc = 1 ] && grep -q 'stale term present' '$d/out'"
+
+  new_pair; printf '封閉的十四檔 core\n' >> "$d/A.zh-TW.md"; run "$s" "$terms"
+  c "the Chinese fourteen-file phrase is stale" bash -c "[ $rc = 1 ] && grep -q 'stale term present' '$d/out'"
+
+  new_pair; printf '封閉的二十一檔與二十四檔 core\n' >> "$d/A.zh-TW.md"; printf 'x\n' >> "$d/A.md"; run "$s" "$terms"
+  c "二十一檔 and 二十四檔 are not stale" bash -c "[ $rc = 0 ] && grep -q '^Parity ok' '$d/out'"
+
+  new_pair; run "$s" "$d/missing.txt"
+  c "a stale-terms path that does not exist exits 2" bash -c "[ $rc = 2 ] && grep -q 'missing stale-terms file' '$d/out'"
+
+  new_pair; mkdir -p "$d/terms.d"; run "$s" "$d/terms.d"
+  c "a stale-terms path that is a directory exits 2" bash -c "[ $rc = 2 ] && grep -q 'missing stale-terms file' '$d/out'"
+
   return "$f"
 }
 
@@ -80,7 +128,8 @@ fails=$((fails + f))
 
 # The real pairs agree (this suite's script, the repository's stale terms).
 for p in README ADOPTING; do
-  if (cd "$source_root" && python3 -I "$script" "$p.md" "$p.zh-TW.md" bin/readme-stale-terms.txt) > "$root/$p.out" 2>&1; then
+  if (cd "$source_root" \
+     && python3 -I "$script" "$p.md" "$p.zh-TW.md" "$terms") > "$root/$p.out" 2>&1; then
     ok "$p.md and $p.zh-TW.md agree"
   else
     fail "$p.md and $p.zh-TW.md agree"; cat "$root/$p.out"
@@ -110,6 +159,11 @@ mutate numbers    '    if na != nb:'          '    if False:'
 mutate links-diff '    if la != lb:'          '    if False:'
 mutate resolve    '            if not (root / link).exists():' '            if False:'
 mutate stale      '                if term in text:' '                if False:'
+mutate anchors    '(?:#[^)\s]*)?\)", text)' '\)", text)'
+mutate listmarks  '    text = re.sub(' '    text0 = re.sub('
+mutate h3-off     '("### sections", lambda t: sections(t, 3)),' '("### sections", lambda t: 0),'
+mutate noversion  '(?!\.\d)' ''
+mutate stale-missing '    if stale_path is not None and not stale_path.is_file():' '    if False:'
 
 echo
 if [ "$fails" -gt 0 ]; then echo "$fails of $total failed"; exit 1; fi

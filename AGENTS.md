@@ -99,10 +99,11 @@ Each step ends on the condition that says it is done.
 - **Edit `README.md` and `README.zh-TW.md` in the same commit**, and
   `ADOPTING.md` with `ADOPTING.zh-TW.md`. CI runs
   `bin/check-readme-parity.py` on both pairs: it fails when the `##`, `###` or
-  fenced-block counts, the set of numbers, or the relative links differ, when a
-  link does not resolve, or when a term in `bin/readme-stale-terms.txt` is in
-  either file. It cannot check that the two say the same thing, so the wording
-  is still yours to compare.
+  fenced-block counts, the set of numbers, or the paths of the relative links
+  differ, when a link path does not resolve, or when a term in
+  `bin/readme-stale-terms.txt` is in either file. It does not compare link
+  anchors, and it cannot check that the two say the same thing, so the anchors
+  and the wording are still yours to compare.
 - **A release's note lives under [`docs/changelog/`](docs/changelog/)**, one file
   per major version, linked from [`CHANGELOG.md`](CHANGELOG.md). The release's
   pull request moves the `Unreleased` entry under the new version and its date

@@ -375,6 +375,42 @@ expect_guard 2 "Bash: a relative write after cd -" \
   "$(other_payload "cd - && printf x > notes.md" "$seed_repo")"
 expect_guard 0 "Bash: cd to a variable, then no write" \
   "$(other_payload 'cd "$X" && git status' "$seed_repo")"
+# Ordinary spellings that reach a protected path without the literal path
+# after the shell's own cwd (#73). Each refusal is paired with a near-miss that
+# writes an unprotected file, so a guard that refused everything would fail.
+expect_sub() { # <exit> <what> <command>
+  expect_guard "$1" "Bash: $2" "$(other_payload "$3" "$fr/sub")"
+}
+expect_sub 2 "an environment prefix on cd" 'X=1 cd .. && printf x > CLAUDE.md'
+expect_sub 0 "an environment prefix on cd, unprotected target" 'X=1 cd .. && printf x > notes.md'
+expect_sub 2 "a cd inside backticks" 'a=`cd .. && printf x > CLAUDE.md`'
+expect_sub 0 "a cd inside backticks, unprotected target" 'a=`cd .. && printf x > notes.md`'
+expect_sub 0 "an unreadable cd inside backticks, as in a script-dir idiom" 'DIR=`cd "$X" && pwd`; printf x > notes.md'
+expect_sub 2 "a clobber redirection" 'printf x >| ../CLAUDE.md'
+expect_sub 0 "a clobber redirection, unprotected target" 'printf x >| out.txt'
+expect_sub 2 "cp -t DIR" 'cp -t .. CLAUDE.md'
+expect_sub 2 "cp --target-directory=DIR" 'cp --target-directory=.. CLAUDE.md'
+expect_sub 0 "cp -t DIR, unprotected target" 'cp -t .. src.txt'
+expect_sub 0 "cp -t outside any project" 'cp -t /tmp/x file'
+expect_sub 2 "ln -sf, the link target protected" 'ln -sf ../CLAUDE.md link'
+expect_sub 2 "ln -sf, the link name protected" 'ln -sf src ../CLAUDE.md'
+expect_sub 0 "ln -sf between unprotected paths" 'ln -sf a b'
+expect_sub 2 "sed -i.bak" 'sed -i.bak s/a/b/ ../CLAUDE.md'
+expect_sub 0 "sed -i.bak, unprotected target" 'sed -i.bak s/a/b/ notes.md'
+expect_sub 2 "tee FILE with stdout redirected away" 'printf x | tee ../CLAUDE.md > /dev/null'
+expect_sub 2 "tee with a protected second operand" 'printf x | tee ../CLAUDE.md out.txt'
+expect_sub 0 "tee FILE with stdout redirected away, unprotected" 'printf x | tee out.txt > /dev/null'
+# A long command is scanned in linear time. bash 3.2 (macOS) took about 16s
+# for 300 redirections and minutes for 1500 before; the alarm turns a
+# regression into a FAIL rather than a hang.
+long=
+for ((n = 0; n < 1500; n++)); do long="$long printf x > out$n.log;"; done
+set +e
+long_output=$(other_payload "$long" "$fr/sub" \
+  | (cd "$fr/sub" && perl -e 'alarm 10; exec @ARGV' "$fr/.agents/hooks/guard-protected-paths.sh") 2>&1)
+long_exit=$?
+set -e
+[ "$long_exit" -eq 0 ] || { echo "FAIL: a ${#long}-character command returned $long_exit (142 is the 10s alarm): $long_output" >&2; exit 1; }
 rmdir "$fr/sub"
 # append-only: an existing file is refused, a new one is allowed, and a skipped
 # (new-file) append-only entry must not hide a later entry that matches it.

@@ -931,4 +931,69 @@ case "$quiet_output" in
   *) fail "commit-msg refused a 73-character subject, but not for its length: $quiet_output" ;;
 esac
 
+# --- protected-paths Bash scan -----------------------------------------------
+# The installed guard is fed Bash commands that write a protected file by an
+# ordinary spelling, run from a subdirectory of a lab project that lists
+# CLAUDE.md and deploy/*; each must be refused, and a near-miss that writes an
+# unprotected file must not be. The lab is its own project, so its own list
+# judges the relative targets.
+protected_lab=$(mktemp -d)
+fixture_roots+=("$protected_lab")
+git init -q "$protected_lab"
+mkdir -p "$protected_lab/.agents" "$protected_lab/sub" "$protected_lab/deploy"
+printf '%s\n' CLAUDE.md 'deploy/*' > "$protected_lab/.agents/protected-paths.conf"
+protected_lab=$(cd -P "$protected_lab" && pwd -P)
+# An alarm turns a hung scan into a failure rather than a stalled check, where
+# perl is there to set one.
+protected_alarm=()
+if command -v perl >/dev/null 2>&1; then protected_alarm=(perl -e 'alarm 20; exec @ARGV'); fi
+protected_guard_run() { # <command> -> sets protected_exit
+  local payload
+  payload=$(jq -n --arg c "$1" --arg d "$protected_lab/sub" '{tool_name:"Bash",cwd:$d,tool_input:{command:$c}}')
+  set +e
+  protected_output=$(cd "$protected_lab/sub" && printf '%s' "$payload" \
+    | ${protected_alarm[@]+"${protected_alarm[@]}"} "$repo_root/.agents/hooks/guard-protected-paths.sh" 2>&1)
+  protected_exit=$?
+  set -e
+}
+for refused in \
+  'X=1 cd .. && printf x > CLAUDE.md' \
+  'a=`cd .. && printf x > CLAUDE.md`' \
+  'printf x >| ../CLAUDE.md' \
+  'cp -t .. CLAUDE.md' \
+  'cp --target-directory=.. CLAUDE.md' \
+  'cp -t ../deploy a b' \
+  'cp a ../CLAUDE.md 2>/dev/null' \
+  'ln -sf ../CLAUDE.md link' \
+  'ln -sf src ../CLAUDE.md' \
+  'sed -i.bak s/a/b/ ../CLAUDE.md' \
+  'printf x | tee ../CLAUDE.md > /dev/null' \
+  'printf x | tee ../CLAUDE.md out.txt'; do
+  protected_guard_run "$refused"
+  [ "$protected_exit" -eq 2 ] \
+    || fail "protected-paths guard returned $protected_exit, expected 2, for: $refused ($protected_output)"
+done
+for allowed in \
+  'X=1 cd .. && printf x > notes.md' \
+  'a=`cd .. && printf x > notes.md`' \
+  'DIR=`cd "$X" && pwd`; printf x > notes.md' \
+  'printf x >| out.txt' \
+  'cp -t /tmp/x file' \
+  'cp -t .. src.txt' \
+  'cp -t ../deploy2 a' \
+  'ln -sf a b' \
+  'sed -i.bak s/a/b/ notes.md' \
+  'printf x | tee out.txt > /dev/null'; do
+  protected_guard_run "$allowed"
+  [ "$protected_exit" -eq 0 ] \
+    || fail "protected-paths guard returned $protected_exit, expected 0, for: $allowed ($protected_output)"
+done
+# A long command is scanned in linear time: bash 3.2 once took minutes over
+# a few thousand redirections, so the alarm above would fire.
+long_command=
+for ((n = 0; n < 1500; n++)); do long_command="$long_command printf x > out$n.log;"; done
+protected_guard_run "$long_command"
+[ "$protected_exit" -eq 0 ] \
+  || fail "protected-paths guard returned $protected_exit (142 is the alarm) for a ${#long_command}-character command: $protected_output"
+
 echo "Agent workflow guardrails passed."

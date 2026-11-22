@@ -1,0 +1,148 @@
+#!/usr/bin/env python3
+"""Check that two language versions of a document stayed in step.
+
+Ported from Jarvis's scripts/check-readme-parity.py (Jarvis commit 9d3628b),
+with the differences listed at the end of this note.
+
+CI runs it once per pair: README.md with README.zh-TW.md, and ADOPTING.md with
+ADOPTING.zh-TW.md. A link from one file to a document's own other-language
+version (ADOPTING.md in the English README, ADOPTING.zh-TW.md in the Chinese
+one) counts as the same link.
+
+Bilingual docs double the surface a mistake can live on, and the mistakes are
+quiet: a section added to one file, a count corrected in one file, a link that
+rots in one file.
+
+What this refuses, and why each check exists:
+
+  structure   `##` / `###` / fenced-block counts must match. Catches a section
+              added or dropped on one side.
+  numbers     the set of numbers appearing must match. Catches a count
+              corrected in one file only.
+  links       the set of relative links must match, and every one must
+              resolve. Catches a path renamed on one side, and dead links on
+              both.
+  stale       a term listed in the stale-terms file must appear in NEITHER
+              file. This one comes from a real failure (d785746): the managed
+              core grew from eleven files to fourteen, the lists were updated,
+              and three sentences were not -- in BOTH languages, so it was not
+              a translation drift. Every term is checked against every file,
+              because a check that looks for the English word only in the
+              English file cannot see a stale sentence in the other one.
+
+Differences from the Jarvis script:
+
+  numbers     An ordinal ("the 15th" / "第 15 個") and a number that ends
+              a sentence ("Bash 5.") count as the number. Jarvis's pattern
+              missed both, so Friday's README, which counts the managed core
+              as "the 15th, 16th, 17th" in English and "第 15 個" in
+              Chinese, failed on text that agrees. A version such as 1.4.0 is
+              still not a number.
+  summary     Unchanged: the Chinese summary block is not checked for wording, so
+              the `> **摘要**` of ADOPTING.zh-TW.md passes.
+"""
+import re
+import sys
+from pathlib import Path
+
+
+def sections(text, level):
+    return len(re.findall(rf"^{'#' * level} ", text, re.M))
+
+
+def fences(text):
+    return len(re.findall(r"^```", text, re.M))
+
+
+def numbers(text):
+    # Standalone numbers only: 36, 14, the 15th, "Bash 5." Not the 2 in `h2`,
+    # not a version's parts (1.4.0).
+    return sorted(set(re.findall(r"(?<![\w.])(\d+)(?:st|nd|rd|th)?(?!\w)(?!\.\d)", text)))
+
+
+def rel_links(text):
+    return sorted(set(re.findall(r"\]\((\./[^)#\s]+|[^):#\s/][^)#\s]*\.(?:md|sh|json|txt))\)", text)))
+
+
+def same_doc(link):
+    # A zh-TW version of a document and the document itself are the same target.
+    return link.replace(".zh-TW.md", ".md")
+
+
+def main():
+    if len(sys.argv) < 3:
+        print("usage: check-readme-parity.py <file-a> <file-b> [stale-terms-file]", file=sys.stderr)
+        return 2
+    a_path, b_path = Path(sys.argv[1]), Path(sys.argv[2])
+    stale_path = Path(sys.argv[3]) if len(sys.argv) > 3 else None
+    root = a_path.resolve().parent
+
+    for p in (a_path, b_path):
+        if not p.is_file():
+            print(f"missing: {p}", file=sys.stderr)
+            return 2
+
+    a, b = a_path.read_text(encoding="utf-8"), b_path.read_text(encoding="utf-8")
+    problems = []
+
+    for name, fn in (("## sections", lambda t: sections(t, 2)),
+                     ("### sections", lambda t: sections(t, 3)),
+                     ("code fences", fences)):
+        va, vb = fn(a), fn(b)
+        if va != vb:
+            problems.append(f"{name}: {a_path.name} has {va}, {b_path.name} has {vb}")
+
+    na, nb = numbers(a), numbers(b)
+    if na != nb:
+        only_a = [n for n in na if n not in nb]
+        only_b = [n for n in nb if n not in na]
+        detail = []
+        if only_a:
+            detail.append(f"only in {a_path.name}: {', '.join(only_a)}")
+        if only_b:
+            detail.append(f"only in {b_path.name}: {', '.join(only_b)}")
+        problems.append("numbers differ -- " + "; ".join(detail))
+
+    # The two files link to each other -- that is the language switcher, and it
+    # is correct that each names the other. Compare the rest.
+    counterpart = {f"./{b_path.name}", b_path.name, f"./{a_path.name}", a_path.name}
+    la_all, lb_all = rel_links(a), rel_links(b)
+    la = sorted({same_doc(x) for x in la_all if x not in counterpart})
+    lb = sorted({same_doc(x) for x in lb_all if x not in counterpart})
+    if la != lb:
+        only_a = [x for x in la if x not in lb]
+        only_b = [x for x in lb if x not in la]
+        detail = []
+        if only_a:
+            detail.append(f"only in {a_path.name}: {', '.join(only_a)}")
+        if only_b:
+            detail.append(f"only in {b_path.name}: {', '.join(only_b)}")
+        problems.append("relative links differ -- " + "; ".join(detail))
+
+    # Every link still has to resolve, the switcher included.
+    for path, links in ((a_path, la_all), (b_path, lb_all)):
+        for link in links:
+            if not (root / link).exists():
+                problems.append(f"{path.name}: link does not resolve: {link}")
+
+    if stale_path and stale_path.is_file():
+        terms = [t.split("#", 1)[0].strip() for t in stale_path.read_text(encoding="utf-8").splitlines()]
+        for term in [t for t in terms if t]:
+            # Every term against every file. The point of the check.
+            for path, text in ((a_path, a), (b_path, b)):
+                if term in text:
+                    problems.append(f"{path.name}: stale term present: {term!r}")
+
+    if problems:
+        print(f"Parity failed ({a_path.name} vs {b_path.name}):")
+        for p in problems:
+            print(f"  {p}")
+        return 1
+
+    print(f"Parity ok: {a_path.name} and {b_path.name} agree on "
+          f"{sections(a, 2)} sections, {len(na)} numbers, {len(la)} links")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

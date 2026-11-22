@@ -96,8 +96,13 @@ Each step ends on the condition that says it is done.
   `check-collaborative-git.sh` run from `payload/` reports
   `Claude guard link missing`, on `main` as well, because `payload/` is not an
   installation. Step 3 is the place to run it.
-- **Edit `README.md` and `README.zh-TW.md` in the same commit.** Nothing here
-  checks their parity, so the second edit is yours to remember.
+- **Edit `README.md` and `README.zh-TW.md` in the same commit**, and
+  `ADOPTING.md` with `ADOPTING.zh-TW.md`. CI runs
+  `bin/check-readme-parity.py` on both pairs: it fails when the `##`, `###` or
+  fenced-block counts, the set of numbers, or the relative links differ, when a
+  link does not resolve, or when a term in `bin/readme-stale-terms.txt` is in
+  either file. It cannot check that the two say the same thing, so the wording
+  is still yours to compare.
 - **A release's note lives under [`docs/changelog/`](docs/changelog/)**, one file
   per major version, linked from [`CHANGELOG.md`](CHANGELOG.md). The release's
   pull request moves the `Unreleased` entry under the new version and its date

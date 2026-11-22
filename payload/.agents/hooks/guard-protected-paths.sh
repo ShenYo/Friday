@@ -139,39 +139,71 @@ case "$tool_name" in
     # /dev/null.) Dropping a redirection also exposes the operand before
     # 'cp a b 2>/dev/null'.
     clause_awk='
-      function clean(f) { if (f !~ /\(/) sub(/\)+$/, "", f); return f }
+      function clean(f) { if (f !~ /\(/) sub(/\)+$/, "", f); sub(/`+$/, "", f); return f }
       function unq(f) { gsub(/^["\047]|["\047]$/, "", f); return f }
+      function tokenize(s,   k, c, q, cur, have) {
+        nt = 0; q = ""; cur = ""; have = 0
+        for (k = 1; k <= length(s); k++) {
+          c = substr(s, k, 1)
+          if (q != "") { cur = cur c; if (c == q) q = "" }
+          else if (c == "\"" || c == "\047") { q = c; cur = cur c; have = 1 }
+          else if (c == " " || c == "\t") { if (have) { tk[++nt] = cur; cur = ""; have = 0 } }
+          else { cur = cur c; have = 1 }
+        }
+        if (have) tk[++nt] = cur
+      }
       {
+        tokenize($0)
         n = 0; skip = 0
-        for (i = 1; i <= NF; i++) {
-          f = $i
+        for (i = 1; i <= nt; i++) {
+          f = tk[i]
           if (skip) { skip = 0; continue }
           if (f ~ /^[0-9]*[<>]/) { if (f ~ /^[0-9]*(>>|>\||>|<)$/) skip = 1; continue }
+          if (f !~ /^["\047]/ && match(f, /[<>]/) > 1) {
+            if (substr(f, RSTART) ~ /^(>>|>\||>|<)$/) skip = 1
+            f = substr(f, 1, RSTART - 1)
+          }
           if (f ~ /^\)+$/) continue
           w[++n] = f
         }
         v = 0; kind = ""
         for (i = 1; i <= n && !v; i++) {
-          t = w[i]; sub(/^\(+/, "", t)
+          t = w[i]; sub(/^.*[(`]/, "", t)
           if (t ~ /^(tee|cp|mv|install|ln)$/) { v = i; kind = t }
         }
-        tdir = ""; cnt = 0; nexttd = 0
+        tdir = ""; cnt = 0; nexttd = 0; endopts = 0; sfx = ""
         for (i = v + 1; i <= n; i++) {
           f = w[i]
           if (nexttd) { tdir = f; nexttd = 0 }
+          else if (endopts) ops[++cnt] = f
+          else if (f == "--") endopts = 1
+          else if (kind == "tee") { if (f !~ /^-/) ops[++cnt] = f }
           else if (f ~ /^--target-directory=/) tdir = substr(f, 20)
           else if (f == "--target-directory") nexttd = 1
-          else if (f ~ /^-[a-zA-Z]*t$/ && kind != "tee") nexttd = 1
-          else if (f ~ /^-t./ && kind != "tee") tdir = substr(f, 3)
-          else if (f ~ /^-/) continue
+          else if (kind != "" && f ~ /^-[a-zA-Z]*t/) {
+            if (substr(f, index(f, "t") + 1) == "") nexttd = 1
+            else tdir = substr(f, index(f, "t") + 1)
+          }
+          else if (f ~ /^-/) {
+            if (kind == "" && f ~ /^--in-place=/) sfx = substr(f, 12)
+            else if (kind == "" && f ~ /^-[a-zA-Z]*i./) sfx = substr(f, index(f, "i") + 1)
+          }
           else ops[++cnt] = f
         }
         if (tdir != "") {
           tdir = unq(clean(tdir)); print tdir
-          for (i = 1; i <= cnt; i++) { b = unq(clean(ops[i])); sub(/.*\//, "", b); print tdir "/" b }
+          for (i = 1; i <= cnt; i++) {
+            b = unq(clean(ops[i]))
+            if (kind == "ln") print b
+            sub(/\/+$/, "", b); sub(/.*\//, "", b)
+            if (b != "") print tdir "/" b
+          }
         } else if (kind == "tee" || kind == "ln") {
-          for (i = 1; i <= cnt; i++) print clean(ops[i])
-        } else if (cnt > 0) print clean(ops[cnt])
+          for (i = 1; i <= cnt; i++) print unq(clean(ops[i]))
+        } else if (cnt > 0) {
+          b = unq(clean(ops[cnt])); print b
+          if (sfx != "") print b sfx
+        }
       }'
     while IFS= read -r p; do
       [ -n "$p" ] && targets+=("$p")
@@ -193,7 +225,7 @@ case "$tool_name" in
           | sed -E 's/^>[>|]?[[:space:]]*//' || true
         printf '%s\n' "$command" \
           | tr ';|&' '\n' \
-          | grep -E '(^|[[:space:](])(tee|cp|mv|install|ln)([[:space:]]|$)|(^|[[:space:](])sed([[:space:]]+-[^[:space:]]+)*[[:space:]]+(-[a-zA-Z]*i[^[:space:]]*|--in-place[^[:space:]]*)([[:space:]]|$)' \
+          | grep -E '(^|[[:space:](`])(tee|cp|mv|install|ln)([[:space:]]|$)|(^|[[:space:](`])sed([[:space:]]+-[^[:space:]]+)*[[:space:]]+(-[a-zA-Z]*i[^[:space:]]*|--in-place[^[:space:]]*)([[:space:]]|$)' \
           | sed -E 's/[[:space:]]*$//' \
           | awk "$clause_awk" || true
       } | sed -E "s/^[\"'](.*)[\"']$/\\1/"
@@ -216,7 +248,7 @@ case "$tool_name" in
       # an unreadable destination is skipped as for $(...); a readable one is
       # followed, since a write inside the same backticks lands there.
       bt=
-      case $verb in bt-*) bt=1; verb=${verb#bt-} ;; esac
+      case $verb in 'BT '*) bt=1; verb=${verb#BT } ;; esac
       word=
       while [[ $rest =~ $cd_word ]]; do
         rest=${rest:${#BASH_REMATCH[0]}}
@@ -261,9 +293,9 @@ case "$tool_name" in
     done < <(
       printf '%s\n' "$command" \
         | sed -E 's/\$\(/$(@subst /g' \
-        | sed -E 's/`[[:space:]]*(cd|pushd)([^`]*)(`|$)/;bt-\1\2;/g' \
+        | sed -E 's/`([[:space:]]*([A-Za-z_][A-Za-z0-9_]*=("[^"]*"|'\''[^'\'']*'\''|[^[:space:]`]*)[[:space:]]+)*((builtin|command)[[:space:]]+)?(cd|pushd)[^`]*)(`|$)/;BT \1;/g' \
         | tr ';|&(){}' '\n' \
-        | sed -nE 's/^[[:space:]]*((then|do|else|elif|if|while|until|time|!)[[:space:]]+)*([A-Za-z_][A-Za-z0-9_]*=("[^"]*"|'\''[^'\'']*'\''|[^[:space:]]*)[[:space:]]+)*((builtin|command)[[:space:]]+)?(bt-cd|bt-pushd|cd|pushd)([[:space:]]+(.*))?$/\7@\9/p' || true
+        | sed -nE 's/^[[:space:]]*(BT[[:space:]]+)?((then|do|else|elif|if|while|until|time|!)[[:space:]]+)*([A-Za-z_][A-Za-z0-9_]*=("[^"]*"|'\''[^'\'']*'\''|[^[:space:]]*)[[:space:]]+)*((builtin|command)[[:space:]]+)?(cd|pushd)([[:space:]].*)?$/\1\8@\9/p' || true
     )
     ;;
   *)
@@ -507,6 +539,10 @@ done
 # Compare repo-relative inside the owning project, so absolute, repo-root and
 # nested-session targets are judged identically — and a target in another
 # project is judged against that project's list rather than skipped.
+# Its status is read: a failed sort must not leave the list empty and every
+# target unjudged.
+sorted_paths=$(printf '%s\n' ${resolved_paths[@]+"${resolved_paths[@]}"} | LC_ALL=C sort -u) \
+  || block "unable to sort the write targets; refusing rather than leaving them unjudged."
 while IFS= read -r absolute; do
   judge_target "$absolute"
-done < <(printf '%s\n' ${resolved_paths[@]+"${resolved_paths[@]}"} | LC_ALL=C sort -u)
+done <<< "$sorted_paths"

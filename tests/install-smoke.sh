@@ -381,36 +381,98 @@ expect_guard 0 "Bash: cd to a variable, then no write" \
 expect_sub() { # <exit> <what> <command>
   expect_guard "$1" "Bash: $2" "$(other_payload "$3" "$fr/sub")"
 }
-expect_sub 2 "an environment prefix on cd" 'X=1 cd .. && printf x > CLAUDE.md'
-expect_sub 0 "an environment prefix on cd, unprotected target" 'X=1 cd .. && printf x > notes.md'
-expect_sub 2 "a cd inside backticks" 'a=`cd .. && printf x > CLAUDE.md`'
-expect_sub 0 "a cd inside backticks, unprotected target" 'a=`cd .. && printf x > notes.md`'
-expect_sub 0 "an unreadable cd inside backticks, as in a script-dir idiom" 'DIR=`cd "$X" && pwd`; printf x > notes.md'
-expect_sub 2 "a clobber redirection" 'printf x >| ../CLAUDE.md'
-expect_sub 0 "a clobber redirection, unprotected target" 'printf x >| out.txt'
-expect_sub 2 "cp -t DIR" 'cp -t .. CLAUDE.md'
-expect_sub 2 "cp --target-directory=DIR" 'cp --target-directory=.. CLAUDE.md'
-expect_sub 0 "cp -t DIR, unprotected target" 'cp -t .. src.txt'
-expect_sub 0 "cp -t outside any project" 'cp -t /tmp/x file'
-expect_sub 2 "ln -sf, the link target protected" 'ln -sf ../CLAUDE.md link'
-expect_sub 2 "ln -sf, the link name protected" 'ln -sf src ../CLAUDE.md'
-expect_sub 0 "ln -sf between unprotected paths" 'ln -sf a b'
-expect_sub 2 "sed -i.bak" 'sed -i.bak s/a/b/ ../CLAUDE.md'
-expect_sub 0 "sed -i.bak, unprotected target" 'sed -i.bak s/a/b/ notes.md'
-expect_sub 2 "tee FILE with stdout redirected away" 'printf x | tee ../CLAUDE.md > /dev/null'
-expect_sub 2 "tee with a protected second operand" 'printf x | tee ../CLAUDE.md out.txt'
-expect_sub 0 "tee FILE with stdout redirected away, unprotected" 'printf x | tee out.txt > /dev/null'
-# A long command is scanned in linear time. bash 3.2 (macOS) took about 16s
-# for 300 redirections and minutes for 1500 before; the alarm turns a
-# regression into a FAIL rather than a hang.
+# The conf lists more entries for these cases, and goes back after them.
+printf '%s\n' 'deploy/*' 'CLAUDE notes.md' keep.md.bak locked >> "$conf"
+for refused in \
+  'X=1 cd .. && printf x > CLAUDE.md' \
+  'a=`cd .. && printf x > CLAUDE.md`' \
+  'a=`cd .. && cp x CLAUDE.md`' \
+  'a=`cd .. && sed -i s/a/b/ CLAUDE.md`' \
+  'a=`cd .. && tee CLAUDE.md`' \
+  'a=`cp x ../CLAUDE.md`' \
+  'a=`tee ../CLAUDE.md out.txt`' \
+  $'a=`cd ..\nprintf x > CLAUDE.md`' \
+  'echo `X=1 cd .. && printf x > CLAUDE.md`' \
+  'echo `builtin cd .. && printf x > CLAUDE.md`' \
+  'echo `command cd .. && printf x > CLAUDE.md`' \
+  'printf x >| ../CLAUDE.md' \
+  'cp -t .. CLAUDE.md' \
+  'cp -t .. src.txt CLAUDE.md' \
+  'cp --target-directory=.. CLAUDE.md' \
+  'cp --target-directory .. CLAUDE.md' \
+  'cp -t.. CLAUDE.md' \
+  'cp -rt.. CLAUDE.md' \
+  'cp -vt.. CLAUDE.md' \
+  'cp -t "../deploy" x' \
+  'cp -t ../deploy a b' \
+  'cp -t ../locked x' \
+  'cp -t ../deploy dir/' \
+  'cp -t ../deploy -- -x' \
+  'cp a ../CLAUDE.md 2>/dev/null' \
+  'cp a ../CLAUDE.md > /dev/null' \
+  'cp a ../CLAUDE.md>/dev/null' \
+  'ln -sf ../CLAUDE.md link' \
+  'ln -sf src ../CLAUDE.md' \
+  'ln -s -t /tmp/x ../CLAUDE.md' \
+  'sed -i.bak s/a/b/ ../CLAUDE.md' \
+  'sed -E -i s/a/b/ ../CLAUDE.md' \
+  'sed --in-place s/a/b/ ../CLAUDE.md' \
+  'sed -i.bak s/a/b/ ../keep.md' \
+  'sed --in-place=.bak s/a/b/ ../keep.md' \
+  'printf x | tee ../CLAUDE.md > /dev/null' \
+  'printf x | tee ../CLAUDE.md out.txt' \
+  'printf x | tee out.txt ../CLAUDE.md' \
+  'tee -- ../CLAUDE.md' \
+  'tee "../CLAUDE notes.md"' \
+  'cp a "../CLAUDE notes.md"'; do
+  expect_sub 2 "$refused" "$refused"
+done
+for allowed in \
+  'X=1 cd .. && printf x > notes.md' \
+  'a=`cd .. && printf x > notes.md`' \
+  'a=`cd .. && cp x notes.md`' \
+  'echo `X=1 cd .. && printf x > notes.md`' \
+  'echo `builtin cd .. && printf x > notes.md`' \
+  $'a=`cd ..\nprintf x > notes.md`' \
+  'DIR=`cd "$X" && pwd`; printf x > notes.md' \
+  'printf x >| out.txt' \
+  'cp -t /tmp/x file' \
+  'cp -t "/tmp/x" a' \
+  'cp -t .. src.txt' \
+  'cp -t .. src.txt src2.txt' \
+  'cp -vt.. src.txt' \
+  'cp -t ../deploy2 a' \
+  'cp -t ../unlocked x' \
+  'cp -t ../deploy2 dir/' \
+  'cp -t .. -- -x' \
+  'cp a out.txt>/dev/null' \
+  'ln -sf a b' \
+  'ln -s -t /tmp/x a b' \
+  'sed -i.bak s/a/b/ notes.md' \
+  'sed -i.bak s/a/b/ ../other.md' \
+  'sed --in-place=.bak s/a/b/ ../other.md' \
+  'printf x | tee out.txt > /dev/null' \
+  'tee out.txt out2.txt' \
+  'tee "../notes two.md"'; do
+  expect_sub 0 "$allowed" "$allowed"
+done
+printf '%s\n' CLAUDE.md '*only-outer.md' > "$conf"
+expect_guard 2 "Bash: a blank command" "$(bash_payload '   ')"
+# A long command is scanned in near-linear time. Six thousand distinct
+# redirection targets took 52 s with the earlier de-duplication and about 2 s
+# now on bash 3.2 (macOS); the blank-command check once took minutes on its
+# own. The alarm turns a regression into a FAIL rather than a hang. The
+# collaborative-Git guard shares the blank-command check, so it is timed too.
 long=
-for ((n = 0; n < 1500; n++)); do long="$long printf x > out$n.log;"; done
-set +e
-long_output=$(other_payload "$long" "$fr/sub" \
-  | (cd "$fr/sub" && perl -e 'alarm 10; exec @ARGV' "$fr/.agents/hooks/guard-protected-paths.sh") 2>&1)
-long_exit=$?
-set -e
-[ "$long_exit" -eq 0 ] || { echo "FAIL: a ${#long}-character command returned $long_exit (142 is the 10s alarm): $long_output" >&2; exit 1; }
+for ((n = 0; n < 6000; n++)); do long="$long printf x > out$n.log;"; done
+for long_guard in guard-protected-paths.sh guard-collaborative-git.sh; do
+  set +e
+  long_output=$(other_payload "$long" "$fr/sub" \
+    | (cd "$fr/sub" && perl -e 'alarm 20; exec @ARGV' "$fr/.agents/hooks/$long_guard") 2>&1)
+  long_exit=$?
+  set -e
+  [ "$long_exit" -eq 0 ] || { echo "FAIL: $long_guard returned $long_exit (142 is the 20s alarm) for a ${#long}-character command: $long_output" >&2; exit 1; }
+done
 rmdir "$fr/sub"
 # append-only: an existing file is refused, a new one is allowed, and a skipped
 # (new-file) append-only entry must not hide a later entry that matches it.

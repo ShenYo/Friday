@@ -62,14 +62,17 @@ tools hand the guard the resolved path, so that check is exact. The Bash scan is
 literal text: a target that is not spelled out in the command (a variable, a
 language runtime, an encoded command) escapes it, and a protected path quoted in
 a heredoc can raise a false alarm. A `cd` or `pushd` in the command is followed
-when its destination is literal, with an environment prefix (`X=1 cd dir`) or
-inside backticks: a relative target is judged from the working
+when its destination is literal, with an environment prefix (`X=1 cd dir`),
+`builtin` or `command`, or inside backticks: a relative target is judged from the working
 directory and from each destination. The write forms read are `>`, `>>` and
 `>|`; `tee` and `ln` (every operand, so a link to a protected file counts);
-`cp`, `mv`, `install` and `sed -i` (including `-i.bak`) on the last operand;
-and `-t DIR` or `--target-directory=DIR`, which names DIR and DIR/each source.
-A redirection after the operands (`tee FILE > /dev/null`) does not hide them.
-A long command is scanned in linear time. When the command anywhere contains a
+`cp`, `mv`, `install` and `sed -i` (including `-i.bak` and `--in-place=.bak`, whose backup
+file is judged as well) on the last operand; and `-t DIR`, `-tDIR` or
+`--target-directory=DIR`, which names DIR and DIR/each source (a source of
+`ln -t` is judged too). `--` ends the options. A redirection after or glued to the operands
+(`tee FILE > /dev/null`, `cp a FILE>/dev/null`) does not hide them, and a quoted
+operand may hold spaces. A long command is scanned in near-linear time (paths are
+de-duplicated with one sort); if that sort fails the command is refused. When the command anywhere contains a
 destination the scan cannot read (`cd "$X"`, `cd -`, `cd a\ b`), even in a
 heredoc body, every relative target is refused, and so it is past about ten
 distinct relative destinations, nested or in sibling subshells (eleven

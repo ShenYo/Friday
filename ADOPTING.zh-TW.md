@@ -249,7 +249,11 @@ Friday 發了新 release 之後，會以 pull request 的形式送到每個 cons
    它會在每個落後的 consumer 開一個 pull request，帶上有變動的 managed-core 檔案。已經是最新的 consumer 不會被動到。它絕不寫入 seed。pull request 內文會帶上 consumer 所跨 release 範圍內
    每個 release 的 `### Seed changes` 段落（[慣例](./CHANGELOG.md#seed-changes)，英文），沒有 seed 改動時
    用一行說明，若某個 release 改了 seed 卻沒有該段落則指名提醒；那項修改要由你親手做。
-3. 由人 review 並 merge 每個 pull request，然後在每台機器上做第 2 節。
+3. 想在不改動任何東西的前提下，看每個 consumer 目前的狀況（release tag、讀自其 `origin/main` 的 lock 狀態、
+   開著的 sync pull request），執行
+   `bash "$FRIDAY/bin/friday-propagate" --status ~/path/to/consumer ...`。全部 `in sync` 時結束碼為 `0`，
+   有任何一個不是則為 `3`，工具錯誤或某列讀不到則為 `2`。
+4. 由人 review 並 merge 每個 pull request，然後在每台機器上做第 2 節。
 
 檢查：merge 之後，`bash "$FRIDAY/bin/friday-lock" check "$CONSUMER"` 會顯示 `in sync`。更多細節見[把變更帶到各個 consumer](./docs/updating-consumers.md#carrying-a-change-out-to-consumers)。
 
@@ -288,6 +292,8 @@ git -C "$FRIDAY" fetch --tags origin && git -C "$FRIDAY" switch main && git -C "
 ```sh
 bash "$FRIDAY/bin/friday-lock" check "$CONSUMER"
 ```
+
+要一次看多個 consumer，執行 `bash "$FRIDAY/bin/friday-propagate" --status <consumer>...`：唯讀的表格，列出 release tag、lock 狀態與開啟中的 sync pull request。
 
 `in sync` 表示已經是最新的。其他狀態，例如 `behind` 或 `tag-moved`，以及各自該怎麼處理，見[查看 consumer 目前的狀態](./docs/updating-consumers.md#knowing-where-a-consumer-stands)。
 

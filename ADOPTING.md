@@ -309,7 +309,12 @@ consumer repository's clone.
    ([the convention](./CHANGELOG.md#seed-changes)), says in one line when no
    seed changed, and names a release that changed seeds but has no section; the
    edit is yours to make by hand.
-3. Review and merge each pull request. A person does this. Then do step 2 on
+3. To see where each consumer stands (release tag, lock state read from its
+   `origin/main`, open sync pull request) without changing anything, run
+   `bash "$FRIDAY/bin/friday-propagate" --status ~/path/to/consumer ...`. It exits
+   `0` when all are in sync, `3` when something is not, `2` on a tool error or an
+   unreadable row.
+4. Review and merge each pull request. A person does this. Then do step 2 on
    every machine.
 
 Check: `bash "$FRIDAY/bin/friday-lock" check "$CONSUMER"` reports `in sync` after
@@ -356,6 +361,8 @@ on [Releases](https://github.com/ShenYo/Friday/releases).
 ```sh
 bash "$FRIDAY/bin/friday-lock" check "$CONSUMER"
 ```
+
+To see several consumers at once, run `bash "$FRIDAY/bin/friday-propagate" --status <consumer>...`: a read-only table of release tag, lock state and open sync pull request.
 
 `in sync` means current. Every other state, such as `behind` or `tag-moved`, and
 what to do about it, is in

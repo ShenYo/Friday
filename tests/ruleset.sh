@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# The ruleset seed parses, uses only fields GitHub's REST API documents, and
-# carries the rules the safety boundary assumes of the default branch.
+# The ruleset seed parses, has the top-level, conditions and pull_request keys
+# and the rule types the REST API documents (the rest of each rule's shape is
+# not checked), and carries the rules the safety boundary assumes of the default
+# branch.
 # CI passes an output directory as $1, which this test does not use.
 # RULESET_UNDER_TEST=<file> tests that file instead (to prove the test fails
 # on a broken one).
@@ -18,13 +20,24 @@ top = {"name", "target", "enforcement", "conditions", "rules", "bypass_actors"}
 if set(r) - top: fail("undocumented top-level field %s" % sorted(set(r) - top))
 if r["target"] != "branch": fail("target is not branch")
 if r["enforcement"] != "active": fail("enforcement is not active")
-if "~DEFAULT_BRANCH" not in r["conditions"]["ref_name"]["include"]: fail("default branch not included")
+if set(r["conditions"]) != {"ref_name"}: fail("conditions has keys other than ref_name")
+rn = r["conditions"]["ref_name"]
+if set(rn) != {"include", "exclude"}: fail("ref_name keys are not include and exclude")
+if rn["exclude"] != []: fail("ref_name.exclude is not empty")
+if rn["include"] != ["~DEFAULT_BRANCH"]: fail("ref_name.include is not exactly [~DEFAULT_BRANCH]")
+if {x["type"] for x in r["rules"]} - {"deletion", "non_fast_forward", "pull_request", "required_status_checks"}:
+    fail("a rule type other than deletion, non_fast_forward, pull_request, required_status_checks")
 rules = {x["type"]: x.get("parameters") for x in r["rules"]}
 for t in ("deletion", "non_fast_forward", "pull_request"):
     if t not in rules: fail("missing rule " + t)
 if len(rules) != len(r["rules"]): fail("a rule type is listed twice")
+for t in ("deletion", "non_fast_forward"):
+    if "parameters" in next(x for x in r["rules"] if x["type"] == t): fail(t + " carries parameters")
 pr = rules["pull_request"]
-if pr["required_approving_review_count"] < 1: fail("no approving review required")
+n = pr["required_approving_review_count"]
+if type(n) is not int or not 1 <= n <= 10: fail("required_approving_review_count is not between 1 and 10")
+m = pr["allowed_merge_methods"]
+if not m or not set(m) <= {"merge", "squash", "rebase"}: fail("allowed_merge_methods is empty or has an invalid method")
 for k in ("require_code_owner_review", "dismiss_stale_reviews_on_push",
           "require_last_push_approval", "required_review_thread_resolution"):
     if pr[k] is not True: fail(k + " is not true")
@@ -40,7 +53,7 @@ if r["bypass_actors"] != [{"actor_id": 5, "actor_type": "RepositoryRole", "bypas
 print("ok: ruleset file")
 PY
 doc=$root/payload/.agents/docs/git-guideline/safety-boundary.md
-for s in '## The server-side ruleset' '.github/rulesets/main.json' 'gh api --method POST repos/OWNER/REPO/rulesets' 'free GitHub plan'; do
+for s in '## The server-side ruleset' '.github/rulesets/main.json' 'gh api --method POST repos/OWNER/REPO/rulesets' 'free GitHub plan' 'diff <(jq -S' 'rules/branches/' '--jq .default_branch'; do
   grep -Fq -- "$s" "$doc" || { echo "FAIL: safety-boundary.md lacks: $s"; exit 1; }
 done
 echo "ruleset: all passed"

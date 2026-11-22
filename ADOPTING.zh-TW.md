@@ -228,7 +228,9 @@ bash "$TARGET/.agents/hooks/check-collaborative-git.sh"
 ### Server 端的 ruleset
 
 hook 只在本機，`gh` 或 REST API 可以繞過它。Server 端的那一層是 default branch 上的 GitHub
-ruleset，安裝會給你它的檔案 `.github/rulesets/main.json`：不可刪除、不可 force push、變更要經過
+ruleset，完整安裝會給你它的檔案
+`.github/rulesets/main.json`（用 `--managed-only` 安裝的話，要自己從 release 把
+`payload/.github/rulesets/main.json` 複製過來）：不可刪除、不可 force push、變更要經過
 pull request，並要 code owner 的一個 approving review。它是 seed，你可以修改；安裝不會套用它，
 由 owner 用自己的 admin 登入，照
 [safety boundary](payload/.agents/docs/git-guideline/safety-boundary.md#the-server-side-ruleset)

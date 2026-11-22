@@ -6,9 +6,7 @@
     "ref_name": {
       "exclude": [],
       "include": [
-        "~DEFAULT_BRANCH",
-        "refs/heads/main",
-        "refs/heads/master"
+        "~DEFAULT_BRANCH"
       ]
     }
   },

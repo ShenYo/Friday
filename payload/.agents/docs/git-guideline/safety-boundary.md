@@ -127,6 +127,76 @@ Deleting a merged branch is routine housekeeping for a person and still sits
 here, because an agent cannot reliably tell a merged branch from one that only
 looks merged, and the mistake costs unpushed work.
 
+## The server-side ruleset
+
+The hooks are local, so a clone without them, a CI checkout or a call to the
+GitHub API passes them by. The part that holds is a ruleset on the default
+branch, and the owner applies it: changing branch protection is a checkpoint
+above. The ruleset binds the agent only where the agent works through its own
+account without admin rights; where it uses an admin login, the ruleset does not
+bind it (see below). The seed
+`.github/rulesets/main.json` is the file, and it enforces what this document
+assumes of the default branch:
+
+- **No deletion** and **no force push** (`deletion`, `non_fast_forward`): the
+  prohibitions above, on the server.
+- **Changes arrive through a pull request** (`pull_request`): a direct push is
+  a checkpoint above. The ruleset does not make the merge a person's: that rule
+  is instruction-only, and once the owner has approved, an account with write
+  access can merge.
+- **One approving review, from the code owner**, stale approvals dismissed on
+  push, the last push approved by someone other than its author, and every
+  review thread resolved. An agent's own approval of its own work therefore
+  does not count.
+
+The file has no required status checks, because they differ per repository.
+Add the rule to `rules` before applying, with the names your workflows report:
+
+```json
+{ "type": "required_status_checks",
+  "parameters": { "strict_required_status_checks_policy": false,
+                  "do_not_enforce_on_create": false,
+                  "required_status_checks": [ { "context": "<job name>", "integration_id": 15368 } ] } }
+```
+
+`15368` is GitHub Actions. Code-owner review needs `.github/CODEOWNERS`, which
+Friday does not ship because it names a person: add a single line, `* @your-login`.
+
+`bypass_actors` holds the repository admin role in `pull_request` mode, so the
+owner can still merge by hand. An account that is an admin of the repository
+bypasses the ruleset the same way. So the ruleset binds the agent only when the
+agent uses its own account without admin rights. Where the agent uses an admin
+login, such as the owner's own, the ruleset does not bind it, and the safety
+boundary there rests on the hooks and on instruction alone. Emptying
+`bypass_actors` does not change that: the agent would still hold admin rights,
+and the owner could no longer merge their own pull request.
+
+Run these from the repository root, as the repository's admin, in your own
+terminal, never from an agent session (`OWNER/REPO` is the repository):
+
+```sh
+gh api --method POST repos/OWNER/REPO/rulesets --input .github/rulesets/main.json
+```
+
+POST adds a ruleset every time, so run it once. If `gh api --paginate repos/OWNER/REPO/rulesets`
+already lists one for the default branch, replace it by its ID instead:
+`gh api --method PUT repos/OWNER/REPO/rulesets/ID --input .github/rulesets/main.json`.
+
+Check that it is in force. The first command reads the ruleset back and must
+print nothing; the second lists the rules GitHub applies to the branch:
+
+```sh
+ID=$(gh api --paginate repos/OWNER/REPO/rulesets --jq '.[] | select(.name == "'"$(jq -r .name .github/rulesets/main.json)"'") | .id')
+f='{name, target, enforcement, conditions, rules, bypass_actors}'
+diff <(jq -S "$f" .github/rulesets/main.json) <(gh api repos/OWNER/REPO/rulesets/$ID | jq -S "$f")
+gh api "repos/OWNER/REPO/rules/branches/$(gh api repos/OWNER/REPO --jq .default_branch)" --jq '.[].type'
+```
+
+A private repository on a free GitHub plan cannot use rulesets: the API answers
+`Upgrade to GitHub Pro or make this repository public`. There the hooks are all
+a consumer has, and they guard against mistakes, not against anyone who skips
+them. Do not claim more for such a repository.
+
 ## Runtime guardrails and verification limits
 
 Two layers enforce parts of this document. They see different things, which is

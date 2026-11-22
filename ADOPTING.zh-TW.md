@@ -225,6 +225,21 @@ bash "$TARGET/.agents/hooks/check-collaborative-git.sh"
 那個 checkout 的 payload 就是消費端採用的 release 時，它才會顯示 `in sync`。Friday 往前走之後它會顯示
 `behind`，[持續保持最新](#持續保持最新)說明怎麼把消費端帶到下一個 release。
 
+### Server 端的 ruleset
+
+hook 只在本機，`gh` 或 REST API 可以繞過它。Server 端的那一層是 default branch 上的 GitHub
+ruleset，完整安裝會給你它的檔案
+`.github/rulesets/main.json`（用 `--managed-only` 安裝的話，要自己從 release 把
+`payload/.github/rulesets/main.json` 複製過來）：不可刪除、不可 force push、變更要經過
+pull request，並要 code owner 的一個 approving review。它是 seed，你可以修改；安裝不會套用它，
+由 owner 用自己的 admin 登入，照
+[safety boundary](payload/.agents/docs/git-guideline/safety-boundary.md#the-server-side-ruleset)
+裡的指令套用。套用前先照該節加上你的 required status checks 和 `.github/CODEOWNERS`。
+只有在 agent 用自己沒有 admin 權限的帳號時，ruleset 才約束得到它；agent 若透過 admin
+登入（例如 owner 自己的帳號）工作，ruleset 約束不到它。
+
+免費方案的 private repository 不能使用 ruleset。那裡只有 hook，它們防的是手滑；不要宣稱更多。
+
 ## 持續保持最新
 
 Friday 發了新 release 之後，會以 pull request 的形式送到每個 consumer，之後每台機器再各自更新自己的 clone。先找出符合你狀況的情境，再照它的步驟做。`$FRIDAY` 是你的 Friday checkout，也就是上面的 `~/.Friday`；`$CONSUMER` 是某個 consumer repository 的 clone。

@@ -88,6 +88,17 @@ Friday is public, and a GitHub ruleset on the default branch refuses its
 deletion, force pushes, and changes that do not arrive through a pull request.
 The review requirement on those pull requests is set server-side by the owner.
 
+A consumer gets the same protection from a file, not from clicking it together in
+settings: the seed `.github/rulesets/main.json`, which its owner applies with
+`gh api` as
+[the safety boundary](../payload/.agents/docs/git-guideline/safety-boundary.md#the-server-side-ruleset)
+says. It adds what no hook can: the deletion, force-push and pull-request rules,
+and the owner's approval, hold on the server even when a hook is skipped or never
+installed, provided the agent works through its own account without admin rights;
+an agent using an admin login is not bound by them. A private repository on a free GitHub plan cannot use rulesets; such a
+consumer has the hooks only, which guard against mistakes, and must not be
+described as more protected than that. Installing never calls GitHub or needs the ruleset.
+
 Locally, this repository runs the payload's hooks themselves, not copies:
 
 ```sh

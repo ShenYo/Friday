@@ -139,6 +139,14 @@ It refuses rather than guesses:
 platform that has never been bypassed, and a propagation tool is a poor place
 to start.
 
+To see where every consumer stands after a release, without changing anything,
+run `bin/friday-propagate --status <consumer>...`. It prints one row per consumer: the release tag
+(checked on `origin`), the `friday-lock` state read from the consumer's `origin/main` (after a
+`git fetch`, which updates `origin/main` and `FETCH_HEAD` and is the only write), and the open sync pull request with its URL. A consumer on
+a feature branch is marked `on <branch>, not main`; a path that cannot be read is a row with the
+reason. Exit status: `0` all in sync, `3` something is not in sync, `2` a tool error or an
+unreadable row.
+
 ### Being told you are behind
 
 A consumer does not need the owner to run anything to learn that it is behind.

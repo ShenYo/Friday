@@ -235,6 +235,8 @@ pull request，並要 code owner 的一個 approving review。它是 seed，你�
 由 owner 用自己的 admin 登入，照
 [safety boundary](payload/.agents/docs/git-guideline/safety-boundary.md#the-server-side-ruleset)
 裡的指令套用。套用前先照該節加上你的 required status checks 和 `.github/CODEOWNERS`。
+只有在 agent 用自己沒有 admin 權限的帳號時，ruleset 才約束得到它；agent 若透過 admin
+登入（例如 owner 自己的帳號）工作，ruleset 約束不到它。
 
 免費方案的 private repository 不能使用 ruleset。那裡只有 hook，它們防的是手滑；不要宣稱更多。
 

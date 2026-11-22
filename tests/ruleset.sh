@@ -53,7 +53,7 @@ if r["bypass_actors"] != [{"actor_id": 5, "actor_type": "RepositoryRole", "bypas
 print("ok: ruleset file")
 PY
 doc=$root/payload/.agents/docs/git-guideline/safety-boundary.md
-for s in '## The server-side ruleset' '.github/rulesets/main.json' 'gh api --method POST repos/OWNER/REPO/rulesets' 'free GitHub plan' 'diff <(jq -S' 'rules/branches/' '--jq .default_branch'; do
+for s in '## The server-side ruleset' '.github/rulesets/main.json' 'gh api --method POST repos/OWNER/REPO/rulesets' 'free GitHub plan' 'diff <(jq -S' 'rules/branches/' '--jq .default_branch' 'jq -r .name .github/rulesets/main.json'; do
   grep -Fq -- "$s" "$doc" || { echo "FAIL: safety-boundary.md lacks: $s"; exit 1; }
 done
 echo "ruleset: all passed"

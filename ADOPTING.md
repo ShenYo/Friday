@@ -289,7 +289,9 @@ seed, so you may edit it, and the install never applies it: the owner does, with
 their own admin login, using the commands in
 [the safety boundary](payload/.agents/docs/git-guideline/safety-boundary.md#the-server-side-ruleset).
 Before applying, add your required status checks and a `.github/CODEOWNERS`
-file, as that section says.
+file, as that section says. The ruleset binds the agent only when the agent
+uses its own account without admin rights; an agent working through an admin
+login, such as the owner's own, is not bound by it.
 
 A private repository on a free GitHub plan cannot use rulesets. There you have
 the hooks only, which guard against mistakes; do not claim more for it.

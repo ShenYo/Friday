@@ -301,7 +301,7 @@ expect_guard 2 "conf without a trailing newline" "$(write_payload "$fr/CLAUDE.md
 printf '%s\n' CLAUDE.md '*only-outer.md' > "$conf"
 # Bash with several targets: an earlier target that needs no judgement must not
 # end the run before a protected one.
-bash_payload() { jq -n --arg c "$1" --arg d "$fr" '{tool_name:"Bash",cwd:$d,tool_input:{command:$c}}'; }
+bash_payload() { printf '%s' "$1" | jq -Rs --arg d "$fr" '{tool_name:"Bash",cwd:$d,tool_input:{command:.}}'; }
 seed_repo="$run/seed-repo"
 git init -q "$seed_repo"
 mkdir -p "$seed_repo/.agents"
@@ -314,7 +314,7 @@ expect_guard 2 "Bash: first target outside any repository" \
 rmdir "$nonrepo"
 # A cd earlier in the command moves where a relative target lands (#61): from
 # an unrelated repository, from a subdirectory, and inside a subshell.
-other_payload() { jq -n --arg c "$1" --arg d "$2" '{tool_name:"Bash",cwd:$d,tool_input:{command:$c}}'; }
+other_payload() { printf '%s' "$1" | jq -Rs --arg d "$2" '{tool_name:"Bash",cwd:$d,tool_input:{command:.}}'; }
 mkdir -p "$fr/sub"
 expect_guard 2 "Bash: cd into the install, then a relative write" \
   "$(other_payload "cd $fr && printf x > CLAUDE.md" "$seed_repo")"
@@ -411,6 +411,16 @@ for refused in \
   'cp a ../CLAUDE.md 2>/dev/null' \
   'cp a ../CLAUDE.md > /dev/null' \
   'cp a ../CLAUDE.md>/dev/null' \
+  'cp a ../CLAUDE.md> /dev/null' \
+  $'cp\ta\t../CLAUDE.md' \
+  'a=`sed -i s/a/b/ ../CLAUDE.md`' \
+  'install -oroot a ../CLAUDE.md' \
+  'install -gstaff a ../CLAUDE.md' \
+  $'cp it\\\'s ../CLAUDE.md' \
+  'cp a "../CLAUDE.md">/dev/null' \
+  'tee "../CLAUDE.md">/dev/null' \
+  'cp a ../"CLAUDE notes.md"' \
+  'cd `echo ..` && printf x > CLAUDE.md' \
   'ln -sf ../CLAUDE.md link' \
   'ln -sf src ../CLAUDE.md' \
   'ln -s -t /tmp/x ../CLAUDE.md' \
@@ -446,6 +456,12 @@ for allowed in \
   'cp -t ../deploy2 dir/' \
   'cp -t .. -- -x' \
   'cp a out.txt>/dev/null' \
+  'echo "x > y"' \
+  'git commit -m "fix: a > b"' \
+  $'cp a "b\'s file"' \
+  'install -o root -m 644 a b' \
+  $'sed -i \'\' s/a/b/ notes.md' \
+  'cp a ../"CLAUDE notes two.md"' \
   'ln -sf a b' \
   'ln -s -t /tmp/x a b' \
   'sed -i.bak s/a/b/ notes.md' \

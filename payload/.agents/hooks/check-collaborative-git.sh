@@ -949,7 +949,8 @@ protected_alarm=()
 if command -v perl >/dev/null 2>&1; then protected_alarm=(perl -e 'alarm 20; exec @ARGV'); fi
 protected_guard_run() { # <command> -> sets protected_exit
   local payload
-  payload=$(jq -n --arg c "$1" --arg d "$protected_lab/sub" '{tool_name:"Bash",cwd:$d,tool_input:{command:$c}}')
+  # From stdin, not --arg: a long command overflows one argv string on Linux.
+  payload=$(printf '%s' "$1" | jq -Rs --arg d "$protected_lab/sub" '{tool_name:"Bash",cwd:$d,tool_input:{command:.}}')
   set +e
   protected_output=$(cd "$protected_lab/sub" && printf '%s' "$payload" \
     | ${protected_alarm[@]+"${protected_alarm[@]}"} "$repo_root/.agents/hooks/guard-protected-paths.sh" 2>&1)
@@ -984,6 +985,16 @@ for refused in \
   'cp a ../CLAUDE.md 2>/dev/null' \
   'cp a ../CLAUDE.md > /dev/null' \
   'cp a ../CLAUDE.md>/dev/null' \
+  'cp a ../CLAUDE.md> /dev/null' \
+  $'cp\ta\t../CLAUDE.md' \
+  'a=`sed -i s/a/b/ ../CLAUDE.md`' \
+  'install -oroot a ../CLAUDE.md' \
+  'install -gstaff a ../CLAUDE.md' \
+  $'cp it\\\'s ../CLAUDE.md' \
+  'cp a "../CLAUDE.md">/dev/null' \
+  'tee "../CLAUDE.md">/dev/null' \
+  'cp a ../"CLAUDE notes.md"' \
+  'cd `echo ..` && printf x > CLAUDE.md' \
   'ln -sf ../CLAUDE.md link' \
   'ln -sf src ../CLAUDE.md' \
   'ln -s -t /tmp/x ../CLAUDE.md' \
@@ -1021,6 +1032,12 @@ for allowed in \
   'cp -t ../deploy2 dir/' \
   'cp -t .. -- -x' \
   'cp a out.txt>/dev/null' \
+  'echo "x > y"' \
+  'git commit -m "fix: a > b"' \
+  $'cp a "b\'s file"' \
+  'install -o root -m 644 a b' \
+  $'sed -i \'\' s/a/b/ notes.md' \
+  'cp a ../"CLAUDE notes two.md"' \
   'ln -sf a b' \
   'ln -s -t /tmp/x a b' \
   'sed -i.bak s/a/b/ notes.md' \
@@ -1049,7 +1066,7 @@ protected_guard_run "$long_command"
 # The collaborative-Git guard has the same blank-command check and the same
 # stall on bash 3.2; it takes a long command under the same alarm.
 set +e
-collaborative_long_output=$(jq -n --arg c "$long_command" '{tool_name:"Bash",tool_input:{command:$c}}' \
+collaborative_long_output=$(printf '%s' "$long_command" | jq -Rs '{tool_name:"Bash",tool_input:{command:.}}' \
   | ${protected_alarm[@]+"${protected_alarm[@]}"} "$repo_root/.agents/hooks/guard-collaborative-git.sh" 2>&1)
 collaborative_long_exit=$?
 set -e

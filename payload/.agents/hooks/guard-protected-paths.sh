@@ -140,12 +140,35 @@ case "$tool_name" in
     # 'cp a b 2>/dev/null'.
     clause_awk='
       function clean(f) { if (f !~ /\(/) sub(/\)+$/, "", f); sub(/`+$/, "", f); return f }
-      function unq(f) { gsub(/^["\047]|["\047]$/, "", f); return f }
+      function unq(s,   k, c, q, out) {
+        q = ""; out = ""
+        for (k = 1; k <= length(s); k++) {
+          c = substr(s, k, 1)
+          if (q == "\047") { if (c == q) q = ""; else out = out c }
+          else if (c == "\\" && k < length(s)) { out = out substr(s, ++k, 1) }
+          else if (q == "\"") { if (c == q) q = ""; else out = out c }
+          else if (c == "\"" || c == "\047") q = c
+          else out = out c
+        }
+        return out
+      }
+      function glue(f,   k, c, q) {
+        q = ""
+        for (k = 1; k <= length(f); k++) {
+          c = substr(f, k, 1)
+          if (q != "") { if (c == q) q = ""; else if (c == "\\" && q == "\"") k++ }
+          else if (c == "\\") k++
+          else if (c == "\"" || c == "\047") q = c
+          else if ((c == "<" || c == ">") && k > 1) return k
+        }
+        return 0
+      }
       function tokenize(s,   k, c, q, cur, have) {
         nt = 0; q = ""; cur = ""; have = 0
         for (k = 1; k <= length(s); k++) {
           c = substr(s, k, 1)
-          if (q != "") { cur = cur c; if (c == q) q = "" }
+          if (c == "\\" && q != "\047" && k < length(s)) { cur = cur c substr(s, ++k, 1); have = 1 }
+          else if (q != "") { cur = cur c; if (c == q) q = "" }
           else if (c == "\"" || c == "\047") { q = c; cur = cur c; have = 1 }
           else if (c == " " || c == "\t") { if (have) { tk[++nt] = cur; cur = ""; have = 0 } }
           else { cur = cur c; have = 1 }
@@ -159,9 +182,9 @@ case "$tool_name" in
           f = tk[i]
           if (skip) { skip = 0; continue }
           if (f ~ /^[0-9]*[<>]/) { if (f ~ /^[0-9]*(>>|>\||>|<)$/) skip = 1; continue }
-          if (f !~ /^["\047]/ && match(f, /[<>]/) > 1) {
-            if (substr(f, RSTART) ~ /^(>>|>\||>|<)$/) skip = 1
-            f = substr(f, 1, RSTART - 1)
+          if ((g = glue(f)) > 1) {
+            if (substr(f, g) ~ /^(>>|>\||>|<)$/) skip = 1
+            f = substr(f, 1, g - 1)
           }
           if (f ~ /^\)+$/) continue
           w[++n] = f
@@ -180,7 +203,7 @@ case "$tool_name" in
           else if (kind == "tee") { if (f !~ /^-/) ops[++cnt] = f }
           else if (f ~ /^--target-directory=/) tdir = substr(f, 20)
           else if (f == "--target-directory") nexttd = 1
-          else if (kind != "" && f ~ /^-[a-zA-Z]*t/) {
+          else if (kind != "" && f ~ /^-[a-zA-Z]*t/ && substr(f, 2, index(f, "t") - 2) !~ /[ogmS]/) {
             if (substr(f, index(f, "t") + 1) == "") nexttd = 1
             else tdir = substr(f, index(f, "t") + 1)
           }

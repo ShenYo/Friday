@@ -67,11 +67,14 @@ when its destination is literal, with an environment prefix (`X=1 cd dir`),
 directory and from each destination. The write forms read are `>`, `>>` and
 `>|`; `tee` and `ln` (every operand, so a link to a protected file counts);
 `cp`, `mv`, `install` and `sed -i` (including `-i.bak` and `--in-place=.bak`, whose backup
-file is judged as well) on the last operand; and `-t DIR`, `-tDIR` or
+file is judged as well) on the last operand; and `-t DIR`, `-tDIR`, a bundle such as `-vtDIR` (only flags that take no
+argument may precede the `t`: `-oroot` and `-gstaff` are not read as `-t`) or
 `--target-directory=DIR`, which names DIR and DIR/each source (a source of
 `ln -t` is judged too). `--` ends the options. A redirection after or glued to the operands
-(`tee FILE > /dev/null`, `cp a FILE>/dev/null`) does not hide them, and a quoted
-operand may hold spaces. A long command is scanned in near-linear time (paths are
+(`tee FILE > /dev/null`, `cp a FILE>/dev/null`) does not hide them, and quotes
+are removed as the shell would, so a quoted or partly quoted operand (`"../CLAUDE notes.md"`,
+`../"CLAUDE notes.md"`), also glued to a redirection (`"../CLAUDE.md">/dev/null`), is read; a backslash
+escapes the next character (`it\'s`). A long command is scanned in near-linear time (paths are
 de-duplicated with one sort); if that sort fails the command is refused. When the command anywhere contains a
 destination the scan cannot read (`cd "$X"`, `cd -`, `cd a\ b`), even in a
 heredoc body, every relative target is refused, and so it is past about ten

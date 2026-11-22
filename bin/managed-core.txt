@@ -33,3 +33,4 @@
 !.claude/settings.json
 !.codex/hooks.json
 !.github/workflows/friday-behind.yml
+!.github/rulesets/main.json

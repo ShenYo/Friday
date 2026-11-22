@@ -41,7 +41,8 @@ CLAUDE.md
 .gitignore
 .claude/settings.json
 .codex/hooks.json
-.github/workflows/friday-behind.yml'
+.github/workflows/friday-behind.yml
+.github/rulesets/main.json'
 links='.claude/hooks/guard-collaborative-git.sh .claude/hooks/guard-protected-paths.sh .codex/hooks/guard-collaborative-git.sh'
 
 # Compare `expected` with what the installer actually listed or wrote, and say

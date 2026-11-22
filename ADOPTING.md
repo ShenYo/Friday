@@ -278,6 +278,21 @@ payload is the release the consumer took. Once Friday has moved on it reads
 `behind`, and [Staying current](#staying-current) says what brings the consumer up to the
 next release.
 
+### The server-side ruleset
+
+The hooks are local, and `gh` or the REST API passes them by. The server-side
+part is a GitHub ruleset on the default branch, and the install gives you the
+file for it, `.github/rulesets/main.json`: no deletion, no force push, changes
+through a pull request, and one approving review from the code owner. It is a
+seed, so you may edit it, and the install never applies it: the owner does, with
+their own admin login, using the commands in
+[the safety boundary](payload/.agents/docs/git-guideline/safety-boundary.md#the-server-side-ruleset).
+Before applying, add your required status checks and a `.github/CODEOWNERS`
+file, as that section says.
+
+A private repository on a free GitHub plan cannot use rulesets. There you have
+the hooks only, which guard against mistakes; do not claim more for it.
+
 ## Staying current
 
 A new Friday release reaches a consumer as a pull request, and each machine then

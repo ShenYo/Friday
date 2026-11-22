@@ -186,7 +186,7 @@ Check that it is in force. The first command reads the ruleset back and must
 print nothing; the second lists the rules GitHub applies to the branch:
 
 ```sh
-ID=$(gh api --paginate repos/OWNER/REPO/rulesets --jq '.[] | select(.name == "Main branch protection") | .id')
+ID=$(gh api --paginate repos/OWNER/REPO/rulesets --jq '.[] | select(.name == "'"$(jq -r .name .github/rulesets/main.json)"'") | .id')
 f='{name, target, enforcement, conditions, rules, bypass_actors}'
 diff <(jq -S "$f" .github/rulesets/main.json) <(gh api repos/OWNER/REPO/rulesets/$ID | jq -S "$f")
 gh api "repos/OWNER/REPO/rules/branches/$(gh api repos/OWNER/REPO --jq .default_branch)" --jq '.[].type'

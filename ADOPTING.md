@@ -282,8 +282,8 @@ next release.
 
 The hooks are local, and `gh` or the REST API passes them by. The server-side
 part is a GitHub ruleset on the default branch, and a full install gives you the
-file for it (with `--managed-only` you copy `payload/.github/rulesets/main.json` by hand),
-`.github/rulesets/main.json`: no deletion, no force push, changes
+file for it, `.github/rulesets/main.json` (with `--managed-only` you copy
+`payload/.github/rulesets/main.json` from the release by hand): no deletion, no force push, changes
 through a pull request, and one approving review from the code owner. It is a
 seed, so you may edit it, and the install never applies it: the owner does, with
 their own admin login, using the commands in

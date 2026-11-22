@@ -76,8 +76,8 @@ cases() {
   new_pair; printf '[y](./y.md#sec)\n' >> "$d/A.md"; printf '[y](./y.md#節)\n' >> "$d/A.zh-TW.md"; run "$s"
   c "a dead link with an anchor fails" bash -c "[ $rc = 1 ] && grep -q 'link does not resolve: ./y.md' '$d/out'"
 
-  new_pair; printf '[q](../q.md)\n' >> "$d/A.md"; printf '[q](../q.md)\n' >> "$d/A.zh-TW.md"; run "$s"
-  c "a dead ../ link fails" bash -c "[ $rc = 1 ] && grep -q 'link does not resolve: ../q.md' '$d/out'"
+  new_pair; printf '[q](../q.png)\n' >> "$d/A.md"; printf '[q](../q.png)\n' >> "$d/A.zh-TW.md"; run "$s"
+  c "a dead ../ link fails" bash -c "[ $rc = 1 ] && grep -q 'link does not resolve: ../q.png' '$d/out'"
 
   new_pair; printf '[x](./x.md#one)\n' >> "$d/A.md"; printf '[x](./x.md#一)\n' >> "$d/A.zh-TW.md"
   sed -i.bak 's/(\.\/A\.zh-TW\.md)/(.\/A.zh-TW.md#top)/' "$d/A.md"; run "$s"
@@ -108,6 +108,12 @@ cases() {
 
   new_pair; printf '封閉的十四檔 core\n' >> "$d/A.zh-TW.md"; run "$s" "$terms"
   c "the Chinese fourteen-file phrase is stale" bash -c "[ $rc = 1 ] && grep -q 'stale term present' '$d/out'"
+
+  new_pair; printf '文件還寫著十一檔\n' >> "$d/A.zh-TW.md"; run "$s" "$terms"
+  c "a past Chinese eleven-file phrasing is stale" bash -c "[ $rc = 1 ] && grep -q 'stale term present' '$d/out'"
+
+  new_pair; printf 'managed core 十四檔已以 v1.0.0 發行\n' >> "$d/A.zh-TW.md"; run "$s" "$terms"
+  c "a past Chinese fourteen-file phrasing is stale" bash -c "[ $rc = 1 ] && grep -q 'stale term present' '$d/out'"
 
   new_pair; printf '封閉的二十一檔與二十四檔 core\n' >> "$d/A.zh-TW.md"; printf 'x\n' >> "$d/A.md"; run "$s" "$terms"
   c "二十一檔 and 二十四檔 are not stale" bash -c "[ $rc = 0 ] && grep -q '^Parity ok' '$d/out'"

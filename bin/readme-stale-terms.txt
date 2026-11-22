@@ -10,9 +10,12 @@
 # longer number (十一檔 is inside 二十一檔).
 eleven-file
 eleven managed-core
-封閉的十一檔
+的十一檔
+著十一檔
 十一個 managed-core
 fourteen-file
 fourteen managed-core
-封閉的十四檔
+的十四檔
+core 十四檔
+十四檔已
 十四個 managed-core

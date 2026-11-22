@@ -32,7 +32,8 @@ Known limits:
   numbers     An ordinal ("the 15th" / "第 15 個") and a number that ends a
               sentence ("Bash 5.") count as the number. A version such as
               1.4.0 is not a number. Ordered-list and numbered-heading markers
-              ("1.", "### 2.") are not counted. A number written next to Han
+              ("1.", "### 2.") are not counted, nor is a prose number that a line
+              wrap puts at the start of a line before a ".". A number written next to Han
               text without a space is not separated from it.
   links       Only the path of a link is compared and resolved; the `#anchor`
               is not, because anchors differ between languages. A dead anchor

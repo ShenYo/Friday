@@ -40,6 +40,10 @@ jobs:
             fi
           done
           exit "$fail"
+      - name: The two READMEs agree
+        run: python3 -I bin/check-readme-parity.py README.md README.zh-TW.md bin/readme-stale-terms.txt
+      - name: The two adoption guides agree
+        run: python3 -I bin/check-readme-parity.py ADOPTING.md ADOPTING.zh-TW.md bin/readme-stale-terms.txt
 
   seed-changes:
     runs-on: ubuntu-latest

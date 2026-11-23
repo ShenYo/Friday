@@ -74,7 +74,7 @@ argument may precede the `t`: `-oroot` and `-gstaff` are not read as `-t`) or
 (`tee FILE > /dev/null`, `cp a FILE>/dev/null`) does not hide them, and quotes
 are removed as the shell would, so a quoted or partly quoted operand (`"../CLAUDE notes.md"`,
 `../"CLAUDE notes.md"`), also glued to a redirection (`"../CLAUDE.md">/dev/null`), is read; a backslash
-escapes the next character (`it\'s`). A long command is scanned in near-linear time (paths are
+escapes the next character (`it\'s`). ANSI-C quoting (`$'…'`) is not modelled: a `\'` inside it ends the quote for the scan, so such an operand can escape it. A long command is scanned in near-linear time (paths are
 de-duplicated with one sort); if that sort fails the command is refused. When the command anywhere contains a
 destination the scan cannot read (`cd "$X"`, `cd -`, `cd a\ b`), even in a
 heredoc body, every relative target is refused, and so it is past about ten

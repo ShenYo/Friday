@@ -420,6 +420,13 @@ for refused in \
   'cp a "../CLAUDE.md">/dev/null' \
   'tee "../CLAUDE.md">/dev/null' \
   'cp a ../"CLAUDE notes.md"' \
+  'cp a \../CLAUDE.md' \
+  'cp a\< ../CLAUDE.md' \
+  $'cp \'a\\\' ../CLAUDE.md' \
+  'cp \a ../CLAUDE.md' \
+  'cp a ../CLAUDE.md</dev/null' \
+  'mv -Sbat a ../CLAUDE.md' \
+  'install -ot a ../CLAUDE.md' \
   'cd `echo ..` && printf x > CLAUDE.md' \
   'ln -sf ../CLAUDE.md link' \
   'ln -sf src ../CLAUDE.md' \

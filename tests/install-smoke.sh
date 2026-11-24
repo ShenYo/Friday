@@ -426,6 +426,13 @@ for refused in \
   $'printf x | tee \\\n../CLAUDE.md' \
   $'true && cp a \\\n../CLAUDE.md' \
   $'cp a ../CLAU"\\\nDE.md"' \
+  $'echo x #\\\ncp a ../CLAUDE.md' \
+  $'cp a \'x\' \\\n../CLAUDE.md' \
+  $'echo it\\\'s\ncp a \\\n../CLAUDE.md' \
+  $'echo "it\'s"\ncp a \\\n../CLAUDE.md' \
+  $'echo "$(echo "it\'s")"\ncp a \\\n../CLAUDE.md' \
+  $'echo $\'it\\\'s\'\ncp a \\\n../CLAUDE.md' \
+  $'cp a \'\\\n../locked\'' \
   'cp a\< ../CLAUDE.md' \
   $'cp \'a\\\' ../CLAUDE.md' \
   'cp \a ../CLAUDE.md' \
@@ -469,7 +476,6 @@ for allowed in \
   'cp -t .. -- -x' \
   'cp a out.txt>/dev/null' \
   $'cp a \\\nnotes.md' \
-  $'cp a \'\\\nlocked\'' \
   'echo "x > y"' \
   'git commit -m "fix: a > b"' \
   $'cp a "b\'s file"' \
@@ -495,13 +501,18 @@ expect_guard 2 "Bash: a blank command" "$(bash_payload '   ')"
 # collaborative-Git guard shares the blank-command check, so it is timed too.
 long=
 for ((n = 0; n < 6000; n++)); do long="$long printf x > out$n.log;"; done
+# One quoted line of 600 KB: the continuation join must not cost a step per
+# character (BSD awk took minutes on such a line with a per-character loop).
+wide="echo '$(head -c 600000 /dev/zero | tr '\0' a)'"
+for long_text in "$long" "$wide"; do
 for long_guard in guard-protected-paths.sh guard-collaborative-git.sh; do
   set +e
-  long_output=$(other_payload "$long" "$fr/sub" \
+  long_output=$(other_payload "$long_text" "$fr/sub" \
     | (cd "$fr/sub" && perl -e 'alarm 20; exec @ARGV' "$fr/.agents/hooks/$long_guard") 2>&1)
   long_exit=$?
   set -e
-  [ "$long_exit" -eq 0 ] || { echo "FAIL: $long_guard returned $long_exit (142 is the 20s alarm) for a ${#long}-character command: $long_output" >&2; exit 1; }
+  [ "$long_exit" -eq 0 ] || { echo "FAIL: $long_guard returned $long_exit (142 is the 20s alarm) for a ${#long_text}-character command: $long_output" >&2; exit 1; }
+done
 done
 rmdir "$fr/sub"
 # append-only: an existing file is refused, a new one is allowed, and a skipped

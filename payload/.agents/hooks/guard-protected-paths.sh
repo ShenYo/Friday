@@ -123,33 +123,25 @@ case "$tool_name" in
     # n-squared time (cubed for a command of many clauses) to strip the
     # blanks, so a long command stalled the hook for minutes.
     [[ $command =~ [^[:space:]] ]] || block "invalid Bash hook payload"
-    # Join backslash-newline continuations first, as bash does: `cp a \` then
-    # `../CLAUDE.md` is one command, and every scan below reads one line at a
-    # time. Quote state carries across lines: inside single quotes the pair
-    # stays, in double quotes and unquoted it is removed. A heredoc body is not
-    # modelled (as elsewhere in this scan), so one is joined too, even with a
-    # quoted delimiter; that can only add a refusal. Each line is scanned once,
-    # and only a line holding a quote or backslash is scanned character by
-    # character, so the cost stays linear.
+    # Bash joins a backslash-newline pair, so `cp a \` then `../CLAUDE.md` is
+    # one command, while every scan below reads one line at a time. So the
+    # scan reads the command as written and, after it, a copy with every
+    # continuation joined. The as-written text keeps every refusal main had: a
+    # comment ending in a backslash cannot hide the next line. The joined copy
+    # catches a target split across lines. It joins whatever the quoting or
+    # comments, so it can only add refusals (a continuation inside single
+    # quotes, say), which errs on the safe side. A line ends in a
+    # continuation when it ends in an odd number of backslashes. The copy is
+    # added only when it differs, so a command with no continuation is read
+    # exactly as before.
     join_awk='
-      BEGIN { q = "" }
       {
-        pend = 0
-        if (q != "" || $0 ~ /[\\"\047]/) {
-          n = length($0)
-          for (k = 1; k <= n; k++) {
-            c = substr($0, k, 1)
-            if (q == "\047") { if (c == q) q = "" }
-            else if (c == "\\") { if (k == n) pend = 1; else k++ }
-            else if (q == "\"") { if (c == q) q = "" }
-            else if (c == "\"" || c == "\047") q = c
-          }
-        }
-        if (pend) printf "%s", substr($0, 1, length($0) - 1)
+        if (match($0, /\\+$/) && RLENGTH % 2 == 1) printf "%s", substr($0, 1, length($0) - 1)
         else printf "%s\n", $0
       }'
-    command=$(printf '%s\n' "$command" | awk "$join_awk") \
+    joined=$(printf '%s\n' "$command" | awk "$join_awk") \
       || block "unable to read the Bash command"
+    [ "$joined" = "$command" ] || command=$command$'\n'$joined
     # Shell writes only. A path that merely appears in a command is not a
     # write, so `cat`, `grep` and `git add` stay free.
     #

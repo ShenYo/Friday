@@ -1000,6 +1000,13 @@ for refused in \
   $'printf x | tee \\\n../CLAUDE.md' \
   $'true && cp a \\\n../CLAUDE.md' \
   $'cp a ../CLAU"\\\nDE.md"' \
+  $'echo x #\\\ncp a ../CLAUDE.md' \
+  $'cp a \'x\' \\\n../CLAUDE.md' \
+  $'echo it\\\'s\ncp a \\\n../CLAUDE.md' \
+  $'echo "it\'s"\ncp a \\\n../CLAUDE.md' \
+  $'echo "$(echo "it\'s")"\ncp a \\\n../CLAUDE.md' \
+  $'echo $\'it\\\'s\'\ncp a \\\n../CLAUDE.md' \
+  $'cp a \'\\\n../locked\'' \
   'cp a\< ../CLAUDE.md' \
   $'cp \'a\\\' ../CLAUDE.md' \
   'cp \a ../CLAUDE.md' \
@@ -1045,7 +1052,6 @@ for allowed in \
   'cp -t .. -- -x' \
   'cp a out.txt>/dev/null' \
   $'cp a \\\nnotes.md' \
-  $'cp a \'\\\nlocked\'' \
   'echo "x > y"' \
   'git commit -m "fix: a > b"' \
   $'cp a "b\'s file"' \
@@ -1077,6 +1083,12 @@ for ((n = 0; n < 6000; n++)); do long_command="$long_command printf x > out$n.lo
 protected_guard_run "$long_command"
 [ "$protected_exit" -eq 0 ] \
   || fail "protected-paths guard returned $protected_exit (142 is the alarm) for a ${#long_command}-character command: $protected_output"
+# One quoted line of 600 KB: the continuation join must not cost a step per
+# character (BSD awk took minutes on such a line with a per-character loop).
+wide_command="echo '$(head -c 600000 /dev/zero | tr '\0' a)'"
+protected_guard_run "$wide_command"
+[ "$protected_exit" -eq 0 ] \
+  || fail "protected-paths guard returned $protected_exit (142 is the alarm) for a ${#wide_command}-character quoted line: $protected_output"
 # The collaborative-Git guard has the same blank-command check and the same
 # stall on bash 3.2; it takes a long command under the same alarm.
 set +e

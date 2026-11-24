@@ -525,7 +525,7 @@ for ((n = 0; n < 6000; n++)); do long="$long printf x > out$n.log;"; done
 # One quoted line of 600 KB: the continuation join must not cost a step per
 # character (BSD awk took minutes on such a line with a per-character loop).
 wide="echo '$(head -c 600000 /dev/zero | tr '\0' a)'"
-# 1 MB of continued lines then a plain one: the join must not grow a string
+# 2 MB of continued lines then a plain one: the join must not grow a string
 # per line (BSD awk went quadratic on that).
 many=$(awk 'BEGIN { for (n = 0; n < 500000; n++) print "a \\" }')
 many="$many"$'\n'"cp a out.txt"

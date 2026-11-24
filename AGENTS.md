@@ -132,19 +132,39 @@ Each step ends on the condition that says it is done.
   still escapes, so afterwards run `git fetch origin` and then
   `git cherry origin/main <branch>`: it lists commits left behind. It cannot
   judge a squash merge, where every commit shows as left behind, and pull
-  requests here have been squash-merged since #78.
+  requests here have been squash-merged since #71 (the last merge commit is
+  #66's).
 - **Here, an agent arms auto-merge once a pull request's review is done.**
   This overrides, for this repository only, the checkpoint in
   [`safety-boundary.md`](payload/.agents/docs/git-guideline/safety-boundary.md#human-review-checkpoints)
-  that reserves enabling auto-merge to a person; consumers keep that
-  checkpoint. It is safe here because `main`'s ruleset requires one approving
-  review from a code owner, dismisses stale approvals on push and requires
-  approval of the last push, and [`.github/CODEOWNERS`](.github/CODEOWNERS)
-  names only the owner. So only the owner's approval counts on `main`, and an
-  armed pull request still waits for it. Arm it only after the independent
-  review has ended with no blocking or should-fix finding open, and only while
-  the ruleset keeps all four requirements; without them the exception does
-  not apply:
+  that reserves enabling auto-merge to a person, and its restatements in
+  `agent-rules.md` and `git-commit.md`; consumers keep that checkpoint. It is
+  safe here only while all of these hold, because together they mean only the
+  owner's approval of the latest push counts on `main`, and an armed pull
+  request waits for it:
+
+  - `main`'s `pull_request` rule requires one approving review, code-owner
+    review, dismissal of stale approvals on push, and approval of the last
+    push;
+  - that rule's ruleset is `active`, and `current_user_can_bypass` is `never`
+    for the agent;
+  - [`.github/CODEOWNERS`](.github/CODEOWNERS) on `main` is a single `*` rule
+    naming only the owner;
+  - the agent acts through its own login, which is not an admin, with no
+    `GH_TOKEN` or `GITHUB_TOKEN` set.
+
+  Check them before arming:
+
+  ```sh
+  gh api repos/<owner>/<repo>/rules/branches/main   # the rule and its ruleset_id
+  gh api repos/<owner>/<repo>/rulesets/<ruleset_id> -q '.enforcement, .current_user_can_bypass'
+  gh api repos/<owner>/<repo>/contents/.github/CODEOWNERS -H 'Accept: application/vnd.github.raw'
+  gh api user -q .login; env | grep -E '^(GH|GITHUB)_TOKEN='   # the login; no output from env
+  ```
+
+  If any of them fails, the exception does not apply. Otherwise, arm it only
+  after the independent review has ended with no blocking or should-fix
+  finding open:
 
   ```sh
   gh pr merge <n> --auto --squash -R <owner>/<repo>

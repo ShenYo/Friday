@@ -301,7 +301,7 @@ expect_guard 2 "conf without a trailing newline" "$(write_payload "$fr/CLAUDE.md
 printf '%s\n' CLAUDE.md '*only-outer.md' > "$conf"
 # Bash with several targets: an earlier target that needs no judgement must not
 # end the run before a protected one.
-bash_payload() { jq -n --arg c "$1" --arg d "$fr" '{tool_name:"Bash",cwd:$d,tool_input:{command:$c}}'; }
+bash_payload() { printf '%s' "$1" | jq -Rs --arg d "$fr" '{tool_name:"Bash",cwd:$d,tool_input:{command:.}}'; }
 seed_repo="$run/seed-repo"
 git init -q "$seed_repo"
 mkdir -p "$seed_repo/.agents"
@@ -314,7 +314,7 @@ expect_guard 2 "Bash: first target outside any repository" \
 rmdir "$nonrepo"
 # A cd earlier in the command moves where a relative target lands (#61): from
 # an unrelated repository, from a subdirectory, and inside a subshell.
-other_payload() { jq -n --arg c "$1" --arg d "$2" '{tool_name:"Bash",cwd:$d,tool_input:{command:$c}}'; }
+other_payload() { printf '%s' "$1" | jq -Rs --arg d "$2" '{tool_name:"Bash",cwd:$d,tool_input:{command:.}}'; }
 mkdir -p "$fr/sub"
 expect_guard 2 "Bash: cd into the install, then a relative write" \
   "$(other_payload "cd $fr && printf x > CLAUDE.md" "$seed_repo")"
@@ -375,6 +375,127 @@ expect_guard 2 "Bash: a relative write after cd -" \
   "$(other_payload "cd - && printf x > notes.md" "$seed_repo")"
 expect_guard 0 "Bash: cd to a variable, then no write" \
   "$(other_payload 'cd "$X" && git status' "$seed_repo")"
+# Ordinary spellings that reach a protected path without the literal path
+# after the shell's own cwd (#73). Each refusal is paired with a near-miss that
+# writes an unprotected file, so a guard that refused everything would fail.
+expect_sub() { # <exit> <what> <command>
+  expect_guard "$1" "Bash: $2" "$(other_payload "$3" "$fr/sub")"
+}
+# The conf lists more entries for these cases, and goes back after them.
+printf '%s\n' 'deploy/*' 'CLAUDE notes.md' keep.md.bak locked >> "$conf"
+for refused in \
+  'X=1 cd .. && printf x > CLAUDE.md' \
+  'a=`cd .. && printf x > CLAUDE.md`' \
+  'a=`cd .. && cp x CLAUDE.md`' \
+  'a=`cd .. && sed -i s/a/b/ CLAUDE.md`' \
+  'a=`cd .. && tee CLAUDE.md`' \
+  'a=`cp x ../CLAUDE.md`' \
+  'a=`tee ../CLAUDE.md out.txt`' \
+  $'a=`cd ..\nprintf x > CLAUDE.md`' \
+  'echo `X=1 cd .. && printf x > CLAUDE.md`' \
+  'echo `builtin cd .. && printf x > CLAUDE.md`' \
+  'echo `command cd .. && printf x > CLAUDE.md`' \
+  'printf x >| ../CLAUDE.md' \
+  'cp -t .. CLAUDE.md' \
+  'cp -t .. src.txt CLAUDE.md' \
+  'cp --target-directory=.. CLAUDE.md' \
+  'cp --target-directory .. CLAUDE.md' \
+  'cp -t.. CLAUDE.md' \
+  'cp -rt.. CLAUDE.md' \
+  'cp -vt.. CLAUDE.md' \
+  'cp -t "../deploy" x' \
+  'cp -t ../deploy a b' \
+  'cp -t ../locked x' \
+  'cp -t ../deploy dir/' \
+  'cp -t ../deploy -- -x' \
+  'cp a ../CLAUDE.md 2>/dev/null' \
+  'cp a ../CLAUDE.md > /dev/null' \
+  'cp a ../CLAUDE.md>/dev/null' \
+  'cp a ../CLAUDE.md> /dev/null' \
+  $'cp\ta\t../CLAUDE.md' \
+  'a=`sed -i s/a/b/ ../CLAUDE.md`' \
+  'install -oroot a ../CLAUDE.md' \
+  'install -gstaff a ../CLAUDE.md' \
+  $'cp it\\\'s ../CLAUDE.md' \
+  'cp a "../CLAUDE.md">/dev/null' \
+  'tee "../CLAUDE.md">/dev/null' \
+  'cp a ../"CLAUDE notes.md"' \
+  'cp a \../CLAUDE.md' \
+  'cp a\< ../CLAUDE.md' \
+  $'cp \'a\\\' ../CLAUDE.md' \
+  'cp \a ../CLAUDE.md' \
+  'cp a ../CLAUDE.md</dev/null' \
+  'mv -Sbat a ../CLAUDE.md' \
+  'install -ot a ../CLAUDE.md' \
+  'cd `echo ..` && printf x > CLAUDE.md' \
+  'ln -sf ../CLAUDE.md link' \
+  'ln -sf src ../CLAUDE.md' \
+  'ln -s -t /tmp/x ../CLAUDE.md' \
+  'sed -i.bak s/a/b/ ../CLAUDE.md' \
+  'sed -E -i s/a/b/ ../CLAUDE.md' \
+  'sed --in-place s/a/b/ ../CLAUDE.md' \
+  'sed -i.bak s/a/b/ ../keep.md' \
+  'sed --in-place=.bak s/a/b/ ../keep.md' \
+  'printf x | tee ../CLAUDE.md > /dev/null' \
+  'printf x | tee ../CLAUDE.md out.txt' \
+  'printf x | tee out.txt ../CLAUDE.md' \
+  'tee -- ../CLAUDE.md' \
+  'tee "../CLAUDE notes.md"' \
+  'cp a "../CLAUDE notes.md"'; do
+  expect_sub 2 "$refused" "$refused"
+done
+for allowed in \
+  'X=1 cd .. && printf x > notes.md' \
+  'a=`cd .. && printf x > notes.md`' \
+  'a=`cd .. && cp x notes.md`' \
+  'echo `X=1 cd .. && printf x > notes.md`' \
+  'echo `builtin cd .. && printf x > notes.md`' \
+  $'a=`cd ..\nprintf x > notes.md`' \
+  'DIR=`cd "$X" && pwd`; printf x > notes.md' \
+  'printf x >| out.txt' \
+  'cp -t /tmp/x file' \
+  'cp -t "/tmp/x" a' \
+  'cp -t .. src.txt' \
+  'cp -t .. src.txt src2.txt' \
+  'cp -vt.. src.txt' \
+  'cp -t ../deploy2 a' \
+  'cp -t ../unlocked x' \
+  'cp -t ../deploy2 dir/' \
+  'cp -t .. -- -x' \
+  'cp a out.txt>/dev/null' \
+  'echo "x > y"' \
+  'git commit -m "fix: a > b"' \
+  $'cp a "b\'s file"' \
+  'install -o root -m 644 a b' \
+  $'sed -i \'\' s/a/b/ notes.md' \
+  'cp a ../"CLAUDE notes two.md"' \
+  'ln -sf a b' \
+  'ln -s -t /tmp/x a b' \
+  'sed -i.bak s/a/b/ notes.md' \
+  'sed -i.bak s/a/b/ ../other.md' \
+  'sed --in-place=.bak s/a/b/ ../other.md' \
+  'printf x | tee out.txt > /dev/null' \
+  'tee out.txt out2.txt' \
+  'tee "../notes two.md"'; do
+  expect_sub 0 "$allowed" "$allowed"
+done
+printf '%s\n' CLAUDE.md '*only-outer.md' > "$conf"
+expect_guard 2 "Bash: a blank command" "$(bash_payload '   ')"
+# A long command is scanned in near-linear time. Six thousand distinct
+# redirection targets took 52 s with the earlier de-duplication and about 2 s
+# now on bash 3.2 (macOS); the blank-command check once took minutes on its
+# own. The alarm turns a regression into a FAIL rather than a hang. The
+# collaborative-Git guard shares the blank-command check, so it is timed too.
+long=
+for ((n = 0; n < 6000; n++)); do long="$long printf x > out$n.log;"; done
+for long_guard in guard-protected-paths.sh guard-collaborative-git.sh; do
+  set +e
+  long_output=$(other_payload "$long" "$fr/sub" \
+    | (cd "$fr/sub" && perl -e 'alarm 20; exec @ARGV' "$fr/.agents/hooks/$long_guard") 2>&1)
+  long_exit=$?
+  set -e
+  [ "$long_exit" -eq 0 ] || { echo "FAIL: $long_guard returned $long_exit (142 is the 20s alarm) for a ${#long}-character command: $long_output" >&2; exit 1; }
+done
 rmdir "$fr/sub"
 # append-only: an existing file is refused, a new one is allowed, and a skipped
 # (new-file) append-only entry must not hide a later entry that matches it.

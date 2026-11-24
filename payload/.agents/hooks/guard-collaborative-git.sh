@@ -25,7 +25,9 @@ case "$tool_name" in
       if (.tool_input | type) == "object" and (.tool_input.command | type) == "string"
       then .tool_input.command else error("invalid Bash payload") end
     ' 2>/dev/null) || block "invalid Bash hook payload"
-    [[ -n ${command//[[:space:]]/} ]] || block "invalid Bash hook payload"
+    # A regex test, not ${command//[[:space:]]/}, which bash 3.2 (macOS) runs in
+    # worse than n-squared time: a long command stalled the hook for minutes.
+    [[ $command =~ [^[:space:]] ]] || block "invalid Bash hook payload"
     ;;
   apply_patch)
     patch=$(printf '%s' "$input" | jq -er '

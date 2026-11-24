@@ -931,4 +931,153 @@ case "$quiet_output" in
   *) fail "commit-msg refused a 73-character subject, but not for its length: $quiet_output" ;;
 esac
 
+# --- protected-paths Bash scan -----------------------------------------------
+# The installed guard is fed Bash commands that write a protected file by an
+# ordinary spelling, run from a subdirectory of a lab project that lists
+# CLAUDE.md and deploy/*; each must be refused, and a near-miss that writes an
+# unprotected file must not be. The lab is its own project, so its own list
+# judges the relative targets.
+protected_lab=$(mktemp -d)
+fixture_roots+=("$protected_lab")
+git init -q "$protected_lab"
+mkdir -p "$protected_lab/.agents" "$protected_lab/sub" "$protected_lab/deploy"
+printf '%s\n' CLAUDE.md 'deploy/*' 'CLAUDE notes.md' keep.md.bak locked > "$protected_lab/.agents/protected-paths.conf"
+protected_lab=$(cd -P "$protected_lab" && pwd -P)
+# An alarm turns a hung scan into a failure rather than a stalled check, where
+# perl is there to set one.
+protected_alarm=()
+if command -v perl >/dev/null 2>&1; then protected_alarm=(perl -e 'alarm 20; exec @ARGV'); fi
+protected_guard_run() { # <command> -> sets protected_exit
+  local payload
+  # From stdin, not --arg: a long command overflows one argv string on Linux.
+  payload=$(printf '%s' "$1" | jq -Rs --arg d "$protected_lab/sub" '{tool_name:"Bash",cwd:$d,tool_input:{command:.}}')
+  set +e
+  protected_output=$(cd "$protected_lab/sub" && printf '%s' "$payload" \
+    | ${protected_alarm[@]+"${protected_alarm[@]}"} "$repo_root/.agents/hooks/guard-protected-paths.sh" 2>&1)
+  protected_exit=$?
+  set -e
+}
+for refused in \
+  'X=1 cd .. && printf x > CLAUDE.md' \
+  'a=`cd .. && printf x > CLAUDE.md`' \
+  'a=`cd .. && cp x CLAUDE.md`' \
+  'a=`cd .. && sed -i s/a/b/ CLAUDE.md`' \
+  'a=`cd .. && tee CLAUDE.md`' \
+  'a=`cp x ../CLAUDE.md`' \
+  'a=`tee ../CLAUDE.md out.txt`' \
+  $'a=`cd ..\nprintf x > CLAUDE.md`' \
+  'echo `X=1 cd .. && printf x > CLAUDE.md`' \
+  'echo `builtin cd .. && printf x > CLAUDE.md`' \
+  'echo `command cd .. && printf x > CLAUDE.md`' \
+  'printf x >| ../CLAUDE.md' \
+  'cp -t .. CLAUDE.md' \
+  'cp -t .. src.txt CLAUDE.md' \
+  'cp --target-directory=.. CLAUDE.md' \
+  'cp --target-directory .. CLAUDE.md' \
+  'cp -t.. CLAUDE.md' \
+  'cp -rt.. CLAUDE.md' \
+  'cp -vt.. CLAUDE.md' \
+  'cp -t "../deploy" x' \
+  'cp -t ../deploy a b' \
+  'cp -t ../locked x' \
+  'cp -t ../deploy dir/' \
+  'cp -t ../deploy -- -x' \
+  'cp a ../CLAUDE.md 2>/dev/null' \
+  'cp a ../CLAUDE.md > /dev/null' \
+  'cp a ../CLAUDE.md>/dev/null' \
+  'cp a ../CLAUDE.md> /dev/null' \
+  $'cp\ta\t../CLAUDE.md' \
+  'a=`sed -i s/a/b/ ../CLAUDE.md`' \
+  'install -oroot a ../CLAUDE.md' \
+  'install -gstaff a ../CLAUDE.md' \
+  $'cp it\\\'s ../CLAUDE.md' \
+  'cp a "../CLAUDE.md">/dev/null' \
+  'tee "../CLAUDE.md">/dev/null' \
+  'cp a ../"CLAUDE notes.md"' \
+  'cp a \../CLAUDE.md' \
+  'cp a\< ../CLAUDE.md' \
+  $'cp \'a\\\' ../CLAUDE.md' \
+  'cp \a ../CLAUDE.md' \
+  'cp a ../CLAUDE.md</dev/null' \
+  'mv -Sbat a ../CLAUDE.md' \
+  'install -ot a ../CLAUDE.md' \
+  'cd `echo ..` && printf x > CLAUDE.md' \
+  'ln -sf ../CLAUDE.md link' \
+  'ln -sf src ../CLAUDE.md' \
+  'ln -s -t /tmp/x ../CLAUDE.md' \
+  'sed -i.bak s/a/b/ ../CLAUDE.md' \
+  'sed -E -i s/a/b/ ../CLAUDE.md' \
+  'sed --in-place s/a/b/ ../CLAUDE.md' \
+  'sed -i.bak s/a/b/ ../keep.md' \
+  'sed --in-place=.bak s/a/b/ ../keep.md' \
+  'printf x | tee ../CLAUDE.md > /dev/null' \
+  'printf x | tee ../CLAUDE.md out.txt' \
+  'printf x | tee out.txt ../CLAUDE.md' \
+  'tee -- ../CLAUDE.md' \
+  'tee "../CLAUDE notes.md"' \
+  'cp a "../CLAUDE notes.md"'; do
+  protected_guard_run "$refused"
+  [ "$protected_exit" -eq 2 ] \
+    || fail "protected-paths guard returned $protected_exit, expected 2, for: $refused ($protected_output)"
+done
+for allowed in \
+  'X=1 cd .. && printf x > notes.md' \
+  'a=`cd .. && printf x > notes.md`' \
+  'a=`cd .. && cp x notes.md`' \
+  'echo `X=1 cd .. && printf x > notes.md`' \
+  'echo `builtin cd .. && printf x > notes.md`' \
+  $'a=`cd ..\nprintf x > notes.md`' \
+  'DIR=`cd "$X" && pwd`; printf x > notes.md' \
+  'printf x >| out.txt' \
+  'cp -t /tmp/x file' \
+  'cp -t "/tmp/x" a' \
+  'cp -t .. src.txt' \
+  'cp -t .. src.txt src2.txt' \
+  'cp -vt.. src.txt' \
+  'cp -t ../deploy2 a' \
+  'cp -t ../unlocked x' \
+  'cp -t ../deploy2 dir/' \
+  'cp -t .. -- -x' \
+  'cp a out.txt>/dev/null' \
+  'echo "x > y"' \
+  'git commit -m "fix: a > b"' \
+  $'cp a "b\'s file"' \
+  'install -o root -m 644 a b' \
+  $'sed -i \'\' s/a/b/ notes.md' \
+  'cp a ../"CLAUDE notes two.md"' \
+  'ln -sf a b' \
+  'ln -s -t /tmp/x a b' \
+  'sed -i.bak s/a/b/ notes.md' \
+  'sed -i.bak s/a/b/ ../other.md' \
+  'sed --in-place=.bak s/a/b/ ../other.md' \
+  'printf x | tee out.txt > /dev/null' \
+  'tee out.txt out2.txt' \
+  'tee "../notes two.md"'; do
+  protected_guard_run "$allowed"
+  [ "$protected_exit" -eq 0 ] \
+    || fail "protected-paths guard returned $protected_exit, expected 0, for: $allowed ($protected_output)"
+done
+# A blank command is refused, not scanned.
+protected_guard_run '   '
+[ "$protected_exit" -eq 2 ] \
+  || fail "protected-paths guard returned $protected_exit, expected 2, for a blank command ($protected_output)"
+# A long command is scanned in near-linear time. Six thousand distinct
+# redirection targets took 52 s with the earlier de-duplication (a string
+# searched per path) and about 2 s now on bash 3.2, so the alarm fires on a
+# regression there; the blank-command check once took minutes on its own.
+long_command=
+for ((n = 0; n < 6000; n++)); do long_command="$long_command printf x > out$n.log;"; done
+protected_guard_run "$long_command"
+[ "$protected_exit" -eq 0 ] \
+  || fail "protected-paths guard returned $protected_exit (142 is the alarm) for a ${#long_command}-character command: $protected_output"
+# The collaborative-Git guard has the same blank-command check and the same
+# stall on bash 3.2; it takes a long command under the same alarm.
+set +e
+collaborative_long_output=$(printf '%s' "$long_command" | jq -Rs '{tool_name:"Bash",tool_input:{command:.}}' \
+  | ${protected_alarm[@]+"${protected_alarm[@]}"} "$repo_root/.agents/hooks/guard-collaborative-git.sh" 2>&1)
+collaborative_long_exit=$?
+set -e
+[ "$collaborative_long_exit" -eq 0 ] \
+  || fail "collaborative-Git guard returned $collaborative_long_exit (142 is the alarm) for a ${#long_command}-character command: $collaborative_long_output"
+
 echo "Agent workflow guardrails passed."

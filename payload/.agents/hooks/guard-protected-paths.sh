@@ -43,7 +43,7 @@ block() {
 PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin${PATH:+:$PATH}"
 export PATH
 
-for required in cat jq grep sed tr awk dirname pwd; do
+for required in cat jq grep sed tr awk sort dirname pwd; do
   command -v "$required" >/dev/null 2>&1 \
     || block "required executable unavailable: $required"
 done
@@ -119,7 +119,10 @@ case "$tool_name" in
       if (.tool_input | type) == "object" and (.tool_input.command | type) == "string"
       then .tool_input.command else error("invalid Bash payload") end
     ' 2>/dev/null) || block "invalid Bash hook payload"
-    [[ -n ${command//[[:space:]]/} ]] || block "invalid Bash hook payload"
+    # A regex test, not ${command//[[:space:]]/}: bash 3.2 (macOS) takes about
+    # n-squared time (cubed for a command of many clauses) to strip the
+    # blanks, so a long command stalled the hook for minutes.
+    [[ $command =~ [^[:space:]] ]] || block "invalid Bash hook payload"
     # Shell writes only. A path that merely appears in a command is not a
     # write, so `cat`, `grep` and `git add` stay free.
     #
@@ -127,6 +130,104 @@ case "$tool_name" in
     # install) write to the last argument of their clause, which is far more
     # reliable to find than parsing each command's own flag grammar — BSD and
     # GNU sed alone disagree about whether -i takes a separate argument.
+    #
+    # Per clause (the awk program below, with redirections dropped first):
+    # tee and ln name every operand a write (ln's link target too: a link to
+    # a protected file is a write path to it); cp, mv, install and sed -i the
+    # last one; and -t DIR / --target-directory=DIR names DIR and DIR/<each
+    # source>. ('tee FILE > /dev/null' has FILE as its last operand, not
+    # /dev/null.) Dropping a redirection also exposes the operand before
+    # 'cp a b 2>/dev/null'.
+    clause_awk='
+      function clean(f) { if (f !~ /\(/) sub(/\)+$/, "", f); sub(/`+$/, "", f); return f }
+      function unq(s,   k, c, q, out) {
+        q = ""; out = ""
+        for (k = 1; k <= length(s); k++) {
+          c = substr(s, k, 1)
+          if (q == "\047") { if (c == q) q = ""; else out = out c }
+          else if (c == "\\" && k < length(s)) { out = out substr(s, ++k, 1) }
+          else if (q == "\"") { if (c == q) q = ""; else out = out c }
+          else if (c == "\"" || c == "\047") q = c
+          else out = out c
+        }
+        return out
+      }
+      function glue(f,   k, c, q) {
+        q = ""
+        for (k = 1; k <= length(f); k++) {
+          c = substr(f, k, 1)
+          if (q != "") { if (c == q) q = ""; else if (c == "\\" && q == "\"") k++ }
+          else if (c == "\\") k++
+          else if (c == "\"" || c == "\047") q = c
+          else if ((c == "<" || c == ">") && k > 1) return k
+        }
+        return 0
+      }
+      function tokenize(s,   k, c, q, cur, have) {
+        nt = 0; q = ""; cur = ""; have = 0
+        for (k = 1; k <= length(s); k++) {
+          c = substr(s, k, 1)
+          if (c == "\\" && q != "\047" && k < length(s)) { cur = cur c substr(s, ++k, 1); have = 1 }
+          else if (q != "") { cur = cur c; if (c == q) q = "" }
+          else if (c == "\"" || c == "\047") { q = c; cur = cur c; have = 1 }
+          else if (c == " " || c == "\t") { if (have) { tk[++nt] = cur; cur = ""; have = 0 } }
+          else { cur = cur c; have = 1 }
+        }
+        if (have) tk[++nt] = cur
+      }
+      {
+        tokenize($0)
+        n = 0; skip = 0
+        for (i = 1; i <= nt; i++) {
+          f = tk[i]
+          if (skip) { skip = 0; continue }
+          if (f ~ /^[0-9]*[<>]/) { if (f ~ /^[0-9]*(>>|>\||>|<)$/) skip = 1; continue }
+          if ((g = glue(f)) > 1) {
+            if (substr(f, g) ~ /^(>>|>\||>|<)$/) skip = 1
+            f = substr(f, 1, g - 1)
+          }
+          if (f ~ /^\)+$/) continue
+          w[++n] = f
+        }
+        v = 0; kind = ""
+        for (i = 1; i <= n && !v; i++) {
+          t = w[i]; sub(/^.*[(`]/, "", t)
+          if (t ~ /^(tee|cp|mv|install|ln)$/) { v = i; kind = t }
+        }
+        tdir = ""; cnt = 0; nexttd = 0; endopts = 0; sfx = ""
+        for (i = v + 1; i <= n; i++) {
+          f = w[i]
+          if (nexttd) { tdir = f; nexttd = 0 }
+          else if (endopts) ops[++cnt] = f
+          else if (f == "--") endopts = 1
+          else if (kind == "tee") { if (f !~ /^-/) ops[++cnt] = f }
+          else if (f ~ /^--target-directory=/) tdir = substr(f, 20)
+          else if (f == "--target-directory") nexttd = 1
+          else if (kind != "" && f ~ /^-[a-zA-Z]*t/ && substr(f, 2, index(f, "t") - 2) !~ /[ogmS]/) {
+            if (substr(f, index(f, "t") + 1) == "") nexttd = 1
+            else tdir = substr(f, index(f, "t") + 1)
+          }
+          else if (f ~ /^-/) {
+            if (kind == "" && f ~ /^--in-place=/) sfx = substr(f, 12)
+            else if (kind == "" && f ~ /^-[a-zA-Z]*i./) sfx = substr(f, index(f, "i") + 1)
+          }
+          else ops[++cnt] = f
+        }
+        if (tdir != "") {
+          tdir = unq(clean(tdir)); print tdir
+          for (i = 1; i <= cnt; i++) {
+            b = unq(clean(ops[i]))
+            if (kind == "ln") print b
+            sub(/\/+$/, "", b); sub(/.*\//, "", b)
+            if (b != "") print tdir "/" b
+          }
+        } else if (kind == "tee" || kind == "ln") {
+          for (i = 1; i <= cnt; i++) print unq(clean(ops[i]))
+        } else if (cnt > 0) {
+          b = unq(clean(ops[cnt])); print b
+          if (sfx != "") print b sfx
+        }
+      }'
     while IFS= read -r p; do
       [ -n "$p" ] && targets+=("$p")
     # `|| true` on each: grep exits 1 when a form is absent, and under
@@ -143,13 +244,13 @@ case "$tool_name" in
     done < <(
       {
         printf '%s\n' "$command" \
-          | grep -oE ">>?[[:space:]]*(\"[^\"]*\"|'[^']*'|[^[:space:];|&<>()]+)" \
-          | sed -E 's/^>>?[[:space:]]*//' || true
+          | grep -oE ">[>|]?[[:space:]]*(\"[^\"]*\"|'[^']*'|[^[:space:];|&<>()\`]+)" \
+          | sed -E 's/^>[>|]?[[:space:]]*//' || true
         printf '%s\n' "$command" \
           | tr ';|&' '\n' \
-          | grep -E '(^|[[:space:](])(tee|cp|mv|install|sed[[:space:]]+-i)([[:space:]]|$)' \
+          | grep -E '(^|[[:space:](`])(tee|cp|mv|install|ln)([[:space:]]|$)|(^|[[:space:](`])sed([[:space:]]+-[^[:space:]]+)*[[:space:]]+(-[a-zA-Z]*i[^[:space:]]*|--in-place[^[:space:]]*)([[:space:]]|$)' \
           | sed -E 's/[[:space:]]*$//' \
-          | awk '{ n = NF; while (n > 1 && $n ~ /^\)+$/) n--; f = $n; if (f !~ /\(/) sub(/\)+$/, "", f); print f }' || true
+          | awk "$clause_awk" || true
       } | sed -E "s/^[\"'](.*)[\"']$/\\1/"
     )
     # A `cd` or `pushd` in the command moves the shell, so a relative target
@@ -166,6 +267,11 @@ case "$tool_name" in
     while IFS= read -r clause; do
       verb=${clause%%@*}
       rest=${clause#*@}
+      # A cd opened by a backtick substitution cannot move the outer shell, so
+      # an unreadable destination is skipped as for $(...); a readable one is
+      # followed, since a write inside the same backticks lands there.
+      bt=
+      case $verb in 'BT '*) bt=1; verb=${verb#BT } ;; esac
       word=
       while [[ $rest =~ $cd_word ]]; do
         rest=${rest:${#BASH_REMATCH[0]}}
@@ -204,14 +310,15 @@ case "$tool_name" in
       esac
       if [ -n "$dest" ]; then
         cd_dests+=("$dest")
-      else
+      elif [ -z "$bt" ]; then
         cd_unknown="the command moves with '$verb${word:+ $word}', whose destination cannot be read literally"
       fi
     done < <(
       printf '%s\n' "$command" \
         | sed -E 's/\$\(/$(@subst /g' \
+        | sed -E 's/`([[:space:]]*([A-Za-z_][A-Za-z0-9_]*=("[^"]*"|'\''[^'\'']*'\''|[^[:space:]`]*)[[:space:]]+)*((builtin|command)[[:space:]]+)?(cd|pushd)[^`]*)(`|$)/;BT \1;/g' \
         | tr ';|&(){}' '\n' \
-        | sed -nE 's/^[[:space:]]*((then|do|else|elif|if|while|until|time|!)[[:space:]]+)*((builtin|command)[[:space:]]+)?(cd|pushd)([[:space:]]+(.*))?$/\5@\7/p' || true
+        | sed -nE 's/^[[:space:]]*(BT[[:space:]]+)?((then|do|else|elif|if|while|until|time|!)[[:space:]]+)*([A-Za-z_][A-Za-z0-9_]*=("[^"]*"|'\''[^'\'']*'\''|[^[:space:]]*)[[:space:]]+)*((builtin|command)[[:space:]]+)?(cd|pushd)([[:space:]].*)?$/\1\8@\9/p' || true
     )
     ;;
   *)
@@ -428,8 +535,11 @@ for dest in ${cd_dests[@]+"${cd_dests[@]}"}; do
 done
 
 # Each absolute path is judged once: many relative targets from many bases
-# often land on the same few paths.
-judged=$'\n'
+# often land on the same few paths. The paths are gathered first and
+# de-duplicated by one `sort -u`, so the cost stays linear in the length of the
+# command: a "have I seen it" string searched per path took time quadratic in
+# the number of targets, minutes for a few thousand of them on bash 3.2.
+resolved_paths=()
 for target in "${targets[@]}"; do
   if [[ $target == /* ]]; then
     from=("$event_cwd")
@@ -441,14 +551,21 @@ for target in "${targets[@]}"; do
   for base in "${from[@]}"; do
     normalize_target "$target" "$base" \
       || block "unable to normalize write target '$target'"
-    absolute=$normalized
-    case $judged in *$'\n'"$absolute"$'\n'*) continue ;; esac
-    judged=$judged$absolute$'\n'
-
-    # Compare repo-relative inside the owning project, so absolute, repo-root
-    # and nested-session targets are judged identically — and a target in
-    # another project is judged against that project's list rather than
-    # skipped.
-    judge_target "$absolute"
+    # A name holding a newline cannot go through the line-based sort.
+    case $normalized in
+      *$'\n'*) judge_target "$normalized" ;;
+      *) resolved_paths+=("$normalized") ;;
+    esac
   done
 done
+
+# Compare repo-relative inside the owning project, so absolute, repo-root and
+# nested-session targets are judged identically — and a target in another
+# project is judged against that project's list rather than skipped.
+# Its status is read: a failed sort must not leave the list empty and every
+# target unjudged.
+sorted_paths=$(printf '%s\n' ${resolved_paths[@]+"${resolved_paths[@]}"} | LC_ALL=C sort -u) \
+  || block "unable to sort the write targets; refusing rather than leaving them unjudged."
+while IFS= read -r absolute; do
+  judge_target "$absolute"
+done <<< "$sorted_paths"

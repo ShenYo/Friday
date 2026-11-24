@@ -995,6 +995,11 @@ for refused in \
   'tee "../CLAUDE.md">/dev/null' \
   'cp a ../"CLAUDE notes.md"' \
   'cp a \../CLAUDE.md' \
+  $'cp a \\\n../CLAUDE.md' \
+  $'printf x > \\\n../CLAUDE.md' \
+  $'printf x | tee \\\n../CLAUDE.md' \
+  $'true && cp a \\\n../CLAUDE.md' \
+  $'cp a ../CLAU"\\\nDE.md"' \
   'cp a\< ../CLAUDE.md' \
   $'cp \'a\\\' ../CLAUDE.md' \
   'cp \a ../CLAUDE.md' \
@@ -1039,6 +1044,8 @@ for allowed in \
   'cp -t ../deploy2 dir/' \
   'cp -t .. -- -x' \
   'cp a out.txt>/dev/null' \
+  $'cp a \\\nnotes.md' \
+  $'cp a \'\\\nlocked\'' \
   'echo "x > y"' \
   'git commit -m "fix: a > b"' \
   $'cp a "b\'s file"' \

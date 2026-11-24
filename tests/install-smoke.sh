@@ -427,6 +427,10 @@ for refused in \
   $'true && cp a \\\n../CLAUDE.md' \
   $'cp a ../CLAU"\\\nDE.md"' \
   $'echo x #\\\ncp a ../CLAUDE.md' \
+  $'echo x #\\\ncp a \\\n../CLAUDE.md' \
+  $'# note\\\ncp a \\\n../CLAUDE.md' \
+  $'echo x #\\\nc\\\np a ../CLAUDE.md' \
+  $'echo x #\\\ntee \\\n../CLAUDE.md' \
   $'cp a \'x\' \\\n../CLAUDE.md' \
   $'echo it\\\'s\ncp a \\\n../CLAUDE.md' \
   $'echo "it\'s"\ncp a \\\n../CLAUDE.md' \
@@ -476,6 +480,8 @@ for allowed in \
   'cp -t .. -- -x' \
   'cp a out.txt>/dev/null' \
   $'cp a \\\nnotes.md' \
+  $'cp a ..\\\\\n/CLAUDE.md' \
+  $'(cd d1 && make) ; (cd d2 && make) ; (cd d3 && make) ; (cd d4 && make) ; (cd d5 && make) ; (cd d6 && make) ; (cd d7 && make) ; (cd d8 && make) ; (cd d9 && make) ; (cd d10 && make) ;\nls \\\n -la; cp a out.txt' \
   'echo "x > y"' \
   'git commit -m "fix: a > b"' \
   $'cp a "b\'s file"' \

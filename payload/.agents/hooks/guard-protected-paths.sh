@@ -125,23 +125,40 @@ case "$tool_name" in
     [[ $command =~ [^[:space:]] ]] || block "invalid Bash hook payload"
     # Bash joins a backslash-newline pair, so `cp a \` then `../CLAUDE.md` is
     # one command, while every scan below reads one line at a time. So the
-    # scan reads the command as written and, after it, a copy with every
-    # continuation joined. The as-written text keeps every refusal main had: a
-    # comment ending in a backslash cannot hide the next line. The joined copy
-    # catches a target split across lines. It joins whatever the quoting or
-    # comments, so it can only add refusals (a continuation inside single
-    # quotes, say), which errs on the safe side. A line ends in a
-    # continuation when it ends in an odd number of backslashes. The copy is
-    # added only when it differs, so a command with no continuation is read
-    # exactly as before.
+    # scan reads the command as written and, after it, the logical lines that
+    # contain a join (a line with no continuation was already read as
+    # written, so it is not repeated). A line ends in a continuation when it
+    # ends in an odd number of backslashes. Two sets are appended, because
+    # comments make the join ambiguous: bash ends a comment at the newline,
+    # so in `echo x #\` / `cp a \` / `../CLAUDE.md` the last two lines still
+    # run as one `cp`, yet joining everything glues them into the comment.
+    # (a) joins every continued line, whatever the quoting or comments: that
+    #     is right inside quotes and `${#x}`, and where `#` is only text.
+    # (b) does not join a line in which `#` starts a word (after a blank,
+    #     `;`, `&`, `|`, `(`, `)` or at the start), so that line ends the
+    #     logical line, as a comment does.
+    # Both only add refusals when the quoting is not modelled (a continuation
+    # inside single quotes, say), which errs on the safe side. Nothing is
+    # appended when neither set has a join, so a command with no
+    # continuation is read exactly as before, and only continued lines count
+    # twice towards the cd cap. Linear: one match per line, no per-character
+    # loop (BSD awk took minutes on a 600 KB line with one).
     join_awk='
+      function emit() { if (joined) print cur; cur = ""; joined = 0 }
       {
-        if (match($0, /\\+$/) && RLENGTH % 2 == 1) printf "%s", substr($0, 1, length($0) - 1)
-        else printf "%s\n", $0
-      }'
-    joined=$(printf '%s\n' "$command" | awk "$join_awk") \
+        if (match($0, /\\+$/) && RLENGTH % 2 == 1 \
+            && !(nocomment && $0 ~ /(^|[[:space:];&|()])#/)) {
+          cur = cur substr($0, 1, length($0) - 1); joined = 1
+        } else { cur = cur $0; emit() }
+      }
+      END { emit() }'
+    joined_all=$(printf '%s\n' "$command" | awk "$join_awk") \
       || block "unable to read the Bash command"
-    [ "$joined" = "$command" ] || command=$command$'\n'$joined
+    joined_nocomment=$(printf '%s\n' "$command" | awk -v nocomment=1 "$join_awk") \
+      || block "unable to read the Bash command"
+    [ -z "$joined_all" ] || command=$command$'\n'$joined_all
+    [ -z "$joined_nocomment" ] || [ "$joined_nocomment" = "$joined_all" ] \
+      || command=$command$'\n'$joined_nocomment
     # Shell writes only. A path that merely appears in a command is not a
     # write, so `cat`, `grep` and `git add` stay free.
     #

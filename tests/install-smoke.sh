@@ -382,7 +382,8 @@ expect_sub() { # <exit> <what> <command>
   expect_guard "$1" "Bash: $2" "$(other_payload "$3" "$fr/sub")"
 }
 # The conf lists more entries for these cases, and goes back after them.
-printf '%s\n' 'deploy/*' 'CLAUDE notes.md' keep.md.bak locked >> "$conf"
+printf '%s\n' 'deploy/*' 'CLAUDE notes.md' keep.md.bak locked sub/a/b/deep.md >> "$conf"
+cdroot=$fr
 for refused in \
   'X=1 cd .. && printf x > CLAUDE.md' \
   'a=`cd .. && printf x > CLAUDE.md`' \
@@ -424,6 +425,15 @@ for refused in \
   $'cp a \\\n../CLAUDE.md' \
   $'printf x > \\\n../CLAUDE.md' \
   $'printf x | tee \\\n../CLAUDE.md' \
+  'cp a ../CLAUDE.md \' \
+  $'true;#\\\ncp a \\\n../CLAUDE.md' \
+  $'true|#\\\ncp a \\\n../CLAUDE.md' \
+  $'echo x #\\\ntee "t #" \\\n../CLAUDE.md' \
+  $'echo x #\\\ncp "a #" \\\n../CLAUDE.md' \
+  $'echo x #\\\ncp a\\ #b \\\n../CLAUDE.md' \
+  $'c\\\nd a\ncd b && cp x deep.md' \
+  $'c\\\nd '"$cdroot/sub/a"$'\ncd b && cp x deep.md' \
+  $'pus\\\nhd a\ncd b && cp x deep.md' \
   $'true && cp a \\\n../CLAUDE.md' \
   $'cp a ../CLAU"\\\nDE.md"' \
   $'echo x #\\\ncp a ../CLAUDE.md' \
@@ -481,6 +491,7 @@ for allowed in \
   'cp a out.txt>/dev/null' \
   $'cp a \\\nnotes.md' \
   $'cp a ..\\\\\n/CLAUDE.md' \
+  $'ls \\\n -la\n(cd d1 && make) ; (cd d2 && make) ; (cd d3 && make) ; (cd d4 && make) ; (cd d5 && make) ; (cd d6 && make) ; (cd d7 && make) ; (cd d8 && make) ; (cd d9 && make) ; (cd d10 && make) ; cp a out.txt' \
   $'(cd d1 && make) ; (cd d2 && make) ; (cd d3 && make) ; (cd d4 && make) ; (cd d5 && make) ; (cd d6 && make) ; (cd d7 && make) ; (cd d8 && make) ; (cd d9 && make) ; (cd d10 && make) ;\nls \\\n -la; cp a out.txt' \
   'echo "x > y"' \
   'git commit -m "fix: a > b"' \

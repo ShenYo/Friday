@@ -125,40 +125,45 @@ case "$tool_name" in
     [[ $command =~ [^[:space:]] ]] || block "invalid Bash hook payload"
     # Bash joins a backslash-newline pair, so `cp a \` then `../CLAUDE.md` is
     # one command, while every scan below reads one line at a time. So the
-    # scan reads the command as written and, after it, the logical lines that
-    # contain a join (a line with no continuation was already read as
-    # written, so it is not repeated). A line ends in a continuation when it
-    # ends in an odd number of backslashes. Two sets are appended, because
-    # comments make the join ambiguous: bash ends a comment at the newline,
-    # so in `echo x #\` / `cp a \` / `../CLAUDE.md` the last two lines still
-    # run as one `cp`, yet joining everything glues them into the comment.
+    # scan reads the command as written and, after it, up to two joined
+    # copies of the whole command. A line ends in a continuation when it ends
+    # in an odd number of backslashes. Two copies are made, because comments
+    # make the join ambiguous: bash ends a comment at the newline, so in
+    # `echo x #\` / `cp a \` / `../CLAUDE.md` the last two lines still run as
+    # one `cp`, yet joining everything glues them into the comment.
     # (a) joins every continued line, whatever the quoting or comments: that
     #     is right inside quotes and `${#x}`, and where `#` is only text.
     # (b) does not join a line in which `#` starts a word (after a blank,
-    #     `;`, `&`, `|`, `(`, `)` or at the start), so that line ends the
+    #     `;`, `&`, `|`, `(`, `)` or at the start) once escapes and quoted
+    #     spans are removed from a copy of the line, so that line ends the
     #     logical line, as a comment does.
     # Both only add refusals when the quoting is not modelled (a continuation
-    # inside single quotes, say), which errs on the safe side. Nothing is
-    # appended when neither set has a join, so a command with no
-    # continuation is read exactly as before, and only continued lines count
-    # twice towards the cd cap. Linear: one match per line, no per-character
-    # loop (BSD awk took minutes on a 600 KB line with one).
+    # inside single quotes, say), which errs on the safe side. A copy is
+    # appended only when it differs from the command as written and from the
+    # other copy. Every scan below reads the concatenation line by line,
+    # except the `cd` scan, which reads each copy on its own (see there).
+    # Linear: a few matches per line, no per-character loop (BSD awk took
+    # minutes on a 600 KB line with one).
     join_awk='
-      function emit() { if (joined) print cur; cur = ""; joined = 0 }
+      function emit() { print cur; cur = ""; joined = 0 }
       {
+        s = $0
+        if (nocomment) gsub(/\\.|"[^"]*"|\047[^\047]*\047/, "", s)
         if (match($0, /\\+$/) && RLENGTH % 2 == 1 \
-            && !(nocomment && $0 ~ /(^|[[:space:];&|()])#/)) {
+            && !(nocomment && s ~ /(^|[[:space:];&|()])#/)) {
           cur = cur substr($0, 1, length($0) - 1); joined = 1
         } else { cur = cur $0; emit() }
       }
-      END { emit() }'
+      END { if (joined) emit() }'
     joined_all=$(printf '%s\n' "$command" | awk "$join_awk") \
       || block "unable to read the Bash command"
     joined_nocomment=$(printf '%s\n' "$command" | awk -v nocomment=1 "$join_awk") \
       || block "unable to read the Bash command"
-    [ -z "$joined_all" ] || command=$command$'\n'$joined_all
-    [ -z "$joined_nocomment" ] || [ "$joined_nocomment" = "$joined_all" ] \
-      || command=$command$'\n'$joined_nocomment
+    cd_copies=("$command")
+    [ "$joined_all" = "$command" ] || cd_copies+=("$joined_all")
+    [ "$joined_nocomment" = "$command" ] || [ "$joined_nocomment" = "$joined_all" ] \
+      || cd_copies+=("$joined_nocomment")
+    for copy in "${cd_copies[@]:1}"; do command=$command$'\n'$copy; done
     # Shell writes only. A path that merely appears in a command is not a
     # write, so `cat`, `grep` and `git add` stay free.
     #
@@ -300,7 +305,21 @@ case "$tool_name" in
     # DIR=$(cd "$(dirname "$0")" && pwd), cannot move the outer shell and is
     # skipped; a write inside that same substitution is missed.
     cd_word='^[[:space:]]*("[^"]*"|'\''[^'\'']*'\''|[^[:space:]]+)'
+    cd_scan() {
+      printf '%s\n' "$1" \
+        | sed -E 's/\$\(/$(@subst /g' \
+        | sed -E 's/`([[:space:]]*([A-Za-z_][A-Za-z0-9_]*=("[^"]*"|'\''[^'\'']*'\''|[^[:space:]`]*)[[:space:]]+)*((builtin|command)[[:space:]]+)?(cd|pushd)[^`]*)(`|$)/;BT \1;/g' \
+        | tr ';|&(){}' '\n' \
+        | sed -nE 's/^[[:space:]]*(BT[[:space:]]+)?((then|do|else|elif|if|while|until|time|!)[[:space:]]+)*([A-Za-z_][A-Za-z0-9_]*=("[^"]*"|'\''[^'\'']*'\''|[^[:space:]]*)[[:space:]]+)*((builtin|command)[[:space:]]+)?(cd|pushd)([[:space:]].*)?$/\1\8@\9/p' || true
+    }
     while IFS= read -r clause; do
+      # The line RESET ends one copy of the command and starts the next.
+      # Every other line has the form `cd@...` or `pushd@...`, which has an
+      # @, so no command can spell RESET.
+      if [ "$clause" = RESET ]; then
+        cd_dests+=("")
+        continue
+      fi
       verb=${clause%%@*}
       rest=${clause#*@}
       # A cd opened by a backtick substitution cannot move the outer shell, so
@@ -350,11 +369,10 @@ case "$tool_name" in
         cd_unknown="the command moves with '$verb${word:+ $word}', whose destination cannot be read literally"
       fi
     done < <(
-      printf '%s\n' "$command" \
-        | sed -E 's/\$\(/$(@subst /g' \
-        | sed -E 's/`([[:space:]]*([A-Za-z_][A-Za-z0-9_]*=("[^"]*"|'\''[^'\'']*'\''|[^[:space:]`]*)[[:space:]]+)*((builtin|command)[[:space:]]+)?(cd|pushd)[^`]*)(`|$)/;BT \1;/g' \
-        | tr ';|&(){}' '\n' \
-        | sed -nE 's/^[[:space:]]*(BT[[:space:]]+)?((then|do|else|elif|if|while|until|time|!)[[:space:]]+)*([A-Za-z_][A-Za-z0-9_]*=("[^"]*"|'\''[^'\'']*'\''|[^[:space:]]*)[[:space:]]+)*((builtin|command)[[:space:]]+)?(cd|pushd)([[:space:]].*)?$/\1\8@\9/p' || true
+      for copy in "${cd_copies[@]}"; do
+        cd_scan "$copy"
+        printf 'RESET\n'
+      done
     )
     ;;
   *)
@@ -531,7 +549,11 @@ judge_target() {
 }
 
 # The places a relative Bash target may be relative to: the hook's cwd, and
-# every literal `cd` destination. Each destination has a primary place: where
+# every literal `cd` destination. Each copy of the command (as written, and
+# its joined copies) is a chain of its own, started from the hook's cwd: an
+# empty entry in the list ends one copy, and resets the chain state below
+# (`prev`, `prims`). The bases found in all copies are kept, without
+# duplicates. Each destination has a primary place: where
 # it lands if the cds before it all ran in sequence. A relative destination is
 # resolved from the previous primary, from the hook's cwd and from every
 # earlier primary, since a subshell may have undone any of the cds between.
@@ -544,6 +566,11 @@ prims=("$event_cwd")
 prev=$event_cwd
 for dest in ${cd_dests[@]+"${cd_dests[@]}"}; do
   [ -z "$cd_unknown" ] || break
+  if [ -z "$dest" ]; then
+    prev=$event_cwd
+    prims=("$event_cwd")
+    continue
+  fi
   if [[ $dest == /* ]]; then
     from=(/)
   else

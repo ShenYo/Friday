@@ -153,18 +153,27 @@ Each step ends on the condition that says it is done.
   - the agent acts through its own login, which is not an admin, with no
     `GH_TOKEN` or `GITHUB_TOKEN` set.
 
-  Check them before arming:
+  Check them before arming; each line's comment says what passes:
 
   ```sh
-  gh api repos/<owner>/<repo>/rules/branches/main   # the rule and its ruleset_id
+  gh api repos/<owner>/<repo>/rules/branches/main -q '.[] | select(.type=="pull_request")'
+  # exactly one rule: required_approving_review_count >= 1, and
+  # require_code_owner_review, dismiss_stale_reviews_on_push and
+  # require_last_push_approval all true; note its ruleset_id
   gh api repos/<owner>/<repo>/rulesets/<ruleset_id> -q '.enforcement, .current_user_can_bypass'
+  # active, then never
   gh api repos/<owner>/<repo>/contents/.github/CODEOWNERS -H 'Accept: application/vnd.github.raw'
-  gh api user -q .login; env | grep -E '^(GH|GITHUB)_TOKEN='   # the login; no output from env
+  # apart from comments, the single line `* @<owner>`
+  gh api repos/<owner>/<repo>/collaborators/"$(gh api user -q .login)"/permission -q .permission
+  # write (admin or maintain fails: such a login can edit the ruleset)
+  env | cut -d= -f1 | grep -E '^(GH|GITHUB)_TOKEN$'
+  # no output (names only, so a token is never printed)
   ```
 
   If any of them fails, the exception does not apply. Otherwise, arm it only
-  after the independent review has ended with no blocking or should-fix
-  finding open:
+  after a review by a fresh agent that did not write the change has ended
+  with no must-fix or should-fix finding open. The agent's own checks and a
+  green CI are not that review.
 
   ```sh
   gh pr merge <n> --auto --squash -R <owner>/<repo>

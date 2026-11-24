@@ -164,8 +164,8 @@ Each step ends on the condition that says it is done.
   # active, then never
   gh api repos/<owner>/<repo>/contents/.github/CODEOWNERS -H 'Accept: application/vnd.github.raw'
   # apart from comments, the single line `* @<owner>`
-  gh api repos/<owner>/<repo>/collaborators/"$(gh api user -q .login)"/permission -q .permission
-  # write (admin or maintain fails: such a login can edit the ruleset)
+  gh api repos/<owner>/<repo>/collaborators/"$(gh api user -q .login)"/permission -q .role_name
+  # write; anything else fails (an admin can edit the ruleset)
   env | cut -d= -f1 | grep -E '^(GH|GITHUB)_TOKEN$'
   # no output (names only, so a token is never printed)
   ```

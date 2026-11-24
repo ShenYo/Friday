@@ -131,8 +131,30 @@ Each step ends on the condition that says it is done.
   It refuses when the PR's head differs from that SHA. A push after the merge
   still escapes, so afterwards run `git fetch origin` and then
   `git cherry origin/main <branch>`: it lists commits left behind. It cannot
-  judge a squash merge, where every commit shows as left behind. This
-  repository uses merge commits.
+  judge a squash merge, where every commit shows as left behind, and pull
+  requests here have been squash-merged since #78.
+- **Here, an agent arms auto-merge once a pull request's review is done.**
+  This overrides, for this repository only, the checkpoint in
+  [`safety-boundary.md`](payload/.agents/docs/git-guideline/safety-boundary.md#human-review-checkpoints)
+  that reserves enabling auto-merge to a person; consumers keep that
+  checkpoint. It is safe here because `main`'s ruleset requires one approving
+  review from a code owner, dismisses stale approvals on push and requires
+  approval of the last push, and [`.github/CODEOWNERS`](.github/CODEOWNERS)
+  names only the owner. So only the owner's approval counts on `main`, and an
+  armed pull request still waits for it. Arm it only after the independent
+  review has ended with no blocking or should-fix finding open, and only while
+  the ruleset keeps all four requirements; without them the exception does
+  not apply:
+
+  ```sh
+  gh pr merge <n> --auto --squash -R <owner>/<repo>
+  ```
+
+  The squash commit's message is the repository's default, which is set to
+  the pull request's title and description, so a commit message on the branch
+  does not reach `main`. An armed merge takes the head at merge time, so
+  GitHub's stale-approval rule, not a pinned head, keeps a later push from
+  merging unreviewed.
 - **Adopting into a project that already has files** follows
   [`ADOPTING.md`](ADOPTING.md): `install.sh --managed-only` copies the managed
   core and leaves the project's seeds alone, listing them for a person to

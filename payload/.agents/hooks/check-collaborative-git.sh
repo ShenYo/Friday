@@ -1005,6 +1005,8 @@ for refused in \
   $'echo x #\\\ntee "t #" \\\n../CLAUDE.md' \
   $'echo x #\\\ncp "a #" \\\n../CLAUDE.md' \
   $'echo x #\\\ncp a\\ #b \\\n../CLAUDE.md' \
+  $'echo x #\\\ntee \'\'#z \\\n../CLAUDE.md' \
+  $'echo x #\\\ncp "y"#z \\\n../CLAUDE.md' \
   $'c\\\nd a\ncd b && cp x deep.md' \
   $'c\\\nd '"$cdroot/sub/a"$'\ncd b && cp x deep.md' \
   $'pus\\\nhd a\ncd b && cp x deep.md' \

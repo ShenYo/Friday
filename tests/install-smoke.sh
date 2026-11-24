@@ -431,6 +431,8 @@ for refused in \
   $'echo x #\\\ntee "t #" \\\n../CLAUDE.md' \
   $'echo x #\\\ncp "a #" \\\n../CLAUDE.md' \
   $'echo x #\\\ncp a\\ #b \\\n../CLAUDE.md' \
+  $'echo x #\\\ntee \'\'#z \\\n../CLAUDE.md' \
+  $'echo x #\\\ncp "y"#z \\\n../CLAUDE.md' \
   $'c\\\nd a\ncd b && cp x deep.md' \
   $'c\\\nd '"$cdroot/sub/a"$'\ncd b && cp x deep.md' \
   $'pus\\\nhd a\ncd b && cp x deep.md' \
@@ -521,7 +523,11 @@ for ((n = 0; n < 6000; n++)); do long="$long printf x > out$n.log;"; done
 # One quoted line of 600 KB: the continuation join must not cost a step per
 # character (BSD awk took minutes on such a line with a per-character loop).
 wide="echo '$(head -c 600000 /dev/zero | tr '\0' a)'"
-for long_text in "$long" "$wide"; do
+# 600 KB of continued lines then a plain one: the join must not grow a string
+# per line (BSD awk went quadratic on that).
+many=$(awk 'BEGIN { for (n = 0; n < 150000; n++) print "a \\" }')
+many="$many"$'\n'"cp a out.txt"
+for long_text in "$long" "$wide" "$many"; do
 for long_guard in guard-protected-paths.sh guard-collaborative-git.sh; do
   set +e
   long_output=$(other_payload "$long_text" "$fr/sub" \

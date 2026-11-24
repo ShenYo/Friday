@@ -142,19 +142,27 @@ case "$tool_name" in
     # appended only when it differs from the command as written and from the
     # other copy. Every scan below reads the concatenation line by line,
     # except the `cd` scan, which reads each copy on its own (see there).
-    # Linear: a few matches per line, no per-character loop (BSD awk took
-    # minutes on a 600 KB line with one).
+    # Linear: the join streams each line out as it is read, so no string grows
+    # with the number of continued lines (BSD awk took minutes on that and on
+    # a 600 KB line with a per-character loop), and the comment test, a few
+    # gsub passes over the line, runs only on a line that ends in a
+    # continuation. The strip leaves a placeholder so that removing a quoted
+    # span cannot make a new word start (`tee ""#z` is not `tee #z`).
     join_awk='
-      function emit() { print cur; cur = ""; joined = 0 }
       {
-        s = $0
-        if (nocomment) gsub(/\\.|"[^"]*"|\047[^\047]*\047/, "", s)
-        if (match($0, /\\+$/) && RLENGTH % 2 == 1 \
-            && !(nocomment && s ~ /(^|[[:space:];&|()])#/)) {
-          cur = cur substr($0, 1, length($0) - 1); joined = 1
-        } else { cur = cur $0; emit() }
+        cont = 0
+        if (match($0, /\\+$/) && RLENGTH % 2 == 1) {
+          cont = 1
+          if (nocomment) {
+            s = $0
+            gsub(/\\.|"[^"]*"|\047[^\047]*\047/, "_", s)
+            if (s ~ /(^|[[:space:];&|()])#/) cont = 0
+          }
+        }
+        if (cont) { printf "%s", substr($0, 1, length($0) - 1); joined = 1 }
+        else { printf "%s", $0; print ""; joined = 0 }
       }
-      END { if (joined) emit() }'
+      END { if (joined) print "" }'
     joined_all=$(printf '%s\n' "$command" | awk "$join_awk") \
       || block "unable to read the Bash command"
     joined_nocomment=$(printf '%s\n' "$command" | awk -v nocomment=1 "$join_awk") \
@@ -204,11 +212,15 @@ case "$tool_name" in
         }
         return 0
       }
-      function tokenize(s,   k, c, q, cur, have) {
+      # split() once, then index the array: substr(s, k, 1) walks the string
+      # on BSD awk, so a per-character loop over a long clause (a joined
+      # continuation makes one) was quadratic.
+      function tokenize(s,   k, c, q, cur, have, len, ch) {
         nt = 0; q = ""; cur = ""; have = 0
-        for (k = 1; k <= length(s); k++) {
-          c = substr(s, k, 1)
-          if (c == "\\" && q != "\047" && k < length(s)) { cur = cur c substr(s, ++k, 1); have = 1 }
+        len = split(s, ch, "")
+        for (k = 1; k <= len; k++) {
+          c = ch[k]
+          if (c == "\\" && q != "\047" && k < len) { cur = cur c ch[++k]; have = 1 }
           else if (q != "") { cur = cur c; if (c == q) q = "" }
           else if (c == "\"" || c == "\047") { q = c; cur = cur c; have = 1 }
           else if (c == " " || c == "\t") { if (have) { tk[++nt] = cur; cur = ""; have = 0 } }

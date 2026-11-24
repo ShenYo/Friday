@@ -155,8 +155,8 @@ case "$tool_name" in
           cont = 1
           if (nocomment) {
             s = $0
-            gsub(/\\.|"[^"]*"|\047[^\047]*\047/, "_", s)
-            if (s ~ /(^|[[:space:];&|()])#/) cont = 0
+            gsub(/\\.|"([^"\\]|\\.)*"|\047[^\047]*\047/, "_", s)
+            if (s ~ /(^|[ \t;&|()])#/) cont = 0
           }
         }
         if (cont) { printf "%s", substr($0, 1, length($0) - 1); joined = 1 }
@@ -188,6 +188,10 @@ case "$tool_name" in
     # /dev/null.) Dropping a redirection also exposes the operand before
     # 'cp a b 2>/dev/null'.
     clause_awk='
+      # tokenize() needs split() on an empty separator to give characters. An
+      # awk that does not would leave one token per clause and the guard open,
+      # so such an awk makes the scan emit a marker that the loop below blocks.
+      BEGIN { if (split("ab", sp, "") != 2) { print "@@awk-cannot-split@@"; exit 3 } }
       function clean(f) { if (f !~ /\(/) sub(/\)+$/, "", f); sub(/`+$/, "", f); return f }
       function unq(s,   k, c, q, out) {
         q = ""; out = ""
@@ -282,6 +286,8 @@ case "$tool_name" in
         }
       }'
     while IFS= read -r p; do
+      [ "$p" = "@@awk-cannot-split@@" ] \
+        && block "this awk cannot split a string into characters; the guard cannot read the command."
       [ -n "$p" ] && targets+=("$p")
     # `|| true` on each: grep exits 1 when a form is absent, and under
     # `set -e` with pipefail that would abort this subshell before the later

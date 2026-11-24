@@ -1007,6 +1007,8 @@ for refused in \
   $'echo x #\\\ncp a\\ #b \\\n../CLAUDE.md' \
   $'echo x #\\\ntee \'\'#z \\\n../CLAUDE.md' \
   $'echo x #\\\ncp "y"#z \\\n../CLAUDE.md' \
+  $'echo x #\\\ntee "a\\"b #" \\\n../CLAUDE.md' \
+  $'echo x #\\\ntee a\r#z \\\n../CLAUDE.md' \
   $'c\\\nd a\ncd b && cp x deep.md' \
   $'c\\\nd '"$cdroot/sub/a"$'\ncd b && cp x deep.md' \
   $'pus\\\nhd a\ncd b && cp x deep.md' \
@@ -1108,6 +1110,12 @@ wide_command="echo '$(head -c 600000 /dev/zero | tr '\0' a)'"
 protected_guard_run "$wide_command"
 [ "$protected_exit" -eq 0 ] \
   || fail "protected-paths guard returned $protected_exit (142 is the alarm) for a ${#wide_command}-character quoted line: $protected_output"
+# 500,000 continued lines: the join and the comment test must stay linear.
+many_command=$(awk 'BEGIN { for (n = 0; n < 500000; n++) print "a \\" }')
+many_command="$many_command"$'\n'"cp a out.txt"
+protected_guard_run "$many_command"
+[ "$protected_exit" -eq 0 ] \
+  || fail "protected-paths guard returned $protected_exit (142 is the alarm) for ${#many_command} characters of continued lines: $protected_output"
 # The collaborative-Git guard has the same blank-command check and the same
 # stall on bash 3.2; it takes a long command under the same alarm.
 set +e

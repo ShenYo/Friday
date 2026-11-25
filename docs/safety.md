@@ -119,7 +119,10 @@ runs it when the agent types `gh pr merge <n> --auto --squash -R <owner>/<repo>`
 any other form with `--auto` is blocked. The check fails closed: when the rules
 cannot be read, as on a free-plan private repository, the answer is no, and the
 merge is left to a person. A repository opts out with `.agents/auto-merge` saying
-`off`. The conditions are in
+`off`, read from the base branch of the target repository, so a change takes
+effect only once it is merged. Merging or arming through `gh api` is blocked
+outright. The token check sees the hook's environment, not a shell profile's.
+The conditions are in
 [the safety boundary](../payload/.agents/docs/git-guideline/safety-boundary.md#arming-auto-merge).
 
 Locally, this repository runs the payload's hooks themselves, not copies:

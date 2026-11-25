@@ -9,9 +9,11 @@
 # when the rules cannot be read, nothing guarantees the owner's approval
 # decides the merge, so the agent leaves the merge to a person.
 #
-#   opt-out    .agents/auto-merge is absent or says `on` (`off` disables)
-#   token      neither GH_TOKEN nor GITHUB_TOKEN is set (names only; a value
-#              is never read into output)
+#   opt-out    .agents/auto-merge, read from the base branch of the target
+#              repository, is absent or says `on` (`off` disables)
+#   token      neither GH_TOKEN nor GITHUB_TOKEN is set in this process's
+#              environment (names only; a value is never read into output)
+#   owner      the repository is owned by a user, not an organization
 #   repo       the pull request is open, and the repository allows auto-merge
 #   rules      the base branch has exactly one pull_request rule, with
 #              required_approving_review_count >= 1 and require_code_owner_review,
@@ -29,23 +31,8 @@ usage() { echo "usage: check-auto-merge <n> -R <owner>/<repo>" >&2; exit 2; }
 n=$1
 repo=$3
 [[ $n =~ ^[0-9]+$ ]] || usage
-[[ $repo =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]] || usage
+[[ $repo =~ ^[A-Za-z0-9_-][A-Za-z0-9._-]*/[A-Za-z0-9_-][A-Za-z0-9._-]*$ ]] || usage
 owner=${repo%%/*}
-
-here=$(CDPATH= cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-optout_file="$here/../auto-merge"
-
-# opt-out: absent or `on` enables; `off` disables; anything else fails closed.
-if [ -e "$optout_file" ] || [ -L "$optout_file" ]; then
-  [ -f "$optout_file" ] && [ -r "$optout_file" ] \
-    || fail "opt-out: .agents/auto-merge is not a readable file"
-  setting=$(tr -d '[:space:]' < "$optout_file")
-  case "$setting" in
-    on) ;;
-    off) fail "opt-out: .agents/auto-merge says off" ;;
-    *) fail "opt-out: .agents/auto-merge must say on or off" ;;
-  esac
-fi
 
 for tool in gh jq; do
   command -v "$tool" >/dev/null 2>&1 || fail "tool: $tool is not installed"
@@ -80,8 +67,30 @@ base=$(printf '%s' "$pr" | jq -er '.base.ref | select(type == "string" and lengt
 state=$(printf '%s' "$pr" | jq -r '.state // ""' 2>/dev/null) \
   || fail "repo: cannot parse the pull request"
 [ "$state" = open ] || fail "repo: pull request $n is not open"
+# The branch name goes into URLs: encode it, or a `#` or `?` in it makes gh read
+# another branch (main#x reads main).
+base_enc=$(jq -rn --arg b "$base" '$b | @uri') \
+  || fail "repo: cannot encode the base branch name"
 
-api rules "repos/$repo/rules/branches/$base"
+# opt-out: read from the base branch of the target repository, never from the
+# local checkout, so the owner's choice is the one that has been merged. Absent
+# (404) enables; `on` enables; `off` and anything else fail.
+if ! optout_out=$(gh api "repos/$repo/contents/.agents/auto-merge?ref=$base_enc" \
+  -H 'Accept: application/vnd.github.raw' 2>&1); then
+  case $optout_out in
+    *"(HTTP 404)"*) optout=on ;;
+    *) fail "opt-out: cannot read .agents/auto-merge on $base: $(printf '%s' "${optout_out##*gh: }" | tail -n 1 | cut -c1-160)" ;;
+  esac
+else
+  optout=$(printf '%s' "$optout_out" | tr -d '[:space:]')
+fi
+case $optout in
+  on) ;;
+  off) fail "opt-out: .agents/auto-merge on $base says off" ;;
+  *) fail "opt-out: .agents/auto-merge on $base must say on or off" ;;
+esac
+
+api rules "repos/$repo/rules/branches/$base_enc?per_page=100"
 rules=$body
 pr_rules=$(printf '%s' "$rules" | jq -ec '[.[] | select(.type == "pull_request")]' 2>/dev/null) \
   || fail "rules: cannot parse the rules of $base"
@@ -104,7 +113,7 @@ ruleset=$body
 [ "$(printf '%s' "$ruleset" | jq -r '.current_user_can_bypass // ""' 2>/dev/null)" = never ] \
   || fail "ruleset: current_user_can_bypass is not never"
 
-api codeowners "repos/$repo/contents/.github/CODEOWNERS?ref=$base" \
+api codeowners "repos/$repo/contents/.github/CODEOWNERS?ref=$base_enc" \
   -H 'Accept: application/vnd.github.raw'
 codeowners=$body
 rules_lines=$(printf '%s\n' "$codeowners" | sed -e 's/[[:space:]]*#.*$//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | grep -v '^$' || true)
@@ -125,6 +134,8 @@ perm=$body
 
 api repo "repos/$repo"
 repo_json=$body
+[ "$(printf '%s' "$repo_json" | jq -r '.owner.type // ""' 2>/dev/null)" = User ] \
+  || fail "owner: $repo is not owned by a user, so '* @$owner' is not a valid CODEOWNERS owner"
 printf '%s' "$repo_json" | jq -e '.allow_auto_merge == true' >/dev/null 2>&1 \
   || fail "repo: $repo does not allow auto-merge (allow_auto_merge is not true)"
 

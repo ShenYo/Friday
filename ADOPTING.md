@@ -307,8 +307,16 @@ above, give `.github/CODEOWNERS` the single line `* @your-login`, allow
 auto-merge in the repository's settings, and have the agent act through its own
 write-access login with no `GH_TOKEN` or `GITHUB_TOKEN` set. A repository that
 cannot read its rules, such as a free-plan private one, never qualifies, and the
-merge stays a person's. To opt out, put `off` in `.agents/auto-merge`, a seed the
-install creates saying `on`. Check a pull request yourself:
+merge stays a person's. The repository must be owned by a user, not an
+organization, because the CODEOWNERS line names a user. The token check sees the
+environment of the hook process; a token exported only in a shell profile is not
+visible to it, so keep the profile free of both variables as well. Merging or
+arming through `gh api` (`enablePullRequestAutoMerge`, `mergePullRequest`, a
+`pulls/<n>/merge` path) is blocked outright; use the plain form above. To opt
+out, put `off` in `.agents/auto-merge`, a seed the install creates saying `on`.
+The check reads that file from the base branch of the target repository, not from
+the local checkout, so a change takes effect only once it is merged. Check a pull
+request yourself:
 
 ```sh
 .agents/bin/check-auto-merge <n> -R <owner>/<repo>

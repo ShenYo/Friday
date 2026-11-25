@@ -248,8 +248,13 @@ owner 對最新 push 的 approval 決定 merge 的情況。payload 的 `.agents/
 其他帶 `--auto` 的寫法一律擋下。要符合條件：套用上面的 ruleset、讓 `.github/CODEOWNERS`
 只有一行 `* @your-login`、在 repository 設定中允許 auto-merge，並讓 agent 以自己有 write
 權限的登入工作，且不設定 `GH_TOKEN` 或 `GITHUB_TOKEN`。讀不到規則的 repository（例如免費方案的
-private repository）永遠不符合，merge 仍由人決定。要關閉就在 `.agents/auto-merge` 寫 `off`；
-安裝會建立這個 seed，內容為 `on`。可以自己檢查某個 pull request：
+private repository）永遠不符合，merge 仍由人決定。repository 必須屬於 user 而非 organization，
+因為 CODEOWNERS 那一行指的是 user。token 檢查看到的是 hook process 的環境；只在 shell profile
+中 export 的 token 看不到，所以 profile 也不要設定這兩個變數。透過 `gh api` merge 或開啟 auto-merge
+（`enablePullRequestAutoMerge`、`mergePullRequest`、`pulls/<n>/merge` 路徑）一律擋下，請用上面的
+標準寫法。要關閉就在 `.agents/auto-merge` 寫 `off`；安裝會建立這個 seed，內容為 `on`。檢查會從目標
+repository 的 base branch 讀這個檔案，而不是本機 checkout，所以變更要 merge 之後才生效。可以自己檢查某個
+pull request：
 
 ```sh
 .agents/bin/check-auto-merge <n> -R <owner>/<repo>

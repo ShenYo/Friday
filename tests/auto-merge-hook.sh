@@ -66,8 +66,23 @@ for bad in \
   'echo x && gh pr merge 12 --auto --squash -R o/r' \
   'gh  pr merge 12 --auto --squash -R o/r' \
   'gh pr merge 12 --auto --squash -R o/r --match-head-commit abc' \
+  'gh pr merge 12 --auto --squash -R ../..' \
+  'gh pr merge 12 --auto --squash -R ./r' \
   'gh pr merge 12 --merge' \
-  'gh pr merge 12'; do
+  'gh pr merge 12' \
+  "gh api graphql -f query='mutation{enablePullRequestAutoMerge(input:{pullRequestId:\"X\",mergeMethod:SQUASH}){clientMutationId}}'" \
+  "gh api graphql -f query='mutation{mergePullRequest(input:{pullRequestId:\"X\"}){clientMutationId}}'" \
+  'gh api -X PUT repos/o/r/pulls/12/merge' \
+  'gh api repos/o/r/pulls/12/merge --method PUT' \
+  'gh api repos/o/r/pulls/12/merge' \
+  '\gh pr merge 12 --auto --squash' \
+  '\gh pr merge 12 --auto --squash -R o/r' \
+  '/opt/homebrew/bin/gh pr merge 12 --auto --squash' \
+  '/opt/homebrew/bin/gh pr merge 12 --auto --squash -R o/r' \
+  '"gh" pr merge 12 --auto' \
+  "'gh' pr merge 12 --auto --squash -R o/r" \
+  '"/opt/homebrew/bin/gh" pr merge 12 --auto --squash -R o/r' \
+  '\gh api -X PUT repos/o/r/pulls/12/merge'; do
   expect "blocked even with a passing check: $bad" 2 "BLOCKED" "$bad"
 done
 [ ! -e "$work/args" ] \
@@ -80,6 +95,17 @@ for allowed in \
   expect "--disable-auto is allowed: $allowed" 0 "" "$allowed"
 done
 expect "--disable-auto with a chained command is blocked" 2 "BLOCKED" 'gh pr merge 12 --disable-auto && gh pr merge 12 --auto'
+
+# Ordinary reads and non-merge gh calls stay allowed (the merge rules must not
+# make the guard unusable).
+for allowed in \
+  'gh api repos/o/r/pulls/12' \
+  'gh api repos/o/r/pulls/12/comments' \
+  'gh api repos/o/r/pulls/12/merge-readiness' \
+  'gh pr view 12' \
+  'gh pr view 12 -R o/r --json state'; do
+  expect "ordinary read is allowed: $allowed" 0 "" "$allowed"
+done
 
 rm -f "$stub"
 expect "a missing check script blocks the armed form" 2 "check-auto-merge is missing" "$armed"

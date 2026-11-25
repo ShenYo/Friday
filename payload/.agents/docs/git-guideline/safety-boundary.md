@@ -113,8 +113,12 @@ The check is what makes the exception safe. Without a ruleset that requires the
 owner's approval, an armed pull request merges as soon as CI is green. It exits
 0 only when all of these hold, and otherwise prints the condition that failed:
 
-- `.agents/auto-merge` is absent or says `on` (`off` opts the repository out;
-  anything else fails);
+- `.agents/auto-merge`, read from the base branch of the target repository
+  through the contents API and not from the local checkout, is absent (404) or
+  says `on` (`off` opts the repository out; anything else, or any other error,
+  fails). A change takes effect only once it is merged;
+- the repository is owned by a user, not an organization (`* @<owner>` is not a
+  valid CODEOWNERS owner for an organization);
 - the base branch has exactly one `pull_request` rule, requiring at least one
   approving review, code-owner review, dismissal of stale approvals on push and
   approval of the last push, and that rule's ruleset is `active` with
@@ -122,7 +126,8 @@ owner's approval, an armed pull request merges as soon as CI is green. It exits
 - `.github/CODEOWNERS` on the base branch is, apart from comments, a single
   `* @<owner>` rule;
 - the acting login's `role_name` on the repository is `write`, and neither
-  `GH_TOKEN` nor `GITHUB_TOKEN` is set;
+  `GH_TOKEN` nor `GITHUB_TOKEN` is set. That check sees the environment of the
+  hook process; a variable exported only in a shell profile is not visible to it;
 - the repository allows auto-merge, and the pull request is open.
 
 Any error reading these, a 403 included, is a failure: a private repository on
@@ -131,8 +136,12 @@ shared runtime guard, which the Claude Code and Codex adapters both invoke,
 enforces this at the moment of use: it allows `gh pr merge`
 with `--auto` only as the whole command `gh pr merge <n> --auto --squash -R
 <owner>/<repo>`, and only when the check passes; any other form with `--auto`,
-or a failing check, is blocked with the check's reason. `--disable-auto` stays
-allowed.
+or a failing check, is blocked with the check's reason, whether `gh` is typed
+bare, as `\gh`, quoted, or with a path. A `gh api` call that names
+`enablePullRequestAutoMerge`, `mergePullRequest` or a `pulls/<n>/merge` path is
+blocked whatever its method: merging and arming go through the plain
+`gh pr merge <n> --auto --squash -R owner/repo` form only. `--disable-auto`
+stays allowed.
 
 When the check fails, or the repository opted out, the agent does not arm: it
 leaves the merge to a person and says in the pull request which condition

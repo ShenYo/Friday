@@ -477,6 +477,14 @@ require_guard_blocked '{"tool_name":"Bash","tool_input":{"command":"gh pr merge 
 require_guard_blocked '{"tool_name":"Bash","tool_input":{"command":"gh pr merge 12 --auto --squash -R \"o/r\""}}'
 require_guard_blocked '{"tool_name":"Bash","tool_input":{"command":"gh pr merge $(echo 12) --auto --squash -R o/r"}}'
 require_guard_blocked '{"tool_name":"Bash","tool_input":{"command":"gh pr merge 12 --auto --squash -R o/r && echo done"}}'
+require_guard_blocked '{"tool_name":"Bash","tool_input":{"command":"gh pr merge 12 --auto --squash -R ../.."}}'
+# Merging or arming through gh api, or through a spelling of gh the plain
+# patterns miss, must never reach the check-free path.
+require_guard_blocked '{"tool_name":"Bash","tool_input":{"command":"gh api graphql -f query=\u0027mutation{enablePullRequestAutoMerge(input:{pullRequestId:X})}\u0027"}}'
+require_guard_blocked '{"tool_name":"Bash","tool_input":{"command":"gh api -X PUT repos/o/r/pulls/12/merge"}}'
+require_guard_blocked '{"tool_name":"Bash","tool_input":{"command":"\\gh pr merge 12 --auto --squash"}}'
+require_guard_blocked '{"tool_name":"Bash","tool_input":{"command":"/opt/homebrew/bin/gh pr merge 12 --auto --squash"}}'
+require_guard_blocked '{"tool_name":"Bash","tool_input":{"command":"\"gh\" pr merge 12 --auto"}}'
 run_guard '{"tool_name":"Bash","tool_input":{"command":"gh pr merge 12 --disable-auto"}}'
 [ "$guard_exit" -eq 0 ] || fail "guard blocked --disable-auto: $guard_output"
 run_guard '{"tool_name":"Bash","tool_input":{"command":"gh pr merge 12 --disable-auto -R o/r"}}'
@@ -496,6 +504,8 @@ for allowed_command in \
   'git branch feat/new' \
   'gh pr create --fill' \
   'gh pr view 12' \
+  'gh api repos/o/r/pulls/12' \
+  'gh api repos/o/r/pulls/12/comments' \
   'gh pr review --approve 12'; do
   run_guard "$(jq -cn --arg c "$allowed_command" \
     '{tool_name:"Bash", tool_input:{command:$c}}')"

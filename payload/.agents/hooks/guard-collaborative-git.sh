@@ -81,8 +81,8 @@ scan_command=$(printf '%s' "$command" \
 # --auto (extra flags, quoting, substitution, chaining), falls through to the
 # patterns below and is blocked. Matched against the raw command: a quote is a
 # reason to refuse here, so nothing is normalised away first.
-auto_merge_form='^gh pr merge ([0-9]+) --auto --squash -R ([A-Za-z0-9._-]+/[A-Za-z0-9._-]+)$'
-disable_auto_form='^gh pr merge [0-9]+ --disable-auto( -R [A-Za-z0-9._-]+/[A-Za-z0-9._-]+)?$'
+auto_merge_form='^gh pr merge ([0-9]+) --auto --squash -R ([A-Za-z0-9_-][A-Za-z0-9._-]*/[A-Za-z0-9_-][A-Za-z0-9._-]*)$'
+disable_auto_form='^gh pr merge [0-9]+ --disable-auto( -R [A-Za-z0-9_-][A-Za-z0-9._-]*/[A-Za-z0-9_-][A-Za-z0-9._-]*)?$'
 if [[ $command =~ $disable_auto_form ]]; then
   exit 0
 fi
@@ -106,6 +106,25 @@ if [[ $command =~ $auto_merge_form ]]; then
   block "'$command' is refused: ${auto_merge_reason:-check-auto-merge failed}. Leave the merge to a person and say in the pull request which condition failed."
 fi
 
+# `gh` can be spelled so that the patterns below, which look for a bare `gh`
+# word, miss it: a quoted `"gh"` (the quote removal above turns it into a
+# placeholder), `\gh`, or a path such as /opt/homebrew/bin/gh. The patterns
+# below also match the last two. The quoted spellings are matched here, on the
+# raw command, and refused for every merge or arming form.
+quoted_gh='(^|[[:space:];|&])["'"'"']([^"'"'"'[:space:]]*/)?gh["'"'"']'
+if [[ $command =~ ${quoted_gh}[[:space:]]+pr[[:space:]]+merge ||
+  $command =~ ${quoted_gh}[[:space:]]+(pr|repo)[[:space:]].*--auto ]]; then
+  block "'$command' is refused: write gh unquoted and without a path, so that the guard can read it. Arm auto-merge only as 'gh pr merge <n> --auto --squash -R owner/repo'."
+fi
+
+# Merging or arming through the API skips every check above, so a gh api call
+# that names the GraphQL mutations or the REST merge path is refused whatever
+# its method, and so is anything that merely contains one of those names.
+api_merge='(^|[^[:alnum:]_])gh["'"'"']?[[:space:]]+api[[:space:]].*(enablePullRequestAutoMerge|mergePullRequest|pulls/[0-9]+/merge([^[:alnum:]_-]|$))'
+if [[ $command =~ $api_merge ]]; then
+  block "'$command' is refused: merging and arming auto-merge through gh api is never allowed. Merge or arm only through the plain 'gh pr merge <n> --auto --squash -R owner/repo' form, which checks the repository first."
+fi
+
 blocked_patterns=(
   # Matched against scan_command, in which every quoted argument has already
   # been replaced by a placeholder. So a dangerous word inside a commit message
@@ -122,8 +141,8 @@ blocked_patterns=(
   "git[[:space:]][^;|&]*worktree[[:space:]]+remove([[:space:];|&]|\$)"
   "git[[:space:]][^;|&]*remote[[:space:]]+(remove|set-url)([[:space:];|&]|\$)"
   "(^|[[:space:];|&])find[[:space:]][^;|&]*-delete([[:space:];|&]|\$)"
-  "(^|[[:space:];|&])gh[[:space:]]+repo[[:space:]]+delete([[:space:];|&]|\$)"
-  "(^|[[:space:];|&])gh[[:space:]]+api[^;|&]*(-X(=|[[:space:]]*)DELETE|--method(=|[[:space:]]+)DELETE)([[:space:];|&]|\$)"
+  "(^|[[:space:];|&\\/])gh[[:space:]]+repo[[:space:]]+delete([[:space:];|&]|\$)"
+  "(^|[[:space:];|&\\/])gh[[:space:]]+api[^;|&]*(-X(=|[[:space:]]*)DELETE|--method(=|[[:space:]]+)DELETE)([[:space:];|&]|\$)"
   # Human-review checkpoints. Not irreversible; reserved because integrating a
   # change, delegating that decision to CI, or altering a shared review
   # artifact is a person's call however many automated checks passed.
@@ -131,9 +150,9 @@ blocked_patterns=(
   # guard sees a command and cannot tell an author from an independent
   # reviewer, so that rule lives in safety-boundary.md and is enforced by
   # instruction rather than by this guard.
-  "(^|[[:space:];|&])gh[[:space:]]+pr[[:space:]]+merge([[:space:];|&]|\$)"
-  "(^|[[:space:];|&])gh[[:space:]]+pr[[:space:]]+(close|reopen)([[:space:];|&]|\$)"
-  "(^|[[:space:];|&])gh[[:space:]]+(pr|repo)[[:space:]][^;|&]*--auto([[:space:];|&=]|\$)"
+  "(^|[[:space:];|&\\/])gh[[:space:]]+pr[[:space:]]+merge([[:space:];|&]|\$)"
+  "(^|[[:space:];|&\\/])gh[[:space:]]+pr[[:space:]]+(close|reopen)([[:space:];|&]|\$)"
+  "(^|[[:space:];|&\\/])gh[[:space:]]+(pr|repo)[[:space:]][^;|&]*--auto([[:space:];|&=]|\$)"
   # Bypassing the commit-time hooks. Those hooks are where the secret scan and
   # the message checks actually run, so skipping them turns the whole contract
   # back into advice. `-n` is spelled out per subcommand on purpose: for commit

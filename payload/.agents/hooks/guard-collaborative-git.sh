@@ -120,7 +120,11 @@ fi
 # Merging or arming through the API skips every check above, so a gh api call
 # that names the GraphQL mutations or the REST merge path is refused whatever
 # its method, and so is anything that merely contains one of those names.
-api_merge='(^|[^[:alnum:]_])gh["'"'"']?[[:space:]]+api[[:space:]].*(enablePullRequestAutoMerge|mergePullRequest|pulls/[0-9]+/merge([^[:alnum:]_-]|$))'
+# The match stays inside one command (no `;`, `|`, `&` or newline between `gh api`
+# and the name), so a read of another endpoint followed by a grep for the name
+# is not refused. `pulls/<anything>/merge` catches `$n` and `${n}` too.
+nl=$'\n'
+api_merge='(^|[^[:alnum:]_])gh["'"'"']?[[:space:]]+api[[:space:]][^;|&'"$nl"']*(enablePullRequestAutoMerge|mergePullRequest|pulls/[^/[:space:]]+/merge([^[:alnum:]_-]|$))'
 if [[ $command =~ $api_merge ]]; then
   block "'$command' is refused: merging and arming auto-merge through gh api is never allowed. Merge or arm only through the plain 'gh pr merge <n> --auto --squash -R owner/repo' form, which checks the repository first."
 fi

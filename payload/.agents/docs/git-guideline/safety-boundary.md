@@ -133,15 +133,16 @@ owner's approval, an armed pull request merges as soon as CI is green. It exits
 Any error reading these, a 403 included, is a failure: a private repository on
 a free GitHub plan cannot read rulesets, so there the answer is always no. The
 shared runtime guard, which the Claude Code and Codex adapters both invoke,
-enforces this at the moment of use: it allows `gh pr merge`
+refuses the plain spellings at the moment of use: it allows `gh pr merge`
 with `--auto` only as the whole command `gh pr merge <n> --auto --squash -R
 <owner>/<repo>`, and only when the check passes; any other form with `--auto`,
 or a failing check, is blocked with the check's reason, whether `gh` is typed
 bare, as `\gh`, quoted, or with a path. A `gh api` call that names
 `enablePullRequestAutoMerge`, `mergePullRequest` or a `pulls/<n>/merge` path is
-blocked whatever its method: merging and arming go through the plain
+refused whatever its method: merging and arming go through the plain
 `gh pr merge <n> --auto --squash -R owner/repo` form only. `--disable-auto`
-stays allowed.
+stays allowed. This is a tripwire, not a lock: the spellings that still pass
+are listed under [what neither layer enforces](#what-neither-layer-enforces).
 
 When the check fails, or the repository opted out, the agent does not arm: it
 leaves the merge to a person and says in the pull request which condition
@@ -277,6 +278,7 @@ vague to trace to one task. The runtime guard refuses `--no-verify`, its
 bundled short form, and `-c core.hooksPath`, without which either hook could be
 skipped. The checker executes both in a scratch repository.
 
+<a id="what-neither-layer-enforces"></a>
 What **neither** layer enforces. Independent review established this list by
 probing the guard directly; treat every row here as instruction-only, and do
 not assume a rule has machinery behind it because it appears in a table above.
@@ -287,12 +289,17 @@ not assume a rule has machinery behind it because it appears in a table above.
   without matching a pattern, and plumbing equivalents of a blocked porcelain
   command generally do too. What leaves the machine is covered by `pre-push`
   below; what stays local is not.
-- **`gh` reached by any spelling but a bare `gh` at the start of a word.** A
-  path prefix, a subshell, `eval`, or a quoted or lowercased verb all pass. So
-  does the REST API route to a blocked operation: merging through
-  `gh api --method PUT .../merge`, deleting through `gh api -X delete`, or
-  changing branch protection, collaborators, visibility or auto-merge through
-  their endpoints.
+- **`gh` reached by an unusual spelling.** A path prefix, `\gh` and a quoted
+  `gh` are now refused for every merge or arming form, and a `gh api` call
+  that names `enablePullRequestAutoMerge`, `mergePullRequest` or a
+  `pulls/<n>/merge` path is refused, `$n` and `${n}` spellings included. Still
+  passing: `eval`, `bash -c`, a command name or path built from a variable,
+  `gh api graphql -F query=@file`, `--input`, `-f query="$Q"`, `gh alias`, and
+  the other REST routes to a blocked operation (deleting through
+  `gh api -X delete`, or changing branch protection, collaborators or
+  visibility through their endpoints). Against these, the control that holds is
+  the server-side ruleset, which requires the owner's approval of the last push
+  ([above](#the-server-side-ruleset)).
 - **Whether a commit actually covers one task.** A vague summary is refused
   because a lumped commit cannot be given a specific one, but a
   specific-sounding summary on a mixed commit passes.

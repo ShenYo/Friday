@@ -120,8 +120,9 @@ any other form with `--auto` is blocked. The check fails closed: when the rules
 cannot be read, as on a free-plan private repository, the answer is no, and the
 merge is left to a person. A repository opts out with `.agents/auto-merge` saying
 `off`, read from the base branch of the target repository, so a change takes
-effect only once it is merged. Merging or arming through `gh api` is blocked
-outright. The token check sees the hook's environment, not a shell profile's.
+effect only once it is merged. Merging or arming through `gh api` is refused in
+its plain spellings ([what still passes](../payload/.agents/docs/git-guideline/safety-boundary.md#what-neither-layer-enforces));
+the server-side ruleset, which needs the owner's approval of the last push, is the control that holds against the rest. The token check sees the hook's environment, not a shell profile's.
 The conditions are in
 [the safety boundary](../payload/.agents/docs/git-guideline/safety-boundary.md#arming-auto-merge).
 

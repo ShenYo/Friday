@@ -96,6 +96,7 @@ set_rules() { # <jq filter over the rules array>
 scenario; expect_pass "every condition holds"
 scenario; echo on > "$SCEN/$optout"; expect_pass "opt-out file says on"
 scenario; echo off > "$SCEN/$optout"; expect_fail "opt-out off" "opt-out: .agents/auto-merge on main says off"
+scenario; echo "gh: No commit found for the ref main (HTTP 404)" > "$SCEN/$optout.fail"; expect_fail "opt-out ref not found" "opt-out: cannot read .agents/auto-merge on main"
 scenario; echo maybe > "$SCEN/$optout"; expect_fail "opt-out unknown value" "opt-out: .agents/auto-merge on main must say on or off"
 scenario; echo "gh: Server Error (HTTP 500)" > "$SCEN/$optout.fail"; expect_fail "opt-out unreadable" "opt-out: cannot read .agents/auto-merge on main"
 scenario; expect_fail "GH_TOKEN set" "token: GH_TOKEN is set" GH_TOKEN=value-one-0001
@@ -168,7 +169,8 @@ PY
 mutate optout-off "opt-out off" 'off) fail "opt-out: .agents/auto-merge on $base says off" ;;' 'off) ;;'
 mutate optout-garbage "opt-out unknown value" '*) fail "opt-out: .agents/auto-merge on $base must say on or off" ;;' '*) ;;'
 mutate optout-error "opt-out unreadable" '*) fail "opt-out: cannot read' '*) optout=on; true "opt-out: cannot read'
-mutate optout-404 "every condition holds" '*"(HTTP 404)"*) optout=on ;;' '*"(HTTP 404)"*) optout=off ;;'
+mutate optout-ref404 "opt-out ref not found" '*"Not Found (HTTP 404)"*) optout=on ;;' '*"(HTTP 404)"*) optout=on ;;'
+mutate optout-404 "every condition holds" '*"Not Found (HTTP 404)"*) optout=on ;;' '*"Not Found (HTTP 404)"*) optout=off ;;'
 mutate token-gh "GH_TOKEN set" 'for name in GH_TOKEN GITHUB_TOKEN; do' 'for name in GITHUB_TOKEN; do'
 mutate token-github "GITHUB_TOKEN set" 'for name in GH_TOKEN GITHUB_TOKEN; do' 'for name in GH_TOKEN; do'
 mutate tools "gh missing" 'command -v "$tool" >/dev/null 2>&1 || fail' 'true || fail'

@@ -82,7 +82,9 @@ for bad in \
   '"gh" pr merge 12 --auto' \
   "'gh' pr merge 12 --auto --squash -R o/r" \
   '"/opt/homebrew/bin/gh" pr merge 12 --auto --squash -R o/r' \
-  '\gh api -X PUT repos/o/r/pulls/12/merge'; do
+  '\gh api -X PUT repos/o/r/pulls/12/merge' \
+  'gh api -X PUT "repos/o/r/pulls/$n/merge"' \
+  'gh api -X PUT repos/o/r/pulls/${n}/merge'; do
   expect "blocked even with a passing check: $bad" 2 "BLOCKED" "$bad"
 done
 [ ! -e "$work/args" ] \
@@ -102,6 +104,8 @@ for allowed in \
   'gh api repos/o/r/pulls/12' \
   'gh api repos/o/r/pulls/12/comments' \
   'gh api repos/o/r/pulls/12/merge-readiness' \
+  'gh api repos/o/r/pulls/12/comments; grep -r "pulls/12/merge" docs' \
+  "gh api repos/o/r/pulls/12/comments | jq 'test(\"mergePullRequest\")'" \
   'gh pr view 12' \
   'gh pr view 12 -R o/r --json state'; do
   expect "ordinary read is allowed: $allowed" 0 "" "$allowed"

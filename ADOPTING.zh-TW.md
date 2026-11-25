@@ -251,7 +251,9 @@ owner 對最新 push 的 approval 決定 merge 的情況。payload 的 `.agents/
 private repository）永遠不符合，merge 仍由人決定。repository 必須屬於 user 而非 organization，
 因為 CODEOWNERS 那一行指的是 user。token 檢查看到的是 hook process 的環境；只在 shell profile
 中 export 的 token 看不到，所以 profile 也不要設定這兩個變數。透過 `gh api` merge 或開啟 auto-merge
-（`enablePullRequestAutoMerge`、`mergePullRequest`、`pulls/<n>/merge` 路徑）一律擋下，請用上面的
+（`enablePullRequestAutoMerge`、`mergePullRequest`、`pulls/<n>/merge` 路徑）只擋下一般寫法，
+不是每種寫法都擋（[仍會通過的寫法](payload/.agents/docs/git-guideline/safety-boundary.md#what-neither-layer-enforces)）；
+真正擋得住那些寫法的是 server 端的 ruleset，它要求 owner 核准最後一次 push。請用上面的
 標準寫法。要關閉就在 `.agents/auto-merge` 寫 `off`；安裝會建立這個 seed，內容為 `on`。檢查會從目標
 repository 的 base branch 讀這個檔案，而不是本機 checkout，所以變更要 merge 之後才生效。可以自己檢查某個
 pull request：

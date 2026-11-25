@@ -140,8 +140,9 @@ Each step ends on the condition that says it is done.
   [`check-auto-merge`](payload/.agents/bin/check-auto-merge) passes; the shipped
   guard enforces it. The rule and its conditions are in
   [`safety-boundary.md`](payload/.agents/docs/git-guideline/safety-boundary.md#arming-auto-merge).
-  Here the opt-out file is the payload's own `payload/.agents/auto-merge`,
-  which says `on`. The squash commit's message is the repository's default,
+  Friday opts out with a root `.agents/auto-merge` on its base branch (absent
+  means `on`); `payload/.agents/auto-merge` is only the seed consumers receive,
+  and stays `on`. The squash commit's message is the repository's default,
   set to the pull request's title and description, so a commit message on the
   branch does not reach `main`.
 - **Adopting into a project that already has files** follows

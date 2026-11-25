@@ -78,7 +78,9 @@ base_enc=$(jq -rn --arg b "$base" '$b | @uri') \
 if ! optout_out=$(gh api "repos/$repo/contents/.agents/auto-merge?ref=$base_enc" \
   -H 'Accept: application/vnd.github.raw' 2>&1); then
   case $optout_out in
-    *"(HTTP 404)"*) optout=on ;;
+    # Only a missing file is `on`. GitHub also answers (HTTP 404) for a ref it
+    # cannot find ("No commit found for the ref ..."), and that must fail.
+    *"Not Found (HTTP 404)"*) optout=on ;;
     *) fail "opt-out: cannot read .agents/auto-merge on $base: $(printf '%s' "${optout_out##*gh: }" | tail -n 1 | cut -c1-160)" ;;
   esac
 else

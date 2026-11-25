@@ -312,7 +312,10 @@ organization, because the CODEOWNERS line names a user. The token check sees the
 environment of the hook process; a token exported only in a shell profile is not
 visible to it, so keep the profile free of both variables as well. Merging or
 arming through `gh api` (`enablePullRequestAutoMerge`, `mergePullRequest`, a
-`pulls/<n>/merge` path) is blocked outright; use the plain form above. To opt
+`pulls/<n>/merge` path) is refused in its plain spellings, not in every spelling
+([what still passes](payload/.agents/docs/git-guideline/safety-boundary.md#what-neither-layer-enforces));
+the control that holds against the rest is the server-side ruleset, which needs the
+owner's approval of the last push. Use the plain form above. To opt
 out, put `off` in `.agents/auto-merge`, a seed the install creates saying `on`.
 The check reads that file from the base branch of the target repository, not from
 the local checkout, so a change takes effect only once it is merged. Check a pull

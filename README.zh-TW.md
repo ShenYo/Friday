@@ -45,11 +45,11 @@ Friday 是怎麼走到現在的，記錄在 [`docs/history.md`](./docs/history.m
 | 個人 Skills 或偏好 | 讓個人範圍維持個人 | 留在你的個人層；不要把它推進 Friday。 |
 | 專案特有的政策或檢查 | 保留消費端的所有權 | 在審查過共享 baseline 之後，再新增消費端 overlay。 |
 
-## 現況（2026-11-22）
+## 現況（2026-11-25）
 
-> **摘要**：managed core 現為十七檔，最新 release 是 v1.4.0（2026-11-22），新增每週檢查的 seed workflow，
-> consumer 落後時會在自己的 repository 開一個 issue。pet_care 與 Finance 兩個 consumer 記錄的是 v1.3.0；
-> v1.4.0 沒有改任何 managed-core 檔案，不會有 sync PR，要這個通知的 consumer 照 release note 複製 seed。已知限制：只有一位維護者、
+> **摘要**：managed core 現為十七檔，最新 release 是 v1.5.0（2026-11-25），protected-paths guard 補上更多寫入寫法並接上續行，
+> 並新增 default branch 的 ruleset seed。pet_care 與 Finance 兩個 consumer 記錄的是 v1.3.0；
+> v1.5.0 改了 managed-core 檔案，各 consumer 會收到 sync PR，ruleset seed 要照 release note 手動複製。已知限制：只有一位維護者、
 > 兩個 consumer 都是維護者自己的私有 repository、新機器安裝尚未由獨立採用者 replay、
 > external-runtime 收尾，以及 managed-core 更新 bot。
 
@@ -58,13 +58,14 @@ Friday 是怎麼走到現在的，記錄在 [`docs/history.md`](./docs/history.m
 - managed core：17 個檔案，列在 [`bin/managed-core.txt`](./bin/managed-core.txt)。
   `v1.0.0`（2026-10-25）發行了前 14 個，`.agents/bin/setup.sh` 是第 15 個，`.agents/hooks/guard-protected-paths.sh` 是第 16 個，`github-pr-verify` 是第 17 個。
 - 已發行 `v1.0.0` 與 `v1.0.1`（2026-10-25），`v1.1.0` 與 `v1.1.1`（2026-10-26）、`v1.1.2`（2026-11-03）、`v1.1.3`（2026-11-04），
-  `v1.1.4`（2026-11-10），`v1.2.0`（2026-11-11），`v1.3.0`（2026-11-13），以及 `v1.4.0`（2026-11-22）：
+  `v1.1.4`（2026-11-10），`v1.2.0`（2026-11-11），`v1.3.0`（2026-11-13），`v1.4.0`（2026-11-22），以及 `v1.5.0`（2026-11-25）：
   `v1.1.0` 帶來 `.agents/bin/setup.sh`、`CLAUDE.md` seed 與以 release 為準的安裝（`install.sh` 安裝 release，而不是 checkout）。
   consumer 只以 release 接收 managed core（見 [發行版本（Releases）](./docs/releases.md#releases)）。
   `v1.2.0` 把 protected-paths guard 與 `github-pr-verify` 收進 managed core。`v1.3.0` 讓該 guard 跟著 Bash 指令裡的 `cd` 與 `pushd`。
   `v1.4.0` 新增 `friday-behind.yml` seed workflow，consumer 落後時會在其 repository 開一個 issue。
-- 兩個 consumer，`pet_care` 與 Finance，都記錄 `v1.3.0`。`v1.4.0` 沒有改任何 managed-core 檔案，`friday-propagate` 不會開 sync PR；
-  要這個通知的 consumer 複製新的 seed（見 [v1.4.0 的 release note](./docs/changelog/v1.md#v140-2026-11-22)）。
+  `v1.5.0` 補強 protected-paths guard（更多寫入寫法、續行），並新增 default branch 的 ruleset seed。
+- 兩個 consumer，`pet_care` 與 Finance，都記錄 `v1.3.0`。`v1.5.0` 改了 managed-core 檔案，`friday-propagate` 會在各自開 sync PR；
+  ruleset seed 要手動複製（見 [v1.5.0 的 release note](./docs/changelog/v1.md#v150-2026-11-25)）。
 - `main` 上要求 CI：ubuntu 與 macos 的測試、shellcheck 與 gitleaks
   （[`ci.yml`](./.github/workflows/ci.yml)）。
 

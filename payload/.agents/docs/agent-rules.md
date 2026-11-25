@@ -33,10 +33,12 @@ compatible rule.
    explicit request does not authorize one** -- force push, `reset --hard` or
    any history rewrite, discarding uncommitted work, deleting a ref, file or
    remote. Identify the target and the command, then ask the user to run it.
-   Merging a pull request, enabling auto-merge, pushing to the default branch,
-   closing or reopening a pull request, and changing repository or
-   branch-protection settings are reserved for a person who names the
-   operation and its target in the current turn. Never approve a pull request
+   Merging a pull request, pushing to the default branch, closing or reopening
+   a pull request, and changing repository or branch-protection settings are
+   reserved for a person who names the operation and its target in the current
+   turn. So is enabling auto-merge, except as `safety-boundary.md` allows under
+   "Arming auto-merge": after a fresh-agent review ends with no must-fix or
+   should-fix open, and only when `.agents/bin/check-auto-merge` passes. Never approve a pull request
    containing your own work.
 6. **Git state.** Before an edit batch and before a commit, inspect the
    current branch, `HEAD`, and working-tree status. Repeat that inspection

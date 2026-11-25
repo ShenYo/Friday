@@ -468,6 +468,19 @@ require_guard_blocked '{"tool_name":"Bash","tool_input":{"command":"git push ori
 # CI, and altering a shared review artifact.
 require_guard_blocked '{"tool_name":"Bash","tool_input":{"command":"gh pr merge 12"}}'
 require_guard_blocked '{"tool_name":"Bash","tool_input":{"command":"gh pr merge --auto --squash 12"}}'
+# Auto-merge is armed only as `gh pr merge <n> --auto --squash -R owner/repo`,
+# the whole command, and only when .agents/bin/check-auto-merge passes (proved
+# with stubs by tests/auto-merge-hook.sh). Every other spelling stays blocked.
+require_guard_blocked '{"tool_name":"Bash","tool_input":{"command":"gh pr merge 12 --auto --squash"}}'
+require_guard_blocked '{"tool_name":"Bash","tool_input":{"command":"gh pr merge 12 --auto --squash -R o/r --admin"}}'
+require_guard_blocked '{"tool_name":"Bash","tool_input":{"command":"gh pr merge 12 --auto --merge -R o/r"}}'
+require_guard_blocked '{"tool_name":"Bash","tool_input":{"command":"gh pr merge 12 --auto --squash -R \"o/r\""}}'
+require_guard_blocked '{"tool_name":"Bash","tool_input":{"command":"gh pr merge $(echo 12) --auto --squash -R o/r"}}'
+require_guard_blocked '{"tool_name":"Bash","tool_input":{"command":"gh pr merge 12 --auto --squash -R o/r && echo done"}}'
+run_guard '{"tool_name":"Bash","tool_input":{"command":"gh pr merge 12 --disable-auto"}}'
+[ "$guard_exit" -eq 0 ] || fail "guard blocked --disable-auto: $guard_output"
+run_guard '{"tool_name":"Bash","tool_input":{"command":"gh pr merge 12 --disable-auto -R o/r"}}'
+[ "$guard_exit" -eq 0 ] || fail "guard blocked --disable-auto -R: $guard_output"
 require_guard_blocked '{"tool_name":"Bash","tool_input":{"command":"gh pr close 12"}}'
 require_guard_blocked '{"tool_name":"Bash","tool_input":{"command":"gh pr reopen 12"}}'
 

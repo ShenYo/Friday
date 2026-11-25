@@ -296,6 +296,24 @@ login, such as the owner's own, is not bound by it.
 A private repository on a free GitHub plan cannot use rulesets. There you have
 the hooks only, which guard against mistakes; do not claim more for it.
 
+### Auto-merge
+
+Once a pull request's review is done, an agent arms auto-merge, but only where
+the base branch's rules make the owner's approval of the latest push decide the
+merge. The payload's `.agents/bin/check-auto-merge` checks that, and the guard
+runs it before it lets `gh pr merge <n> --auto --squash -R <owner>/<repo>`
+through; every other form with `--auto` is blocked. To qualify, apply the ruleset
+above, give `.github/CODEOWNERS` the single line `* @your-login`, allow
+auto-merge in the repository's settings, and have the agent act through its own
+write-access login with no `GH_TOKEN` or `GITHUB_TOKEN` set. A repository that
+cannot read its rules, such as a free-plan private one, never qualifies, and the
+merge stays a person's. To opt out, put `off` in `.agents/auto-merge`, a seed the
+install creates saying `on`. Check a pull request yourself:
+
+```sh
+.agents/bin/check-auto-merge <n> -R <owner>/<repo>
+```
+
 ## Staying current
 
 A new Friday release reaches a consumer as a pull request, and each machine then

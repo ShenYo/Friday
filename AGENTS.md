@@ -134,56 +134,16 @@ Each step ends on the condition that says it is done.
   judge a squash merge, where every commit shows as left behind, and pull
   requests here have been squash-merged since #71 (the last merge commit is
   #66's).
-- **Here, an agent arms auto-merge once a pull request's review is done.**
-  This overrides, for this repository only, the checkpoint in
-  [`safety-boundary.md`](payload/.agents/docs/git-guideline/safety-boundary.md#human-review-checkpoints)
-  that reserves enabling auto-merge to a person, and its restatements in
-  `agent-rules.md` and `git-commit.md`; consumers keep that checkpoint. It is
-  safe here only while all of these hold, because together they mean only the
-  owner's approval of the latest push counts on `main`, and an armed pull
-  request waits for it:
-
-  - `main`'s `pull_request` rule requires one approving review, code-owner
-    review, dismissal of stale approvals on push, and approval of the last
-    push;
-  - that rule's ruleset is `active`, and `current_user_can_bypass` is `never`
-    for the agent;
-  - [`.github/CODEOWNERS`](.github/CODEOWNERS) on `main` is a single `*` rule
-    naming only the owner;
-  - the agent acts through its own login, which is not an admin, with no
-    `GH_TOKEN` or `GITHUB_TOKEN` set.
-
-  Check them before arming; each line's comment says what passes:
-
-  ```sh
-  gh api repos/<owner>/<repo>/rules/branches/main -q '.[] | select(.type=="pull_request")'
-  # exactly one rule: required_approving_review_count >= 1, and
-  # require_code_owner_review, dismiss_stale_reviews_on_push and
-  # require_last_push_approval all true; note its ruleset_id
-  gh api repos/<owner>/<repo>/rulesets/<ruleset_id> -q '.enforcement, .current_user_can_bypass'
-  # active, then never
-  gh api repos/<owner>/<repo>/contents/.github/CODEOWNERS -H 'Accept: application/vnd.github.raw'
-  # apart from comments, the single line `* @<owner>`
-  gh api repos/<owner>/<repo>/collaborators/"$(gh api user -q .login)"/permission -q .role_name
-  # write; anything else fails (an admin can edit the ruleset)
-  env | cut -d= -f1 | grep -E '^(GH|GITHUB)_TOKEN$'
-  # no output (names only, so a token is never printed)
-  ```
-
-  If any of them fails, the exception does not apply. Otherwise, arm it only
-  after a review by a fresh agent that did not write the change has ended
-  with no must-fix or should-fix finding open. The agent's own checks and a
-  green CI are not that review.
-
-  ```sh
-  gh pr merge <n> --auto --squash -R <owner>/<repo>
-  ```
-
-  The squash commit's message is the repository's default, which is set to
-  the pull request's title and description, so a commit message on the branch
-  does not reach `main`. An armed merge takes the head at merge time, so
-  GitHub's stale-approval rule, not a pinned head, keeps a later push from
-  merging unreviewed.
+- **Auto-merge follows the shipped rule.** Here, as in every consumer, an
+  agent arms auto-merge only after a fresh-agent review ends with no must-fix
+  or should-fix open, and only when
+  [`check-auto-merge`](payload/.agents/bin/check-auto-merge) passes; the shipped
+  guard enforces it. The rule and its conditions are in
+  [`safety-boundary.md`](payload/.agents/docs/git-guideline/safety-boundary.md#arming-auto-merge).
+  Here the opt-out file is the payload's own `payload/.agents/auto-merge`,
+  which says `on`. The squash commit's message is the repository's default,
+  set to the pull request's title and description, so a commit message on the
+  branch does not reach `main`.
 - **Adopting into a project that already has files** follows
   [`ADOPTING.md`](ADOPTING.md): `install.sh --managed-only` copies the managed
   core and leaves the project's seeds alone, listing them for a person to

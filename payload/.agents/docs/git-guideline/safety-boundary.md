@@ -2,7 +2,8 @@
 
 > **中文摘要**：commit 與 push（非 default branch）由 agent 自行判斷，不需逐次
 > 授權；真正的門檻是三件事：破壞性／不可回復的操作永久禁止、需要人工審核的
-> 操作（PR merge、直接推 default branch）一律交回使用者、以及每個
+> 操作（PR merge、直接推 default branch）一律交回使用者（auto-merge 只在
+> `check-auto-merge` 通過且 fresh agent review 無未解 finding 時由 agent 開啟）、以及每個
 > commit/push/PR 都必須有清楚且**不混雜**的 context。commit/push 前必須檢查
 > 有無敏感資訊。
 
@@ -93,11 +94,49 @@ The user must name the operation and its exact target in the current turn.
 | Checkpoint | Why it is reserved |
 | --- | --- |
 | Merging a pull request | However many checks a PR passed, the final decision to integrate is a person's. No combination of green CI, review bots, or agent analysis substitutes for it. |
-| Enabling auto-merge | This is the same decision taken in advance and delegated to CI. It is reserved for the same reason as merging. |
+| Enabling auto-merge | This is the same decision taken in advance and delegated to CI, so it is reserved for the same reason as merging, with one exception: the agent arms it under [Arming auto-merge](#arming-auto-merge), where the base branch's rules keep the owner's approval of the latest push decisive. |
 | Pushing directly to the default branch | A direct push bypasses the PR checkpoint above, so leaving it open would make that checkpoint optional in practice. Enforced by `pre-push`. |
 | Closing or reopening a pull request | It changes the state of a shared review artifact that others may be acting on. |
 | Changing branch protection, required checks, or repository settings | These define the checkpoints themselves. |
 | Pushing a tag, or publishing a GitHub Release | No agent may delete a tag, so a pushed tag is one the agent cannot take back, and a release tag is also the name consumers take a release by. A GitHub Release is published under that name for people to read, and an agent cannot delete one either. An agent pushes a tag, including through `--tags`, `--follow-tags` or `push.followTags`, only when the user names the tag and the commit in the current turn; it never pushes one on its own judgement. The same holds for publishing, editing or uploading to a GitHub Release (`gh release create`, `gh release edit`, `gh release upload`, or the same through the API): only when the user names the release and its tag in the current turn. Friday's guard and `pre-push` do not check this row: it is enforced by instruction. |
+
+### Arming auto-merge
+
+An agent arms auto-merge on a pull request only when both hold:
+
+- a fresh agent, one that did not write the change, has reviewed it and the
+  review ended with no must-fix or should-fix finding open. The author's own
+  checks and a green CI are not that review;
+- `.agents/bin/check-auto-merge <n> -R <owner>/<repo>` exits 0.
+
+The check is what makes the exception safe. Without a ruleset that requires the
+owner's approval, an armed pull request merges as soon as CI is green. It exits
+0 only when all of these hold, and otherwise prints the condition that failed:
+
+- `.agents/auto-merge` is absent or says `on` (`off` opts the repository out;
+  anything else fails);
+- the base branch has exactly one `pull_request` rule, requiring at least one
+  approving review, code-owner review, dismissal of stale approvals on push and
+  approval of the last push, and that rule's ruleset is `active` with
+  `current_user_can_bypass` `never`;
+- `.github/CODEOWNERS` on the base branch is, apart from comments, a single
+  `* @<owner>` rule;
+- the acting login's `role_name` on the repository is `write`, and neither
+  `GH_TOKEN` nor `GITHUB_TOKEN` is set;
+- the repository allows auto-merge, and the pull request is open.
+
+Any error reading these, a 403 included, is a failure: a private repository on
+a free GitHub plan cannot read rulesets, so there the answer is always no. The
+shared runtime guard, which the Claude Code and Codex adapters both invoke,
+enforces this at the moment of use: it allows `gh pr merge`
+with `--auto` only as the whole command `gh pr merge <n> --auto --squash -R
+<owner>/<repo>`, and only when the check passes; any other form with `--auto`,
+or a failing check, is blocked with the check's reason. `--disable-auto` stays
+allowed.
+
+When the check fails, or the repository opted out, the agent does not arm: it
+leaves the merge to a person and says in the pull request which condition
+failed. Merging itself stays a person's.
 
 **An agent must not approve a pull request containing its own work.** Approval
 is the review act; an author approving their own change satisfies the

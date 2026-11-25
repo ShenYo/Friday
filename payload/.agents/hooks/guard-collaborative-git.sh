@@ -74,6 +74,38 @@ esac
 scan_command=$(printf '%s' "$command" \
   | sed -e "s/'[^']*'/QUOTED/g" -e 's/"[^"]*"/QUOTED/g')
 
+# Auto-merge. Arming it is the agent's call only in one plain form, taken as
+# the whole command, and only when check-auto-merge passes for that pull
+# request: the base branch's rules must guarantee that the owner's approval of
+# the latest push decides the merge. Every other `gh pr merge`, with or without
+# --auto (extra flags, quoting, substitution, chaining), falls through to the
+# patterns below and is blocked. Matched against the raw command: a quote is a
+# reason to refuse here, so nothing is normalised away first.
+auto_merge_form='^gh pr merge ([0-9]+) --auto --squash -R ([A-Za-z0-9._-]+/[A-Za-z0-9._-]+)$'
+disable_auto_form='^gh pr merge [0-9]+ --disable-auto( -R [A-Za-z0-9._-]+/[A-Za-z0-9._-]+)?$'
+if [[ $command =~ $disable_auto_form ]]; then
+  exit 0
+fi
+if [[ $command =~ $auto_merge_form ]]; then
+  merge_number=${BASH_REMATCH[1]}
+  merge_repo=${BASH_REMATCH[2]}
+  guard_path=${BASH_SOURCE[0]}
+  while [ -L "$guard_path" ]; do
+    guard_link=$(readlink "$guard_path") || block "cannot resolve the guard's own path"
+    case "$guard_link" in
+      /*) guard_path=$guard_link ;;
+      *) guard_path=$(dirname "$guard_path")/$guard_link ;;
+    esac
+  done
+  auto_merge_check=$(CDPATH= cd "$(dirname "$guard_path")/../bin" 2>/dev/null && pwd)/check-auto-merge
+  [ -x "$auto_merge_check" ] \
+    || block "'$command' is refused: .agents/bin/check-auto-merge is missing, so auto-merge cannot be checked. Leave the merge to a person."
+  if auto_merge_reason=$("$auto_merge_check" "$merge_number" -R "$merge_repo" 2>&1 </dev/null); then
+    exit 0
+  fi
+  block "'$command' is refused: ${auto_merge_reason:-check-auto-merge failed}. Leave the merge to a person and say in the pull request which condition failed."
+fi
+
 blocked_patterns=(
   # Matched against scan_command, in which every quoted argument has already
   # been replaced by a placeholder. So a dangerous word inside a commit message

@@ -240,6 +240,21 @@ pull request，並要 code owner 的一個 approving review。它是 seed，你�
 
 免費方案的 private repository 不能使用 ruleset。那裡只有 hook，它們防的是手滑；不要宣稱更多。
 
+### Auto-merge
+
+pull request 的 review 結束後，agent 會開啟 auto-merge，但只限於 base branch 的規則能保證
+owner 對最新 push 的 approval 決定 merge 的情況。payload 的 `.agents/bin/check-auto-merge`
+負責檢查，guard 會在放行 `gh pr merge <n> --auto --squash -R <owner>/<repo>` 之前先執行它；
+其他帶 `--auto` 的寫法一律擋下。要符合條件：套用上面的 ruleset、讓 `.github/CODEOWNERS`
+只有一行 `* @your-login`、在 repository 設定中允許 auto-merge，並讓 agent 以自己有 write
+權限的登入工作，且不設定 `GH_TOKEN` 或 `GITHUB_TOKEN`。讀不到規則的 repository（例如免費方案的
+private repository）永遠不符合，merge 仍由人決定。要關閉就在 `.agents/auto-merge` 寫 `off`；
+安裝會建立這個 seed，內容為 `on`。可以自己檢查某個 pull request：
+
+```sh
+.agents/bin/check-auto-merge <n> -R <owner>/<repo>
+```
+
 ## 持續保持最新
 
 Friday 發了新 release 之後，會以 pull request 的形式送到每個 consumer，之後每台機器再各自更新自己的 clone。先找出符合你狀況的情境，再照它的步驟做。`$FRIDAY` 是你的 Friday checkout，也就是上面的 `~/.Friday`；`$CONSUMER` 是某個 consumer repository 的 clone。

@@ -382,7 +382,8 @@ expect_sub() { # <exit> <what> <command>
   expect_guard "$1" "Bash: $2" "$(other_payload "$3" "$fr/sub")"
 }
 # The conf lists more entries for these cases, and goes back after them.
-printf '%s\n' 'deploy/*' 'CLAUDE notes.md' keep.md.bak locked >> "$conf"
+printf '%s\n' 'deploy/*' 'CLAUDE notes.md' keep.md.bak locked sub/a/b/deep.md >> "$conf"
+cdroot=$fr
 for refused in \
   'X=1 cd .. && printf x > CLAUDE.md' \
   'a=`cd .. && printf x > CLAUDE.md`' \
@@ -421,6 +422,35 @@ for refused in \
   'tee "../CLAUDE.md">/dev/null' \
   'cp a ../"CLAUDE notes.md"' \
   'cp a \../CLAUDE.md' \
+  $'cp a \\\n../CLAUDE.md' \
+  $'printf x > \\\n../CLAUDE.md' \
+  $'printf x | tee \\\n../CLAUDE.md' \
+  'cp a ../CLAUDE.md \' \
+  $'true;#\\\ncp a \\\n../CLAUDE.md' \
+  $'true|#\\\ncp a \\\n../CLAUDE.md' \
+  $'echo x #\\\ntee "t #" \\\n../CLAUDE.md' \
+  $'echo x #\\\ncp "a #" \\\n../CLAUDE.md' \
+  $'echo x #\\\ncp a\\ #b \\\n../CLAUDE.md' \
+  $'echo x #\\\ntee \'\'#z \\\n../CLAUDE.md' \
+  $'echo x #\\\ncp "y"#z \\\n../CLAUDE.md' \
+  $'echo x #\\\ntee "a\\"b #" \\\n../CLAUDE.md' \
+  $'echo x #\\\ntee a\r#z \\\n../CLAUDE.md' \
+  $'c\\\nd a\ncd b && cp x deep.md' \
+  $'c\\\nd '"$cdroot/sub/a"$'\ncd b && cp x deep.md' \
+  $'pus\\\nhd a\ncd b && cp x deep.md' \
+  $'true && cp a \\\n../CLAUDE.md' \
+  $'cp a ../CLAU"\\\nDE.md"' \
+  $'echo x #\\\ncp a ../CLAUDE.md' \
+  $'echo x #\\\ncp a \\\n../CLAUDE.md' \
+  $'# note\\\ncp a \\\n../CLAUDE.md' \
+  $'echo x #\\\nc\\\np a ../CLAUDE.md' \
+  $'echo x #\\\ntee \\\n../CLAUDE.md' \
+  $'cp a \'x\' \\\n../CLAUDE.md' \
+  $'echo it\\\'s\ncp a \\\n../CLAUDE.md' \
+  $'echo "it\'s"\ncp a \\\n../CLAUDE.md' \
+  $'echo "$(echo "it\'s")"\ncp a \\\n../CLAUDE.md' \
+  $'echo $\'it\\\'s\'\ncp a \\\n../CLAUDE.md' \
+  $'cp a \'\\\n../locked\'' \
   'cp a\< ../CLAUDE.md' \
   $'cp \'a\\\' ../CLAUDE.md' \
   'cp \a ../CLAUDE.md' \
@@ -463,6 +493,10 @@ for allowed in \
   'cp -t ../deploy2 dir/' \
   'cp -t .. -- -x' \
   'cp a out.txt>/dev/null' \
+  $'cp a \\\nnotes.md' \
+  $'cp a ..\\\\\n/CLAUDE.md' \
+  $'ls \\\n -la\n(cd d1 && make) ; (cd d2 && make) ; (cd d3 && make) ; (cd d4 && make) ; (cd d5 && make) ; (cd d6 && make) ; (cd d7 && make) ; (cd d8 && make) ; (cd d9 && make) ; (cd d10 && make) ; cp a out.txt' \
+  $'(cd d1 && make) ; (cd d2 && make) ; (cd d3 && make) ; (cd d4 && make) ; (cd d5 && make) ; (cd d6 && make) ; (cd d7 && make) ; (cd d8 && make) ; (cd d9 && make) ; (cd d10 && make) ;\nls \\\n -la; cp a out.txt' \
   'echo "x > y"' \
   'git commit -m "fix: a > b"' \
   $'cp a "b\'s file"' \
@@ -488,13 +522,22 @@ expect_guard 2 "Bash: a blank command" "$(bash_payload '   ')"
 # collaborative-Git guard shares the blank-command check, so it is timed too.
 long=
 for ((n = 0; n < 6000; n++)); do long="$long printf x > out$n.log;"; done
+# One quoted line of 600 KB: the continuation join must not cost a step per
+# character (BSD awk took minutes on such a line with a per-character loop).
+wide="echo '$(head -c 600000 /dev/zero | tr '\0' a)'"
+# 2 MB of continued lines then a plain one: the join must not grow a string
+# per line (BSD awk went quadratic on that).
+many=$(awk 'BEGIN { for (n = 0; n < 500000; n++) print "a \\" }')
+many="$many"$'\n'"cp a out.txt"
+for long_text in "$long" "$wide" "$many"; do
 for long_guard in guard-protected-paths.sh guard-collaborative-git.sh; do
   set +e
-  long_output=$(other_payload "$long" "$fr/sub" \
+  long_output=$(other_payload "$long_text" "$fr/sub" \
     | (cd "$fr/sub" && perl -e 'alarm 20; exec @ARGV' "$fr/.agents/hooks/$long_guard") 2>&1)
   long_exit=$?
   set -e
-  [ "$long_exit" -eq 0 ] || { echo "FAIL: $long_guard returned $long_exit (142 is the 20s alarm) for a ${#long}-character command: $long_output" >&2; exit 1; }
+  [ "$long_exit" -eq 0 ] || { echo "FAIL: $long_guard returned $long_exit (142 is the 20s alarm) for a ${#long_text}-character command: $long_output" >&2; exit 1; }
+done
 done
 rmdir "$fr/sub"
 # append-only: an existing file is refused, a new one is allowed, and a skipped

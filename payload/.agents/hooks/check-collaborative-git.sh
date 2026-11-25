@@ -941,7 +941,7 @@ protected_lab=$(mktemp -d)
 fixture_roots+=("$protected_lab")
 git init -q "$protected_lab"
 mkdir -p "$protected_lab/.agents" "$protected_lab/sub" "$protected_lab/deploy"
-printf '%s\n' CLAUDE.md 'deploy/*' 'CLAUDE notes.md' keep.md.bak locked > "$protected_lab/.agents/protected-paths.conf"
+printf '%s\n' CLAUDE.md 'deploy/*' 'CLAUDE notes.md' keep.md.bak locked sub/a/b/deep.md > "$protected_lab/.agents/protected-paths.conf"
 protected_lab=$(cd -P "$protected_lab" && pwd -P)
 # An alarm turns a hung scan into a failure rather than a stalled check, where
 # perl is there to set one.
@@ -957,6 +957,7 @@ protected_guard_run() { # <command> -> sets protected_exit
   protected_exit=$?
   set -e
 }
+cdroot=$protected_lab
 for refused in \
   'X=1 cd .. && printf x > CLAUDE.md' \
   'a=`cd .. && printf x > CLAUDE.md`' \
@@ -995,6 +996,35 @@ for refused in \
   'tee "../CLAUDE.md">/dev/null' \
   'cp a ../"CLAUDE notes.md"' \
   'cp a \../CLAUDE.md' \
+  $'cp a \\\n../CLAUDE.md' \
+  $'printf x > \\\n../CLAUDE.md' \
+  $'printf x | tee \\\n../CLAUDE.md' \
+  'cp a ../CLAUDE.md \' \
+  $'true;#\\\ncp a \\\n../CLAUDE.md' \
+  $'true|#\\\ncp a \\\n../CLAUDE.md' \
+  $'echo x #\\\ntee "t #" \\\n../CLAUDE.md' \
+  $'echo x #\\\ncp "a #" \\\n../CLAUDE.md' \
+  $'echo x #\\\ncp a\\ #b \\\n../CLAUDE.md' \
+  $'echo x #\\\ntee \'\'#z \\\n../CLAUDE.md' \
+  $'echo x #\\\ncp "y"#z \\\n../CLAUDE.md' \
+  $'echo x #\\\ntee "a\\"b #" \\\n../CLAUDE.md' \
+  $'echo x #\\\ntee a\r#z \\\n../CLAUDE.md' \
+  $'c\\\nd a\ncd b && cp x deep.md' \
+  $'c\\\nd '"$cdroot/sub/a"$'\ncd b && cp x deep.md' \
+  $'pus\\\nhd a\ncd b && cp x deep.md' \
+  $'true && cp a \\\n../CLAUDE.md' \
+  $'cp a ../CLAU"\\\nDE.md"' \
+  $'echo x #\\\ncp a ../CLAUDE.md' \
+  $'echo x #\\\ncp a \\\n../CLAUDE.md' \
+  $'# note\\\ncp a \\\n../CLAUDE.md' \
+  $'echo x #\\\nc\\\np a ../CLAUDE.md' \
+  $'echo x #\\\ntee \\\n../CLAUDE.md' \
+  $'cp a \'x\' \\\n../CLAUDE.md' \
+  $'echo it\\\'s\ncp a \\\n../CLAUDE.md' \
+  $'echo "it\'s"\ncp a \\\n../CLAUDE.md' \
+  $'echo "$(echo "it\'s")"\ncp a \\\n../CLAUDE.md' \
+  $'echo $\'it\\\'s\'\ncp a \\\n../CLAUDE.md' \
+  $'cp a \'\\\n../locked\'' \
   'cp a\< ../CLAUDE.md' \
   $'cp \'a\\\' ../CLAUDE.md' \
   'cp \a ../CLAUDE.md' \
@@ -1039,6 +1069,10 @@ for allowed in \
   'cp -t ../deploy2 dir/' \
   'cp -t .. -- -x' \
   'cp a out.txt>/dev/null' \
+  $'cp a \\\nnotes.md' \
+  $'cp a ..\\\\\n/CLAUDE.md' \
+  $'ls \\\n -la\n(cd d1 && make) ; (cd d2 && make) ; (cd d3 && make) ; (cd d4 && make) ; (cd d5 && make) ; (cd d6 && make) ; (cd d7 && make) ; (cd d8 && make) ; (cd d9 && make) ; (cd d10 && make) ; cp a out.txt' \
+  $'(cd d1 && make) ; (cd d2 && make) ; (cd d3 && make) ; (cd d4 && make) ; (cd d5 && make) ; (cd d6 && make) ; (cd d7 && make) ; (cd d8 && make) ; (cd d9 && make) ; (cd d10 && make) ;\nls \\\n -la; cp a out.txt' \
   'echo "x > y"' \
   'git commit -m "fix: a > b"' \
   $'cp a "b\'s file"' \
@@ -1070,6 +1104,18 @@ for ((n = 0; n < 6000; n++)); do long_command="$long_command printf x > out$n.lo
 protected_guard_run "$long_command"
 [ "$protected_exit" -eq 0 ] \
   || fail "protected-paths guard returned $protected_exit (142 is the alarm) for a ${#long_command}-character command: $protected_output"
+# One quoted line of 600 KB: the continuation join must not cost a step per
+# character (BSD awk took minutes on such a line with a per-character loop).
+wide_command="echo '$(head -c 600000 /dev/zero | tr '\0' a)'"
+protected_guard_run "$wide_command"
+[ "$protected_exit" -eq 0 ] \
+  || fail "protected-paths guard returned $protected_exit (142 is the alarm) for a ${#wide_command}-character quoted line: $protected_output"
+# 500,000 continued lines: the join and the comment test must stay linear.
+many_command=$(awk 'BEGIN { for (n = 0; n < 500000; n++) print "a \\" }')
+many_command="$many_command"$'\n'"cp a out.txt"
+protected_guard_run "$many_command"
+[ "$protected_exit" -eq 0 ] \
+  || fail "protected-paths guard returned $protected_exit (142 is the alarm) for ${#many_command} characters of continued lines: $protected_output"
 # The collaborative-Git guard has the same blank-command check and the same
 # stall on bash 3.2; it takes a long command under the same alarm.
 set +e

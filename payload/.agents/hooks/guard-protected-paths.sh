@@ -123,6 +123,55 @@ case "$tool_name" in
     # n-squared time (cubed for a command of many clauses) to strip the
     # blanks, so a long command stalled the hook for minutes.
     [[ $command =~ [^[:space:]] ]] || block "invalid Bash hook payload"
+    # Bash joins a backslash-newline pair, so `cp a \` then `../CLAUDE.md` is
+    # one command, while every scan below reads one line at a time. So the
+    # scan reads the command as written and, after it, up to two joined
+    # copies of the whole command. A line ends in a continuation when it ends
+    # in an odd number of backslashes. Two copies are made, because comments
+    # make the join ambiguous: bash ends a comment at the newline, so in
+    # `echo x #\` / `cp a \` / `../CLAUDE.md` the last two lines still run as
+    # one `cp`, yet joining everything glues them into the comment.
+    # (a) joins every continued line, whatever the quoting or comments: that
+    #     is right inside quotes and `${#x}`, and where `#` is only text.
+    # (b) does not join a line in which `#` starts a word (after a blank,
+    #     `;`, `&`, `|`, `(`, `)` or at the start) once escapes and quoted
+    #     spans are removed from a copy of the line, so that line ends the
+    #     logical line, as a comment does.
+    # Both only add refusals when the quoting is not modelled (a continuation
+    # inside single quotes, say), which errs on the safe side. A copy is
+    # appended only when it differs from the command as written and from the
+    # other copy. Every scan below reads the concatenation line by line,
+    # except the `cd` scan, which reads each copy on its own (see there).
+    # Linear: the join streams each line out as it is read, so no string grows
+    # with the number of continued lines (BSD awk took minutes on that and on
+    # a 600 KB line with a per-character loop), and the comment test, a few
+    # gsub passes over the line, runs only on a line that ends in a
+    # continuation. The strip leaves a placeholder so that removing a quoted
+    # span cannot make a new word start (`tee ""#z` is not `tee #z`).
+    join_awk='
+      {
+        cont = 0
+        if (match($0, /\\+$/) && RLENGTH % 2 == 1) {
+          cont = 1
+          if (nocomment) {
+            s = $0
+            gsub(/\\.|"([^"\\]|\\.)*"|\047[^\047]*\047/, "_", s)
+            if (s ~ /(^|[ \t;&|()])#/) cont = 0
+          }
+        }
+        if (cont) { printf "%s", substr($0, 1, length($0) - 1); joined = 1 }
+        else { printf "%s", $0; print ""; joined = 0 }
+      }
+      END { if (joined) print "" }'
+    joined_all=$(printf '%s\n' "$command" | awk "$join_awk") \
+      || block "unable to read the Bash command"
+    joined_nocomment=$(printf '%s\n' "$command" | awk -v nocomment=1 "$join_awk") \
+      || block "unable to read the Bash command"
+    cd_copies=("$command")
+    [ "$joined_all" = "$command" ] || cd_copies+=("$joined_all")
+    [ "$joined_nocomment" = "$command" ] || [ "$joined_nocomment" = "$joined_all" ] \
+      || cd_copies+=("$joined_nocomment")
+    for copy in "${cd_copies[@]:1}"; do command=$command$'\n'$copy; done
     # Shell writes only. A path that merely appears in a command is not a
     # write, so `cat`, `grep` and `git add` stay free.
     #
@@ -139,6 +188,10 @@ case "$tool_name" in
     # /dev/null.) Dropping a redirection also exposes the operand before
     # 'cp a b 2>/dev/null'.
     clause_awk='
+      # tokenize() needs split() on an empty separator to give characters. An
+      # awk that does not would leave one token per clause and the guard open,
+      # so such an awk makes the scan emit a marker that the loop below blocks.
+      BEGIN { if (split("ab", sp, "") != 2) { print "@@awk-cannot-split@@"; exit 3 } }
       function clean(f) { if (f !~ /\(/) sub(/\)+$/, "", f); sub(/`+$/, "", f); return f }
       function unq(s,   k, c, q, out) {
         q = ""; out = ""
@@ -163,11 +216,15 @@ case "$tool_name" in
         }
         return 0
       }
-      function tokenize(s,   k, c, q, cur, have) {
+      # split() once, then index the array: substr(s, k, 1) walks the string
+      # on BSD awk, so a per-character loop over a long clause (a joined
+      # continuation makes one) was quadratic.
+      function tokenize(s,   k, c, q, cur, have, len, ch) {
         nt = 0; q = ""; cur = ""; have = 0
-        for (k = 1; k <= length(s); k++) {
-          c = substr(s, k, 1)
-          if (c == "\\" && q != "\047" && k < length(s)) { cur = cur c substr(s, ++k, 1); have = 1 }
+        len = split(s, ch, "")
+        for (k = 1; k <= len; k++) {
+          c = ch[k]
+          if (c == "\\" && q != "\047" && k < len) { cur = cur c ch[++k]; have = 1 }
           else if (q != "") { cur = cur c; if (c == q) q = "" }
           else if (c == "\"" || c == "\047") { q = c; cur = cur c; have = 1 }
           else if (c == " " || c == "\t") { if (have) { tk[++nt] = cur; cur = ""; have = 0 } }
@@ -229,6 +286,8 @@ case "$tool_name" in
         }
       }'
     while IFS= read -r p; do
+      [ "$p" = "@@awk-cannot-split@@" ] \
+        && block "this awk cannot split a string into characters; the guard cannot read the command."
       [ -n "$p" ] && targets+=("$p")
     # `|| true` on each: grep exits 1 when a form is absent, and under
     # `set -e` with pipefail that would abort this subshell before the later
@@ -264,7 +323,21 @@ case "$tool_name" in
     # DIR=$(cd "$(dirname "$0")" && pwd), cannot move the outer shell and is
     # skipped; a write inside that same substitution is missed.
     cd_word='^[[:space:]]*("[^"]*"|'\''[^'\'']*'\''|[^[:space:]]+)'
+    cd_scan() {
+      printf '%s\n' "$1" \
+        | sed -E 's/\$\(/$(@subst /g' \
+        | sed -E 's/`([[:space:]]*([A-Za-z_][A-Za-z0-9_]*=("[^"]*"|'\''[^'\'']*'\''|[^[:space:]`]*)[[:space:]]+)*((builtin|command)[[:space:]]+)?(cd|pushd)[^`]*)(`|$)/;BT \1;/g' \
+        | tr ';|&(){}' '\n' \
+        | sed -nE 's/^[[:space:]]*(BT[[:space:]]+)?((then|do|else|elif|if|while|until|time|!)[[:space:]]+)*([A-Za-z_][A-Za-z0-9_]*=("[^"]*"|'\''[^'\'']*'\''|[^[:space:]]*)[[:space:]]+)*((builtin|command)[[:space:]]+)?(cd|pushd)([[:space:]].*)?$/\1\8@\9/p' || true
+    }
     while IFS= read -r clause; do
+      # The line RESET ends one copy of the command and starts the next.
+      # Every other line has the form `cd@...` or `pushd@...`, which has an
+      # @, so no command can spell RESET.
+      if [ "$clause" = RESET ]; then
+        cd_dests+=("")
+        continue
+      fi
       verb=${clause%%@*}
       rest=${clause#*@}
       # A cd opened by a backtick substitution cannot move the outer shell, so
@@ -314,11 +387,10 @@ case "$tool_name" in
         cd_unknown="the command moves with '$verb${word:+ $word}', whose destination cannot be read literally"
       fi
     done < <(
-      printf '%s\n' "$command" \
-        | sed -E 's/\$\(/$(@subst /g' \
-        | sed -E 's/`([[:space:]]*([A-Za-z_][A-Za-z0-9_]*=("[^"]*"|'\''[^'\'']*'\''|[^[:space:]`]*)[[:space:]]+)*((builtin|command)[[:space:]]+)?(cd|pushd)[^`]*)(`|$)/;BT \1;/g' \
-        | tr ';|&(){}' '\n' \
-        | sed -nE 's/^[[:space:]]*(BT[[:space:]]+)?((then|do|else|elif|if|while|until|time|!)[[:space:]]+)*([A-Za-z_][A-Za-z0-9_]*=("[^"]*"|'\''[^'\'']*'\''|[^[:space:]]*)[[:space:]]+)*((builtin|command)[[:space:]]+)?(cd|pushd)([[:space:]].*)?$/\1\8@\9/p' || true
+      for copy in "${cd_copies[@]}"; do
+        cd_scan "$copy"
+        printf 'RESET\n'
+      done
     )
     ;;
   *)
@@ -495,7 +567,11 @@ judge_target() {
 }
 
 # The places a relative Bash target may be relative to: the hook's cwd, and
-# every literal `cd` destination. Each destination has a primary place: where
+# every literal `cd` destination. Each copy of the command (as written, and
+# its joined copies) is a chain of its own, started from the hook's cwd: an
+# empty entry in the list ends one copy, and resets the chain state below
+# (`prev`, `prims`). The bases found in all copies are kept, without
+# duplicates. Each destination has a primary place: where
 # it lands if the cds before it all ran in sequence. A relative destination is
 # resolved from the previous primary, from the hook's cwd and from every
 # earlier primary, since a subshell may have undone any of the cds between.
@@ -508,6 +584,11 @@ prims=("$event_cwd")
 prev=$event_cwd
 for dest in ${cd_dests[@]+"${cd_dests[@]}"}; do
   [ -z "$cd_unknown" ] || break
+  if [ -z "$dest" ]; then
+    prev=$event_cwd
+    prims=("$event_cwd")
+    continue
+  fi
   if [[ $dest == /* ]]; then
     from=(/)
   else

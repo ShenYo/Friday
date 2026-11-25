@@ -294,7 +294,9 @@ not assume a rule has machinery behind it because it appears in a table above.
   that names `enablePullRequestAutoMerge`, `mergePullRequest` or a
   `pulls/<n>/merge` path is refused, `$n` and `${n}` spellings included. Still
   passing: `eval`, `bash -c`, a command name or path built from a variable,
-  `gh api graphql -F query=@file`, `--input`, `-f query="$Q"`, `gh alias`, and
+  `gh api graphql -F query=@file`, `--input`, `-f query="$Q"`, `gh alias`, a
+  `;`, `|` or `&` inside a quoted argument before the name or path (the match
+  stops there so that a chained read-only command is not refused), and
   the other REST routes to a blocked operation (deleting through
   `gh api -X delete`, or changing branch protection, collaborators or
   visibility through their endpoints). Against these, the control that holds is

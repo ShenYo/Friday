@@ -111,6 +111,21 @@ an agent using an admin login is not bound by them. A private repository on a fr
 consumer has the hooks only, which guard against mistakes, and must not be
 described as more protected than that. Installing never calls GitHub or needs the ruleset.
 
+Auto-merge follows from the ruleset. An agent arms it only after a fresh-agent
+review ends with no must-fix or should-fix open, and only where the base branch's
+rules guarantee that the owner's approval of the latest push still decides the
+merge. The payload's `.agents/bin/check-auto-merge` checks that, and the guard
+runs it when the agent types `gh pr merge <n> --auto --squash -R <owner>/<repo>`;
+any other form with `--auto` is blocked. The check fails closed: when the rules
+cannot be read, as on a free-plan private repository, the answer is no, and the
+merge is left to a person. A repository opts out with `.agents/auto-merge` saying
+`off`, read from the base branch of the target repository, so a change takes
+effect only once it is merged. Merging or arming through `gh api` is refused in
+its plain spellings ([what still passes](../payload/.agents/docs/git-guideline/safety-boundary.md#what-neither-layer-enforces));
+the server-side ruleset, which needs the owner's approval of the last push, is the control that holds against the rest. The token check sees the hook's environment, not a shell profile's.
+The conditions are in
+[the safety boundary](../payload/.agents/docs/git-guideline/safety-boundary.md#arming-auto-merge).
+
 Locally, this repository runs the payload's hooks themselves, not copies:
 
 ```sh

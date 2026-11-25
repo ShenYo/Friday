@@ -1,0 +1,144 @@
+#!/usr/bin/env bash
+# Decide whether an agent may arm auto-merge on a pull request.
+#
+#   check-auto-merge <n> -R <owner>/<repo>
+#
+# Exit 0 only when every condition below holds. Otherwise one line on stderr
+# names the condition that failed, and the exit status is 1 (2 for a bad
+# invocation). Any error from gh, a 403 included, is a failure, never a pass:
+# when the rules cannot be read, nothing guarantees the owner's approval
+# decides the merge, so the agent leaves the merge to a person.
+#
+#   opt-out    .agents/auto-merge, read from the base branch of the target
+#              repository, is absent or says `on` (`off` disables)
+#   token      neither GH_TOKEN nor GITHUB_TOKEN is set in this process's
+#              environment (names only; a value is never read into output)
+#   owner      the repository is owned by a user, not an organization
+#   repo       the pull request is open, and the repository allows auto-merge
+#   rules      the base branch has exactly one pull_request rule, with
+#              required_approving_review_count >= 1 and require_code_owner_review,
+#              dismiss_stale_reviews_on_push, require_last_push_approval true
+#   ruleset    that rule's ruleset is active and current_user_can_bypass is never
+#   codeowners .github/CODEOWNERS on the base branch is, apart from comments, a
+#              single `* @<owner>` rule
+#   role       the acting login's role_name on the repository is write
+set -uo pipefail
+
+fail() { echo "check-auto-merge: not armed ($1)" >&2; exit 1; }
+usage() { echo "usage: check-auto-merge <n> -R <owner>/<repo>" >&2; exit 2; }
+
+[ "$#" -eq 3 ] && [ "$2" = "-R" ] || usage
+n=$1
+repo=$3
+[[ $n =~ ^[0-9]+$ ]] || usage
+[[ $repo =~ ^[A-Za-z0-9_-][A-Za-z0-9._-]*/[A-Za-z0-9_-][A-Za-z0-9._-]*$ ]] || usage
+owner=${repo%%/*}
+
+for tool in gh jq; do
+  command -v "$tool" >/dev/null 2>&1 || fail "tool: $tool is not installed"
+done
+
+# Names only: a token's value is never printed.
+for name in GH_TOKEN GITHUB_TOKEN; do
+  if [ -n "${!name+set}" ]; then
+    fail "token: $name is set in the environment; the agent must act through its own login"
+  fi
+done
+
+# api <label> <endpoint> [gh api args]: put the body in $body, or fail naming
+# label. Called directly, never in a command substitution, so fail exits.
+body=
+api() {
+  local label=$1 endpoint=$2 out
+  shift 2
+  if ! out=$(gh api "$endpoint" "$@" 2>&1); then
+    # gh appends its own one-line summary, `gh: <message> (HTTP <status>)`.
+    out=${out##*gh: }
+    out=$(printf '%s' "$out" | tail -n 1 | cut -c1-160)
+    fail "$label: cannot read $endpoint: ${out:-gh api failed}"
+  fi
+  body=$out
+}
+
+api repo "repos/$repo/pulls/$n"
+pr=$body
+base=$(printf '%s' "$pr" | jq -er '.base.ref | select(type == "string" and length > 0)' 2>/dev/null) \
+  || fail "repo: cannot read the pull request's base branch"
+state=$(printf '%s' "$pr" | jq -r '.state // ""' 2>/dev/null) \
+  || fail "repo: cannot parse the pull request"
+[ "$state" = open ] || fail "repo: pull request $n is not open"
+# The branch name goes into URLs: encode it, or a `#` or `?` in it makes gh read
+# another branch (main#x reads main).
+base_enc=$(jq -rn --arg b "$base" '$b | @uri') \
+  || fail "repo: cannot encode the base branch name"
+
+# opt-out: read from the base branch of the target repository, never from the
+# local checkout, so the owner's choice is the one that has been merged. Absent
+# (404) enables; `on` enables; `off` and anything else fail.
+if ! optout_out=$(gh api "repos/$repo/contents/.agents/auto-merge?ref=$base_enc" \
+  -H 'Accept: application/vnd.github.raw' 2>&1); then
+  case $optout_out in
+    # Only a missing file is `on`. GitHub also answers (HTTP 404) for a ref it
+    # cannot find ("No commit found for the ref ..."), and that must fail.
+    *"Not Found (HTTP 404)"*) optout=on ;;
+    *) fail "opt-out: cannot read .agents/auto-merge on $base: $(printf '%s' "${optout_out##*gh: }" | tail -n 1 | cut -c1-160)" ;;
+  esac
+else
+  optout=$(printf '%s' "$optout_out" | tr -d '[:space:]')
+fi
+case $optout in
+  on) ;;
+  off) fail "opt-out: .agents/auto-merge on $base says off" ;;
+  *) fail "opt-out: .agents/auto-merge on $base must say on or off" ;;
+esac
+
+api rules "repos/$repo/rules/branches/$base_enc?per_page=100"
+rules=$body
+pr_rules=$(printf '%s' "$rules" | jq -ec '[.[] | select(.type == "pull_request")]' 2>/dev/null) \
+  || fail "rules: cannot parse the rules of $base"
+[ "$(printf '%s' "$pr_rules" | jq 'length')" = 1 ] \
+  || fail "rules: $base needs exactly one pull_request rule"
+printf '%s' "$pr_rules" | jq -e '.[0].parameters
+  | (.required_approving_review_count | type == "number" and . >= 1)' >/dev/null 2>&1 \
+  || fail "rules: required_approving_review_count is below 1"
+for key in require_code_owner_review dismiss_stale_reviews_on_push require_last_push_approval; do
+  printf '%s' "$pr_rules" | jq -e --arg k "$key" '.[0].parameters[$k] == true' >/dev/null 2>&1 \
+    || fail "rules: $key is not true"
+done
+
+ruleset_id=$(printf '%s' "$pr_rules" | jq -er '.[0].ruleset_id | select(type == "number")' 2>/dev/null) \
+  || fail "ruleset: the pull_request rule names no ruleset_id"
+api ruleset "repos/$repo/rulesets/$ruleset_id"
+ruleset=$body
+[ "$(printf '%s' "$ruleset" | jq -r '.enforcement // ""' 2>/dev/null)" = active ] \
+  || fail "ruleset: ruleset $ruleset_id is not active"
+[ "$(printf '%s' "$ruleset" | jq -r '.current_user_can_bypass // ""' 2>/dev/null)" = never ] \
+  || fail "ruleset: current_user_can_bypass is not never"
+
+api codeowners "repos/$repo/contents/.github/CODEOWNERS?ref=$base_enc" \
+  -H 'Accept: application/vnd.github.raw'
+codeowners=$body
+rules_lines=$(printf '%s\n' "$codeowners" | sed -e 's/[[:space:]]*#.*$//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | grep -v '^$' || true)
+owner_lc=$(printf '%s' "$owner" | tr '[:upper:]' '[:lower:]')
+want="* @$owner_lc"
+# Every rule line is joined, so a second rule or a second owner cannot equal one.
+have=$(printf '%s' "$rules_lines" | tr -s '[:space:]' ' ' | tr '[:upper:]' '[:lower:]')
+[ "$have" = "$want" ] \
+  || fail "codeowners: .github/CODEOWNERS on $base must be a single '* @$owner' rule"
+
+api role user
+login=$(printf '%s' "$body" | jq -er '.login | select(type == "string" and length > 0)' 2>/dev/null) \
+  || fail "role: cannot read the acting login"
+api role "repos/$repo/collaborators/$login/permission"
+perm=$body
+[ "$(printf '%s' "$perm" | jq -r '.role_name // ""' 2>/dev/null)" = write ] \
+  || fail "role: the acting login's role_name on $repo is not write"
+
+api repo "repos/$repo"
+repo_json=$body
+[ "$(printf '%s' "$repo_json" | jq -r '.owner.type // ""' 2>/dev/null)" = User ] \
+  || fail "owner: $repo is not owned by a user, so '* @$owner' is not a valid CODEOWNERS owner"
+printf '%s' "$repo_json" | jq -e '.allow_auto_merge == true' >/dev/null 2>&1 \
+  || fail "repo: $repo does not allow auto-merge (allow_auto_merge is not true)"
+
+echo "check-auto-merge: ok ($repo#$n into $base)"

@@ -6,7 +6,8 @@
 > 的變更；agent 實質協作時可附 Co-Authored-By。提交後讀回原始訊息。
 > commit 與 push（非 default branch）由 agent 自行判斷，條件是一個 commit
 > 只承載一個 task 的 context，且 staged diff 不含敏感資訊；直接推 default
-> branch、merge PR、開啟 auto-merge 仍需人工審核。
+> branch、merge PR 仍需人工審核；開啟 auto-merge 只在 `check-auto-merge`
+> 通過且 fresh agent review 無未解 finding 時由 agent 進行。
 
 ## 1. Format: Conventional Commits
 
@@ -77,8 +78,9 @@ Use `type(scope): summary` (Conventional Commits). Allowed types for this repo:
   on the atomicity rule in section 4 and on the traceability rules in that
   document: one commit carries one task's context, and a commit nobody can
   attribute later is worse than an uncommitted change. Pushing directly to the
-  default branch, merging a pull request, and enabling auto-merge remain
-  human-review checkpoints.
+  default branch and merging a pull request remain human-review checkpoints, and
+  so does enabling auto-merge except as
+  [`safety-boundary.md`](safety-boundary.md#arming-auto-merge) allows.
 - (d) If `git branch --show-current` reports `main` (the default branch),
   create and switch to a feature branch first — never commit directly to
   `main`.
@@ -139,8 +141,9 @@ leaves debug output (`console.log`) committed (rule 4).
 5. If an agent materially co-authored the change, the message names the actual
    model in `Co-Authored-By`; its absence is valid for human-driven commits.
 6. Not on `main`. The commit covers one task's context only. The staged diff
-   carries no sensitive value. A push to the default branch, a merge, or
-   enabling auto-merge has explicit same-turn authorization; an ordinary commit
+   carries no sensitive value. A push to the default branch or a merge has
+   explicit same-turn authorization, and so does enabling auto-merge unless
+   [`safety-boundary.md`](safety-boundary.md#arming-auto-merge) allows it; an ordinary commit
    or feature-branch push does not need one.
 
 ## 8. Post-commit read-back

@@ -11,6 +11,7 @@
 .agents/docs/git-guideline/pr-evidence.md
 .agents/docs/git-guideline/safety-boundary.md
 .agents/bin/setup.sh
+.agents/bin/check-auto-merge
 .agents/hooks/check-collaborative-git.sh
 .agents/hooks/guard-collaborative-git.sh
 .agents/hooks/guard-protected-paths.sh
@@ -29,6 +30,7 @@
 !CLAUDE.md
 !.agents/AGENTS.md
 !.agents/protected-paths.conf
+!.agents/auto-merge
 !.gitignore
 !.claude/settings.json
 !.codex/hooks.json

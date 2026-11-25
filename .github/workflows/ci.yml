@@ -63,7 +63,7 @@ jobs:
           shellcheck --version | head -2
           shellcheck --severity=error \
             install.sh bin/friday-lock bin/friday-behind-notice bin/friday-propagate bin/friday-seed-check tests/*.sh \
-            payload/.agents/hooks/*.sh payload/.agents/bin/*.sh payload/.agents/githooks/*
+            payload/.agents/hooks/*.sh payload/.agents/bin/*.sh payload/.agents/bin/check-auto-merge payload/.agents/githooks/*
 
   gitleaks:
     runs-on: ubuntu-latest

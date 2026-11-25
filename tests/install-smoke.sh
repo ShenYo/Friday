@@ -21,7 +21,9 @@ AGENTS.md
 CLAUDE.md
 .agents/AGENTS.md
 .agents/protected-paths.conf
+.agents/auto-merge
 .agents/bin/setup.sh
+.agents/bin/check-auto-merge
 .agents/docs/agent-rules.md
 .agents/docs/testing.md
 .agents/docs/scratch-files.md

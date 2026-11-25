@@ -296,6 +296,35 @@ login, such as the owner's own, is not bound by it.
 A private repository on a free GitHub plan cannot use rulesets. There you have
 the hooks only, which guard against mistakes; do not claim more for it.
 
+### Auto-merge
+
+Once a pull request's review is done, an agent arms auto-merge, but only where
+the base branch's rules make the owner's approval of the latest push decide the
+merge. The payload's `.agents/bin/check-auto-merge` checks that, and the guard
+runs it before it lets `gh pr merge <n> --auto --squash -R <owner>/<repo>`
+through; every other form with `--auto` is blocked. To qualify, apply the ruleset
+above, give `.github/CODEOWNERS` the single line `* @your-login`, allow
+auto-merge in the repository's settings, and have the agent act through its own
+write-access login with no `GH_TOKEN` or `GITHUB_TOKEN` set. A repository that
+cannot read its rules, such as a free-plan private one, never qualifies, and the
+merge stays a person's. The repository must be owned by a user, not an
+organization, because the CODEOWNERS line names a user. The token check sees the
+environment of the hook process; a token exported only in a shell profile is not
+visible to it, so keep the profile free of both variables as well. Merging or
+arming through `gh api` (`enablePullRequestAutoMerge`, `mergePullRequest`, a
+`pulls/<n>/merge` path) is refused in its plain spellings, not in every spelling
+([what still passes](payload/.agents/docs/git-guideline/safety-boundary.md#what-neither-layer-enforces));
+the control that holds against the rest is the server-side ruleset, which needs the
+owner's approval of the last push. Use the plain form above. To opt
+out, put `off` in `.agents/auto-merge`, a seed the install creates saying `on`.
+The check reads that file from the base branch of the target repository, not from
+the local checkout, so a change takes effect only once it is merged. Check a pull
+request yourself:
+
+```sh
+.agents/bin/check-auto-merge <n> -R <owner>/<repo>
+```
+
 ## Staying current
 
 A new Friday release reaches a consumer as a pull request, and each machine then

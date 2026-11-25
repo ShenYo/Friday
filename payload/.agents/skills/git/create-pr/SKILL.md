@@ -10,8 +10,11 @@ This skill is the procedure for opening a pull request correctly, not a
 permission to open one. Opening a PR is at the agent's discretion — see the
 default posture in `.agents/docs/git-guideline/safety-boundary.md`. The
 description must cover exactly the commits on this branch and no other task's
-context. Read that document before acting. Do not merge, enable auto-merge,
-approve, close, or reopen: those are human-review checkpoints. Do not edit
+context. Read that document before acting. Do not merge,
+approve, close, or reopen: those are human-review checkpoints. Enabling
+auto-merge is one too, except as the "Arming auto-merge" section of that
+document allows: after a fresh-agent review, and only when
+`.agents/bin/check-auto-merge` passes. Do not edit
 reviewers or change labels as part of this skill.
 
 ## Inspect

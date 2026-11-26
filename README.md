@@ -73,7 +73,7 @@ In place:
 
 - The managed core: 18 files, listed in [`bin/managed-core.txt`](./bin/managed-core.txt).
   `v1.0.0` (2026-10-25) shipped the first 14; `.agents/bin/setup.sh` is the 15th,
-  `.agents/hooks/guard-protected-paths.sh` the 16th, and `github-pr-verify` the 17th, and `.agents/bin/check-auto-merge` the 18th.
+  `.agents/hooks/guard-protected-paths.sh` the 16th, `github-pr-verify` the 17th, and `.agents/bin/check-auto-merge` the 18th.
 - Released as `v1.0.0` and `v1.0.1` (2026-10-25), then `v1.1.0` and `v1.1.1`
   (2026-10-26), `v1.1.2` (2026-11-03), `v1.1.3` (2026-11-04), `v1.1.4`
   (2026-11-10), `v1.2.0` (2026-11-11), `v1.3.0` (2026-11-13), `v1.4.0` (2026-11-22), `v1.5.0` (2026-11-25) and `v1.6.0` (2026-11-27): `v1.1.0` brought `.agents/bin/setup.sh`, the `CLAUDE.md` seed and

@@ -524,7 +524,7 @@ one of them records the upstream producer. Do this in order:
    `main` (`docs/releases.md`), and Friday's `pre-push` hook refuses a push to
    the default branch when the hooks are wired (`docs/safety.md`).
 3. Number your first release above every release tag the fork already has
-   (upstream's newest is `v1.5.0`), so that its version order is unambiguous.
+   (upstream's newest is `v1.6.0`), so that its version order is unambiguous.
    Without `--release` (or `--tag` for `friday-propagate`), the installer and
    `friday-propagate` choose the highest `vMAJOR.MINOR.PATCH` tag on `origin`,
    read with one `git ls-remote --tags origin`; tags that only your checkout

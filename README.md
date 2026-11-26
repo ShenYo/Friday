@@ -61,30 +61,32 @@ describes the present.
 | Personal skills or preferences | Keep personal scope personal | Keep them in your personal layer; do not promote them into Friday. |
 | Project-specific policy or checks | Preserve consumer ownership | Add a consumer overlay after reviewing the shared baseline. |
 
-## Status (2026-11-25)
+## Status (2026-11-27)
 
-> **中文摘要**：managed core 現為十七檔，最新 release 是 v1.5.0（2026-11-25），protected-paths guard 補上更多寫入寫法並接上續行，
-> 並新增 default branch 的 ruleset seed。pet_care 與 Finance 兩個 consumer 記錄的是 v1.3.0；
-> v1.5.0 改了 managed-core 檔案，各 consumer 會收到 sync PR，ruleset seed 要照 release note 手動複製。已知限制：只有一位維護者、
+> **中文摘要**：managed core 現為十八檔，最新 release 是 v1.6.0（2026-11-27），agent 只有在新的 check-auto-merge 通過時才能 arm auto-merge，
+> 並新增 `.agents/auto-merge` seed，protected-paths 掃描對很長的 clause 也維持線性。pet_care 與 Finance 兩個 consumer 記錄的是 v1.5.0；
+> v1.6.0 改了 managed-core 檔案，各 consumer 會收到 sync PR，auto-merge seed 要照 release note 手動複製。已知限制：只有一位維護者、
 > 兩個 consumer 都是維護者自己的私有 repository、新機器安裝尚未由獨立採用者 replay、
 > external-runtime 收尾，以及 managed-core 更新 bot。
 
 In place:
 
-- The managed core: 17 files, listed in [`bin/managed-core.txt`](./bin/managed-core.txt).
+- The managed core: 18 files, listed in [`bin/managed-core.txt`](./bin/managed-core.txt).
   `v1.0.0` (2026-10-25) shipped the first 14; `.agents/bin/setup.sh` is the 15th,
-  `.agents/hooks/guard-protected-paths.sh` the 16th, and `github-pr-verify` the 17th.
+  `.agents/hooks/guard-protected-paths.sh` the 16th, `github-pr-verify` the 17th, and `.agents/bin/check-auto-merge` the 18th.
 - Released as `v1.0.0` and `v1.0.1` (2026-10-25), then `v1.1.0` and `v1.1.1`
   (2026-10-26), `v1.1.2` (2026-11-03), `v1.1.3` (2026-11-04), `v1.1.4`
-  (2026-11-10), `v1.2.0` (2026-11-11), `v1.3.0` (2026-11-13), `v1.4.0` (2026-11-22) and `v1.5.0` (2026-11-25): `v1.1.0` brought `.agents/bin/setup.sh`, the `CLAUDE.md` seed and
+  (2026-11-10), `v1.2.0` (2026-11-11), `v1.3.0` (2026-11-13), `v1.4.0` (2026-11-22), `v1.5.0` (2026-11-25) and `v1.6.0` (2026-11-27): `v1.1.0` brought `.agents/bin/setup.sh`, the `CLAUDE.md` seed and
   release-based install (`install.sh` installs a release, not the checkout). Consumers receive the managed core only as a release
   (see [Releases](./docs/releases.md#releases)). `v1.2.0` brought the
   protected-paths guard and `github-pr-verify` into the managed core. `v1.3.0` made that guard follow `cd` and `pushd` in a Bash command.
   `v1.4.0` added the `friday-behind.yml` seed workflow, which opens an issue in a consumer that is behind. `v1.5.0` tightened the
-  protected-paths guard (more write spellings, line continuations) and added a default-branch ruleset seed.
-- Both consumers, `pet_care` and Finance, record `v1.3.0`. `v1.5.0` changed managed-core
-  files, so `friday-propagate` opens a sync PR in each; the ruleset seed is copied by hand
-  (see the [v1.5.0 note](./docs/changelog/v1.md#v150-2026-11-25)).
+  protected-paths guard (more write spellings, line continuations) and added a default-branch ruleset seed. `v1.6.0` gated agent
+  auto-merge on the new `.agents/bin/check-auto-merge` script, added the `.agents/auto-merge` opt-out seed, and kept the
+  protected-paths scan linear on a long clause.
+- Both consumers, `pet_care` and Finance, record `v1.5.0`. `v1.6.0` changed managed-core
+  files, so `friday-propagate` opens a sync PR in each; the `.agents/auto-merge` seed is copied by hand
+  (see the [v1.6.0 note](./docs/changelog/v1.md#v160-2026-11-27)).
 - CI is required on `main`: the test suites on ubuntu and macos, shellcheck, and
   gitleaks ([`ci.yml`](./.github/workflows/ci.yml)).
 

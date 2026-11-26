@@ -146,14 +146,15 @@ case "$tool_name" in
     # with the number of continued lines (BSD awk took minutes on that and on
     # a 600 KB line with a per-character loop), and the comment test, a few
     # gsub passes over the line, runs only on a line that ends in a
-    # continuation. The strip leaves a placeholder so that removing a quoted
+    # continuation and holds a `#` (gsub is quadratic in the number of
+    # matches on BSD awk, so a long line of escapes must not reach it). The strip leaves a placeholder so that removing a quoted
     # span cannot make a new word start (`tee ""#z` is not `tee #z`).
     join_awk='
       {
         cont = 0
         if (match($0, /\\+$/) && RLENGTH % 2 == 1) {
           cont = 1
-          if (nocomment) {
+          if (nocomment && index($0, "#")) {
             s = $0
             gsub(/\\.|"([^"\\]|\\.)*"|\047[^\047]*\047/, "_", s)
             if (s ~ /(^|[ \t;&|()])#/) cont = 0
@@ -206,6 +207,7 @@ case "$tool_name" in
         return out
       }
       function glue(f,   k, c, q) {
+        if (f !~ /[<>]/) return 0
         q = ""
         for (k = 1; k <= length(f); k++) {
           c = substr(f, k, 1)
@@ -218,19 +220,33 @@ case "$tool_name" in
       }
       # split() once, then index the array: substr(s, k, 1) walks the string
       # on BSD awk, so a per-character loop over a long clause (a joined
-      # continuation makes one) was quadratic.
-      function tokenize(s,   k, c, q, cur, have, len, ch) {
-        nt = 0; q = ""; cur = ""; have = 0
+      # continuation makes one) was quadratic. A token is a contiguous slice
+      # of the clause, so only its start is recorded. A short token is joined
+      # from the array; a long one is cut out with one substr(), because
+      # growing a long string a character at a time is quadratic too, while a
+      # substr() per token is quadratic in the number of tokens. At most
+      # length/256 tokens are long, so neither cost adds up. (Not a function:
+      # BSD awk copies a string argument, so passing the clause per token
+      # would be quadratic as well.)
+      function tokenize(s,   k, c, q, st, en, j, cur, len, ch) {
+        nt = 0; q = ""; st = 0
         len = split(s, ch, "")
-        for (k = 1; k <= len; k++) {
-          c = ch[k]
-          if (c == "\\" && q != "\047" && k < len) { cur = cur c ch[++k]; have = 1 }
-          else if (q != "") { cur = cur c; if (c == q) q = "" }
-          else if (c == "\"" || c == "\047") { q = c; cur = cur c; have = 1 }
-          else if (c == " " || c == "\t") { if (have) { tk[++nt] = cur; cur = ""; have = 0 } }
-          else { cur = cur c; have = 1 }
+        for (k = 1; k <= len + 1; k++) {
+          c = (k <= len) ? ch[k] : " "
+          if (k > len) q = ""
+          if (c == "\\" && q != "\047" && k < len) { if (!st) st = k; k++ }
+          else if (q != "") { if (c == q) q = "" }
+          else if (c == "\"" || c == "\047") { q = c; if (!st) st = k }
+          else if (c == " " || c == "\t") {
+            if (st) {
+              en = k - 1
+              if (en - st > 255) cur = substr(s, st, en - st + 1)
+              else { cur = ""; for (j = st; j <= en; j++) cur = cur ch[j] }
+              tk[++nt] = cur; st = 0
+            }
+          }
+          else if (!st) st = k
         }
-        if (have) tk[++nt] = cur
       }
       {
         tokenize($0)

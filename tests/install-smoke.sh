@@ -531,7 +531,10 @@ wide="echo '$(head -c 600000 /dev/zero | tr '\0' a)'"
 # per line (BSD awk went quadratic on that).
 many=$(awk 'BEGIN { for (n = 0; n < 500000; n++) print "a \\" }')
 many="$many"$'\n'"cp a out.txt"
-for long_text in "$long" "$wide" "$many"; do
+# One clause of 1 MB made of 500,000 words, joined to a later line by a
+# continuation: building a token a character at a time took 76 s on BSD awk.
+tokens="echo \"$(awk 'BEGIN { for (n = 0; n < 500000; n++) printf "a " }')\" \\"$'\n'"cp a out.txt"
+for long_text in "$long" "$wide" "$many" "$tokens"; do
 for long_guard in guard-protected-paths.sh guard-collaborative-git.sh; do
   set +e
   long_output=$(other_payload "$long_text" "$fr/sub" \

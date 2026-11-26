@@ -147,8 +147,9 @@ case "$tool_name" in
     # a 600 KB line with a per-character loop), and the comment test, a few
     # gsub passes over the line, runs only on a line that ends in a
     # continuation and holds a `#` (gsub is quadratic in the number of
-    # matches on BSD awk, so a long line of escapes must not reach it). The strip leaves a placeholder so that removing a quoted
-    # span cannot make a new word start (`tee ""#z` is not `tee #z`).
+    # matches on BSD awk, so a long line of escapes must not reach it). The
+    # strip leaves a placeholder so that removing a quoted span cannot make a
+    # new word start (`tee ""#z` is not `tee #z`).
     join_awk='
       {
         cont = 0

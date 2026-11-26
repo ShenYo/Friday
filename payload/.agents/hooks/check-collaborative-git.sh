@@ -1145,6 +1145,12 @@ tokens_command="echo \"$(awk 'BEGIN { for (n = 0; n < 500000; n++) printf "a " }
 protected_guard_run "$tokens_command"
 [ "$protected_exit" -eq 0 ] \
   || fail "protected-paths guard returned $protected_exit (142 is the alarm) for ${#tokens_command} characters in one continued clause: $protected_output"
+# A 3 MB word of escapes ending in a continuation: the comment test's gsub,
+# quadratic in its matches on BSD awk, must skip a line with no `#`.
+escapes_command="echo $(awk 'BEGIN { for (n = 0; n < 1500000; n++) printf "\\a" }')\\"$'\n'"cp a out.txt"
+protected_guard_run "$escapes_command"
+[ "$protected_exit" -eq 0 ] \
+  || fail "protected-paths guard returned $protected_exit (142 is the alarm) for ${#escapes_command} characters of escapes in one continued word: $protected_output"
 # The collaborative-Git guard has the same blank-command check and the same
 # stall on bash 3.2; it takes a long command under the same alarm.
 set +e

@@ -241,8 +241,9 @@ the target's existing hook setup (an effective `core.hooksPath`, from any config
 scope, that is not `.agents/githooks`, or hooks or hook symlinks in `.git/hooks`
 that wiring would bypass) before any target write. The target is the repository
 root, not an `.agents/` subdirectory, and has a `.git/` directory (a linked
-worktree is refused, because `core.hooksPath` is shared by every worktree of a
-repository and wiring it from one would leave the others running no hooks).
+worktree is refused, because the install writes `core.hooksPath`, which is shared by
+every worktree of a repository, and a linked worktree's branch may not carry
+`.agents/githooks`; install into the main worktree).
 They also check the `.claude/skills/<name>` links `setup.sh` will make, for the
 Skills as they will be once the copy is done (the target's own `.agents/skills`
 plus the payload's): a name two Skills share, a real file or directory in the
@@ -429,14 +430,24 @@ commit. A fork changes the `FRIDAY_REPO` line at the top of it. More in
 
 ## After every clone
 
-`core.hooksPath` is per-clone config that is never cloned. A fresh clone, a CI
-checkout or a worktree made outside the installer runs **no commit-time hook**
-until someone sets it again. After cloning, and after the project's Skills
-change, run:
+`core.hooksPath` is per-clone config that is never cloned. A fresh clone or a CI
+checkout runs **no commit-time hook** until someone sets it again. After cloning,
+and after the project's Skills change, run:
 
 ```sh
-bash .agents/bin/setup.sh   # --check to preview; refuses a linked worktree
+bash .agents/bin/setup.sh   # --check to preview; in a linked worktree it never writes shared Git config
 ```
+
+Run it once per clone, in the main worktree. That config is shared by every
+worktree of the repository, and a relative `core.hooksPath` is resolved against
+each worktree's own root, so once the main worktree is wired a linked worktree
+(`git worktree add`) already runs the hooks of its own checkout. In a linked
+worktree, run it only to check that, or after its branch adds, removes or renames
+a Skill: it links that worktree's `.claude/skills` and the other worktree-local
+files, and reads the shared config without writing it. If the repository was never
+wired, the linked worktree reports `CONFLICT core.hooksPath (unset; run bash
+.agents/bin/setup.sh in the main worktree <path>)`: go to that path and run it
+there.
 
 This cannot be fixed by a hook. The checker reports it as a note rather than a
 failure, because a CI checkout never has it and never will.
@@ -444,7 +455,9 @@ failure, because a CI checkout never has it and never will.
 ### What setup.sh does
 
 Run it from anywhere inside the consumer, after cloning it and again after adding, removing
-or renaming a Skill. `--check` previews and writes nothing.
+or renaming a Skill. `--check` previews and writes nothing. In a linked worktree the first
+item below only reads the shared `core.hooksPath` and never writes it; the others run as
+in the main worktree.
 
 It does four things:
 
@@ -472,8 +485,8 @@ exception is a dangling `.claude/skills/<name>` link that points into
 dangling link is a `CONFLICT`. Anything in the way is reported as `CONFLICT <path> (<reason>)` and left alone while the
 rest still runs, and the exit status is then 1; so is `--check`'s when
 something would change. A second run changes nothing and says
-`nothing to change`. The install runs this same script in the target. It
-refuses a linked worktree, for the reason `install.sh` does.
+`nothing to change`. The install runs this same script in the target, which `install.sh`
+only does in the main worktree.
 
 ## Starting an agent in a bootstrapped project
 

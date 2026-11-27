@@ -384,14 +384,94 @@ a "exits 1" '[ "$rc" -eq 1 ]'
 a "says why" 'says "not inside a Git work tree"'
 end
 
-begin "in a linked worktree it refuses"
+# A real consumer tracks the runtime links, the pointers and the Skill links, so
+# a linked worktree of it checks them out. Wire the main worktree and commit
+# that, then add a linked worktree on its own branch. The fixture's own commits
+# run no hook (gqf); it is the cases that judge what a hook does.
+gqf() { gq -c core.hooksPath=/dev/null "$@"; }
+wired_with_linked() {
+  new_consumer
+  run
+  git -C "$consumer" add -A
+  gqf -C "$consumer" commit -q -m "the wired consumer"
+  linked="$root/$n/linked"
+  git -C "$consumer" worktree add -q "$linked" -b wt
+}
+cfg() { git -C "$1" config --list --show-origin; }
+
+begin "a wired repository's linked worktree is checked and run without changing anything"
+wired_with_linked
+a "precondition: the main worktree is wired" '[ "$(hp)" = .agents/githooks ]'
+run --dir "$linked" --check
+a "--check exits 0" '[ "$rc" -eq 0 ]'
+a "--check says shared config is read, never written" 'says "check: $linked (linked worktree; shared Git config is read, never written; nothing will be written)"'
+a "--check reports core.hooksPath OK" 'says "OK       core.hooksPath -> .agents/githooks"'
+run --dir "$linked"
+a "a run exits 0" '[ "$rc" -eq 0 ]'
+a "the header says shared config is read, never written" 'says "setup: $linked (linked worktree; shared Git config is read, never written)"'
+a "a run says nothing to change" 'says "nothing to change"'
+a "a run creates nothing" 'lacks "CREATED" && lacks "CONFLICT"'
+end
+
+begin "an unwired repository's linked worktree is a CONFLICT that names the main worktree"
 new_consumer
-git -C "$consumer" worktree add -q "$root/$n/linked" -b wt
-run --dir "$root/$n/linked"
+linked="$root/$n/linked"
+git -C "$consumer" worktree add -q "$linked" -b wt
+run --dir "$linked"
 a "exits 1" '[ "$rc" -eq 1 ]'
-a "says why" 'says "is a linked worktree"'
-a "wrote nothing in it" '[ ! -e "$root/$n/linked/.claude/skills" ] && [ ! -e "$root/$n/linked/.claude/hooks" ]'
-a "did not set core.hooksPath" '[ -z "$(hp)" ]'
+a "reports core.hooksPath unset and where to run setup" 'says "CONFLICT core.hooksPath (unset; run bash .agents/bin/setup.sh in the main worktree $consumer)"'
+a "does not claim to create it" 'lacks "CREATED  core.hooksPath"'
+a "core.hooksPath stays unset" '[ -z "$(hp)" ]'
+run --dir "$linked" --check
+a "--check exits 1" '[ "$rc" -eq 1 ]'
+a "--check names the main worktree too" 'says "in the main worktree $consumer)" && lacks "WOULD CREATE core.hooksPath"'
+end
+
+begin "a run in a linked worktree leaves the shared Git config byte-identical"
+wired_with_linked
+before=$(cfg "$linked"); local_before=$(git -C "$consumer" config --local --list)
+run --dir "$linked"
+after=$(cfg "$linked")
+a "wired: the run said something" 'says "nothing to change"'
+a "wired: git config --list --show-origin is unchanged" '[ -n "$before" ] && [ "$before" = "$after" ]'
+a "wired: the main worktree's local config is unchanged" '[ -n "$local_before" ] && [ "$(git -C "$consumer" config --local --list)" = "$local_before" ]'
+new_consumer
+linked="$root/$n/linked"
+git -C "$consumer" worktree add -q "$linked" -b wt
+before=$(cfg "$linked")
+run --dir "$linked"
+after=$(cfg "$linked")
+a "unwired: the run said something" 'says "CONFLICT core.hooksPath (unset;"'
+a "unwired: git config --list --show-origin is unchanged" '[ -n "$before" ] && [ "$before" = "$after" ]'
+a "unwired: core.hooksPath is still unset" '[ -z "$(hp)" ] && [ -z "$(git -C "$linked" config --get core.hooksPath)" ]'
+end
+
+begin "a Skill that exists only on the linked branch is linked there and nowhere else"
+wired_with_linked
+mkdir -p "$linked/.agents/skills/extra"
+printf -- '---\nname: extra\ndescription: test\n---\n\nbody\n' > "$linked/.agents/skills/extra/SKILL.md"
+git -C "$linked" add -A
+gqf -C "$linked" commit -q -m "add a skill"
+main_before=$(snap "$consumer")
+run --dir "$linked"
+a "exits 0" '[ "$rc" -eq 0 ]'
+a "says it created the link" 'says "CREATED  .claude/skills/extra -> ../../.agents/skills/extra"'
+a "the link is in the linked worktree and resolves" '[ "$(readlink "$linked/.claude/skills/extra")" = ../../.agents/skills/extra ] && [ -f "$linked/.claude/skills/extra/SKILL.md" ]'
+a "nothing was created in the main worktree" '[ ! -e "$consumer/.claude/skills/extra" ] && [ ! -L "$consumer/.claude/skills/extra" ] && [ "$(snap "$consumer")" = "$main_before" ]'
+end
+
+begin "a commit in a linked worktree runs that worktree's own .agents/githooks/pre-commit"
+wired_with_linked
+marker="$root/$n/hook-marker"
+printf '#!/bin/sh\npwd -P > "%s"\nexit 0\n' "$marker" > "$linked/.agents/githooks/pre-commit"
+git -C "$linked" add -A
+gqf -C "$linked" commit -q -m "marker hook"
+a "precondition: only the main worktree was wired, and the hook has not run" '[ "$(hp)" = .agents/githooks ] && [ ! -e "$marker" ]'
+echo change > "$linked/change.txt"
+git -C "$linked" add change.txt
+out=$(gq -C "$linked" commit -q -m "chore: change" 2>&1); rc=$?
+a "the commit succeeds" '[ "$rc" -eq 0 ]'
+a "the linked worktree's hook ran, from its own root" '[ "$(cat "$marker" 2>/dev/null)" = "$(cd "$linked" && pwd -P)" ]'
 end
 
 begin "a dangling link that setup did not write is a CONFLICT, not replaced"

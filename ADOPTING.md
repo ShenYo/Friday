@@ -447,7 +447,8 @@ a Skill: it links that worktree's `.claude/skills` and the other worktree-local
 files, and reads the shared config without writing it. If the repository was never
 wired, the linked worktree reports `CONFLICT core.hooksPath (unset; run bash
 .agents/bin/setup.sh in the main worktree <path>)`: go to that path and run it
-there.
+there. In a bare repository there is no main worktree, so it instead gives the one
+command to run once: `git -C <path> config core.hooksPath .agents/githooks`.
 
 This cannot be fixed by a hook. The checker reports it as a note rather than a
 failure, because a CI checkout never has it and never will.

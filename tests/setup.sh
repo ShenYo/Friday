@@ -446,6 +446,38 @@ a "unwired: git config --list --show-origin is unchanged" '[ -n "$before" ] && [
 a "unwired: core.hooksPath is still unset" '[ -z "$(hp)" ] && [ -z "$(git -C "$linked" config --get core.hooksPath)" ]'
 end
 
+begin "a bare repository's linked worktree is a CONFLICT with the one command, and nothing is written"
+new_consumer
+bare="$root/$n/bare space.git"
+git clone -q --bare "$pristine" "$bare"
+linked="$root/$n/linked"
+git -C "$bare" worktree add -q "$linked" -b wt
+bare_abs=$(cd "$bare" && pwd -P)
+before=$(cfg "$linked")
+run --dir "$linked"
+after=$(cfg "$linked")
+a "exits 1" '[ "$rc" -eq 1 ]'
+a "says there is no main worktree and gives the command, quoted" 'says "CONFLICT core.hooksPath (unset; the repository is bare, so there is no main worktree; run once: git -C ${bare_abs// /\\ } config core.hooksPath .agents/githooks)"'
+a "does not name a main worktree to run setup in" 'lacks "in the main worktree"'
+a "shared config is unchanged and core.hooksPath unset" '[ -n "$before" ] && [ "$before" = "$after" ] && [ -z "$(git -C "$linked" config --get core.hooksPath)" ]'
+end
+
+begin "a linked worktree whose branch has a non-executable hook reports it"
+wired_with_linked
+chmod -x "$linked/.agents/githooks/pre-commit"
+run --dir "$linked"
+a "exits 1" '[ "$rc" -eq 1 ]'
+a "reports the hook as not executable" 'says "CONFLICT .agents/githooks/pre-commit (not executable; git would skip it, run chmod +x)"'
+end
+
+begin "a wired repository's hook in the common hooks directory is reported from a linked worktree"
+wired_with_linked
+printf '#!/bin/sh\nexit 0\n' > "$consumer/.git/hooks/pre-commit"
+run --dir "$linked"
+a "exits 1" '[ "$rc" -eq 1 ]'
+a "reports .git/hooks as bypassed" 'says "CONFLICT .git/hooks (holds hooks that core.hooksPath bypasses; move or remove them deliberately)"'
+end
+
 begin "a Skill that exists only on the linked branch is linked there and nowhere else"
 wired_with_linked
 mkdir -p "$linked/.agents/skills/extra"

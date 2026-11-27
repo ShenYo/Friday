@@ -23,8 +23,9 @@
 # dangling link is not setup's to remove.
 #
 # In a linked worktree, step 1 only reads core.hooksPath, because it is shared
-# config: set, it is OK; unset, it is a CONFLICT that names the main worktree,
-# where setup is run once. Steps 2-4 run there as anywhere.
+# config: set to .agents/githooks, it is OK; set elsewhere, the same CONFLICT as
+# anywhere; unset, a CONFLICT that names the main worktree (or, in a bare
+# repository, the one command to run). Steps 2-4 run there as anywhere.
 #
 # --check reports what a run would do and writes nothing. It exits 0 when
 # nothing would change and there is no conflict, and 1 otherwise; a normal run
@@ -136,13 +137,19 @@ if current=$(git config --get core.hooksPath); then
 elif "$linked"; then
   # Shared config is not written from here; the main worktree is where it is set.
   main_worktree=$(git worktree list --porcelain | awk '/^worktree / { sub(/^worktree /, ""); print; exit }')
-  conflict core.hooksPath "unset; run bash .agents/bin/setup.sh in the main worktree $main_worktree"
+  # A bare repository has no main worktree: its first entry is marked "bare".
+  if git worktree list --porcelain | awk 'NR == 1 { next } /^$/ { exit } /^bare$/ { found = 1 } END { exit !found }'; then
+    conflict core.hooksPath "unset; the repository is bare, so there is no main worktree; run once: git -C $(printf '%q' "$common_dir") config core.hooksPath .agents/githooks"
+  else
+    conflict core.hooksPath "unset; run bash .agents/bin/setup.sh in the main worktree $main_worktree"
+  fi
 elif change "core.hooksPath -> .agents/githooks"; then
   if git config --local core.hooksPath .agents/githooks; then wired=true; else conflict core.hooksPath "could not set it"; fi
 else
   wired=true
 fi
 # Pointing core.hooksPath elsewhere bypasses .git/hooks wholesale.
+# A linked worktree with core.hooksPath unset leaves this report to the main worktree's run.
 if "$wired" && [ -d "$common_dir/hooks" ] \
   && [ -n "$(find "$common_dir/hooks" \( -type f -o -type l \) ! -name '*.sample' -print -quit 2>/dev/null)" ]; then
   conflict .git/hooks "holds hooks that core.hooksPath bypasses; move or remove them deliberately"

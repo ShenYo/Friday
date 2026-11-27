@@ -352,7 +352,8 @@ bash .agents/bin/setup.sh   # --check 可預覽；在 linked worktree 中絕不�
 或其 branch 新增、移除或改名 Skill 之後才需要執行：它會連結該 worktree 的 `.claude/skills` 與其他屬於
 該 worktree 的檔案，並且只讀取共用設定、不寫入。若這個 repository 從未接線，linked worktree 會回報
 `CONFLICT core.hooksPath (unset; run bash .agents/bin/setup.sh in the main worktree <path>)`：
-到該路徑執行即可。
+到該路徑執行即可。bare repository 沒有 main worktree，此時改為給出只需執行一次的指令：
+`git -C <path> config core.hooksPath .agents/githooks`。
 
 這無法用 hook 修復。checker 會把它回報成 note 而不是失敗，因為 CI checkout
 永遠不會有它。

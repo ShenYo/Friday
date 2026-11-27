@@ -124,8 +124,9 @@ report_seeds() { # uses PAYLOAD, TARGET, seed_files and setup_makes_pointers
 
 # A linked worktree has a .git file, not a directory, and a git dir that is not
 # the repository's common dir (a submodule has the file too, but not that).
-# core.hooksPath is shared by every worktree of a repository, so wiring it from
-# one would leave the others running no hooks. Refuse before anything is written.
+# Installing wires core.hooksPath, which is shared config: written from a
+# checkout whose branch may not carry .agents/githooks, it would change every
+# worktree. Refuse before anything is written.
 linked_worktree=false
 if [ -f "$TARGET/.git" ]; then
   git_dir=$(cd "$TARGET" && cd "$(git rev-parse --git-dir)" && pwd -P) || git_dir=
@@ -136,9 +137,9 @@ if [ -f "$TARGET/.git" ]; then
 fi
 if [ "$linked_worktree" = true ]; then
   echo "error: $TARGET is a linked worktree." >&2
-  echo "       core.hooksPath is shared by every worktree of a repository, so wiring" >&2
-  echo "       it here would leave the others running no hooks. Install into the main" >&2
-  echo "       worktree, then check this one out from it." >&2
+  echo "       Installing writes core.hooksPath, which is shared by every worktree of a" >&2
+  echo "       repository, and this checkout's branch may not carry .agents/githooks." >&2
+  echo "       Install into the main worktree." >&2
   exit 1
 fi
 

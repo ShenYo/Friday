@@ -198,8 +198,8 @@ bash .agents/bin/setup.sh --check   # 有東西會被改變時結束碼為 1
 任何寫入之前，先驗證所有先備條件、每一個目的地，以及目標現有的 hook 設定（任何設定範圍中生效、且不是
 `.agents/githooks` 的 `core.hooksPath`，或接線後會被略過的 `.git/hooks` 裡的 hook 與 hook symlink）。
 目標是 repository 的根目錄，而不是某個 `.agents/` 子目錄，且具有 `.git/` 目錄（linked worktree 會被
-拒絕，因為 `core.hooksPath` 由同一個 repository 的所有 worktree 共用，從其中一個接線會讓其他 worktree
-不再執行任何 hook）。它們也會檢查 `setup.sh` 將建立的 `.claude/skills/<name>` 連結，依複製完成後的 Skills
+拒絕，因為安裝會寫入 `core.hooksPath`，它由同一個 repository 的所有 worktree 共用，而 linked worktree
+的 branch 不一定帶有 `.agents/githooks`；請安裝到 main worktree）。它們也會檢查 `setup.sh` 將建立的 `.claude/skills/<name>` 連結，依複製完成後的 Skills
 （目標自己的 `.agents/skills` 加上 payload 的）計算：兩個 Skill 同名、被真實檔案或目錄擋住、指向別處的連結、
 複製後會變成有效的斷鏈、或不是 `setup.sh` 寫的斷鏈，都是衝突，所以安裝會被拒絕，而不是做到一半才停下。
 任何非預期的目的地 symlink（包含祖先路徑上的 symlink）都視為衝突；只接受三種連結：那三個精確指定的
@@ -338,13 +338,22 @@ bash "$FRIDAY/bin/friday-lock" check "$CONSUMER"
 
 ## 每次 clone 之後
 
-`core.hooksPath` 是 per-clone 設定，永遠不會被 clone 帶走。重新 clone、CI
-checkout、或在安裝程式之外建立的 worktree，在有人再次設定之前都**不會執行任何
-commit 期的 hook**。clone 之後，以及專案的 Skills 變動之後，請執行：
+`core.hooksPath` 是 per-clone 設定，永遠不會被 clone 帶走。重新 clone 或 CI
+checkout，在有人再次設定之前都**不會執行任何 commit 期的 hook**。clone 之後，以及專案的
+Skills 變動之後，請執行：
 
 ```sh
-bash .agents/bin/setup.sh   # --check 可預覽；會拒絕 linked worktree
+bash .agents/bin/setup.sh   # --check 可預覽；在 linked worktree 中絕不寫入共用的 Git 設定
 ```
+
+每個 clone 在 main worktree 執行一次即可。這項設定由 repository 的所有 worktree 共用，而相對路徑的
+`core.hooksPath` 會對各自 worktree 的根目錄解析，所以 main worktree 接線之後，linked worktree
+（`git worktree add`）已經會執行它自己 checkout 裡的 hook。在 linked worktree 中，只有要檢查這件事，
+或其 branch 新增、移除或改名 Skill 之後才需要執行：它會連結該 worktree 的 `.claude/skills` 與其他屬於
+該 worktree 的檔案，並且只讀取共用設定、不寫入。若這個 repository 從未接線，linked worktree 會回報
+`CONFLICT core.hooksPath (unset; run bash .agents/bin/setup.sh in the main worktree <path>)`：
+到該路徑執行即可。bare repository 沒有 main worktree，此時改為給出只需執行一次的指令：
+`git -C <path> config core.hooksPath .agents/githooks`。
 
 這無法用 hook 修復。checker 會把它回報成 note 而不是失敗，因為 CI checkout
 永遠不會有它。
@@ -352,7 +361,8 @@ bash .agents/bin/setup.sh   # --check 可預覽；會拒絕 linked worktree
 ### setup.sh 做什麼
 
 在 consumer 內的任何位置執行；clone 之後，以及新增、移除或改名 Skill 之後都要再執行。
-`--check` 只預覽，不寫入任何東西。
+`--check` 只預覽，不寫入任何東西。在 linked worktree 中，下面第一項只讀取共用的
+`core.hooksPath`、絕不寫入；其餘各項與在 main worktree 時相同。
 
 它做四件事：
 
@@ -376,8 +386,7 @@ bash .agents/bin/setup.sh   # --check 可預覽；會拒絕 linked worktree
 連結，它會替換；其他任何斷鏈都是 `CONFLICT`。擋在路上的項目會回報為
 `CONFLICT <path> (<reason>)` 並原封不動，其餘步驟照常執行，結束碼為 1；`--check`
 在有東西會被改變時，結束碼同樣是 1。再執行一次不會改變任何東西，並會印出
-`nothing to change`。安裝程式在目標中執行的就是這支腳本。它與 `install.sh` 一樣，
-基於相同的理由拒絕 linked worktree。
+`nothing to change`。安裝程式在目標中執行的就是這支腳本，而 `install.sh` 只會在 main worktree 這樣做。
 
 ## 在已完成 Bootstrap 的專案中啟動 Agent
 
